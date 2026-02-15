@@ -35,9 +35,9 @@ Our goal: Make it secure AND fast.
   - Dr. Manar Abu Talib -> Head Supervisor
   - Dr. Sohail Abbas -> Co Supervisor
 
----
-
 ### LICENSE
 TBD
+
+---
 
 Last updated: February 2026
