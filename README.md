@@ -37,4 +37,7 @@ Our goal: Make it secure AND fast.
 
 ---
 
+### LICENSE
+TBD
+
 Last updated: February 2026
