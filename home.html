@@ -351,7 +351,7 @@
                 <h2 class="text-2xl font-bold text-slate-900 mb-6">Literature Review Database</h2>
                 
                 <div class="mb-4">
-                    <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search papers by title, author, or keyword..." class="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm shadow-sm">
+                    <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search papers by title, publisher, or keyword..." class="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm shadow-sm">
                 </div>
 
                 <div class="overflow-x-auto custom-scrollbar bg-white rounded-lg shadow border border-slate-200">
@@ -381,40 +381,40 @@
 
     <script>
         const references = [
-            {
-                    title: "A Quantum-Resistant Blockchain System: A Comparative Analysis",
-                    link: "https://www.mdpi.com/2227-7390/11/18/3947",
-                    type: "Review / Comparative Analysis",
-                    publisher: "MDPI (Mathematics)",
-                    year: "2023",
+                {
+                    title: "A Survey about Post Quantum Cryptography Methods",
+                    link: "https://publications.eai.eu/index.php/IoT/article/view/5099",
+                    type: "Review Article",
+                    publisher: "EAI Endorsed Transactions on Internet of Things",
+                    year: "2024",
                     bullets: [
-                        "Proposes IPFS integration to solve PQC key size issues.",
-                        "Analyzes performance of Dilithium and Falcon.",
-                        "Demonstrates reduced blockchain bloat via off-chain storage."
+                        "Identification of severe quantum computing threats to widely used asymmetric encryption standards like RSA and ECC.",
+                        "Categorization of post-quantum cryptography into prominent families: lattice-based, hash-based, code-based, and multivariate encryption methods.",
+                        "Evaluation highlighting lattice-based cryptography as a highly promising, resource-efficient option for constrained microcontroller environments."
                     ]
                 },
                 {
-                    title: "A Blockchain System Based on Quantum-Resistant Digital Signature",
-                    link: "https://www.researchgate.net/publication/349824717_A_Blockchain_System_Based_on_Quantum-Resistant_Digital_Signature",
-                    type: "Research Article",
-                    publisher: "Hindawi (Security and Comm. Networks)",
-                    year: "2021",
+                    title: "How to factor 2048 bit RSA integers with less than a million noisy qubits",
+                    link: "https://arxiv.org/abs/2505.15917",
+                    type: "Research Paper",
+                    publisher: "Quantum Journal",
+                    year: "2025",
                     bullets: [
-                        "Focuses on Lattice-based signatures.",
-                        "Highlights vulnerability of ECDSA in smart city contexts.",
-                        "Provides security proofs against quantum attacks."
+                        "Substantial reduction in the estimated number of qubits required to factor 2048-bit RSA integers.",
+                        "Estimation that factoring a 2048-bit RSA integer can be achieved in less than a week by a quantum computer using under one million noisy qubits.",
+                        "Qubit count reductions achieved primarily through approximate residue arithmetic, storing idle logical qubits with yoked surface codes, and using magic state cultivation."
                     ]
                 },
                 {
-                    title: "A Performance Comparison of Post-Quantum Algorithms in Blockchain",
-                    link: "https://jbba.scholasticahq.com/api/v1/articles/38508-a-performance-comparison-of-post-quantum-algorithms-in-blockchain.pdf",
-                    type: "Peer Reviewed Research",
-                    publisher: "The JBBA",
-                    year: "2022",
+                    title: "A Review on the Advances, Applications, and Future Prospects of Post-Quantum Cryptography in Blockchain and IoT",
+                    link: "https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=11059920",
+                    type: "Topical Review",
+                    publisher: "IEEE Access",
+                    year: "2025",
                     bullets: [
-                        "Dilithium identified as a strong 'all-rounder'.",
-                        "Falcon noted for fast verification but complex implementation.",
-                        "Rainbow (multivariate) analyzed but noted for recent vulnerabilities."
+                        "Strong advocacy for Hybrid (ECC + PQC) approach.",
+                        "Analysis of NIST vs ETSI standards.",
+                        "Framework for secure transition."
                     ]
                 },
                 {
@@ -430,6 +430,19 @@
                     ]
                 },
                 {
+                    title: "Status Report on the Fourth Round of the NIST Post-Quantum Cryptography Standardization Process",
+                    link: "https://nvlpubs.nist.gov/nistpubs/ir/2025/NIST.IR.8545.pdf",
+                    type: "Report",
+                    publisher: "NIST",
+                    year: "2025",
+                    bullets: [
+                        "Lattice-based schemes (CRYSTALS-Kyber, CRYSTALS-Dilithium) emerged as leading candidates",
+                        "Strong security guarantees against classical and quantum attacks",
+                        "Practical efficiency compared to other PQC families"
+
+                    ]
+                },
+                {
                     title: "Hybrid Post-Quantum Signatures for Bitcoin and Ethereum",
                     link: "https://jbba.scholasticahq.com/article/154321-hybrid-post-quantum-signatures-for-bitcoin-and-ethereum-a-protocol-level-integration-strategy.pdf",
                     type: "Research Article",
@@ -439,6 +452,18 @@
                         "Proposes Hybrid Cryptographic Frameworks.",
                         "Estimates significant throughput loss (50%+) during transition.",
                         "Advocates for gradual 'Defensive Downgrade'."
+                    ]
+                },
+                {
+                    title: "Breaking Rainbow Takes a Weekend on a Laptop",
+                    link: "https://eprint.iacr.org/2022/214.pdf",
+                    type: "Technical Review",
+                    publisher: "IBM Research",
+                    year: "2022",
+                    bullets: [
+                        "Discovery of new key-recovery attacks against the NIST PQC finalist Rainbow signature scheme.",
+                        "Practical full secret key recovery for SL 1 parameters in approximately 53 hours on a standard laptop.",
+                        "Combination with the rectangular MinRank attack to significantly improve attacks against SL 3 and SL 5 parameters."
                     ]
                 },
                 {
@@ -466,52 +491,39 @@
                     ]
                 },
                 {
-                    title: "A Review on the Advances, Applications, and Future Prospects of Post-Quantum Cryptography in Blockchain and IoT",
-                    link: "https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=11059920",
-                    type: "Topical Review",
-                    publisher: "IEEE Access",
-                    year: "2025",
+                    title: "A Blockchain System Based on Quantum-Resistant Digital Signature",
+                    link: "https://www.researchgate.net/publication/349824717_A_Blockchain_System_Based_on_Quantum-Resistant_Digital_Signature",
+                    type: "Research Article",
+                    publisher: "Hindawi (Security and Comm. Networks)",
+                    year: "2021",
                     bullets: [
-                        "Strong advocacy for Hybrid (ECC + PQC) approach.",
-                        "Analysis of NIST vs ETSI standards.",
-                        "Framework for secure transition."
+                        "Focuses on Lattice-based signatures.",
+                        "Highlights vulnerability of ECDSA in smart city contexts.",
+                        "Provides security proofs against quantum attacks."
                     ]
                 },
                 {
-                    title: "Status Report on the Fourth Round of the NIST Post-Quantum Cryptography Standardization Process",
-                    link: "https://nvlpubs.nist.gov/nistpubs/ir/2025/NIST.IR.8545.pdf",
-                    type: "Report",
-                    publisher: "NIST",
-                    year: "2025",
+                    title: "A Quantum-Resistant Blockchain System: A Comparative Analysis",
+                    link: "https://www.mdpi.com/2227-7390/11/18/3947",
+                    type: "Review / Comparative Analysis",
+                    publisher: "MDPI (Mathematics)",
+                    year: "2023",
                     bullets: [
-                        "Lattice-based schemes (CRYSTALS-Kyber, CRYSTALS-Dilithium) emerged as leading candidates",
-                        "Strong security guarantees against classical and quantum attacks",
-                        "Practical efficiency compared to other PQC families"
-
+                        "Proposes IPFS integration to solve PQC key size issues.",
+                        "Analyzes performance of Dilithium and Falcon.",
+                        "Demonstrates reduced blockchain bloat via off-chain storage."
                     ]
                 },
                 {
-                    title: "Breaking Rainbow Takes a Weekend on a Laptop",
-                    link: "https://eprint.iacr.org/2022/214.pdf",
-                    type: "Technical Review",
-                    publisher: "IBM Research",
+                    title: "A Performance Comparison of Post-Quantum Algorithms in Blockchain",
+                    link: "https://jbba.scholasticahq.com/api/v1/articles/38508-a-performance-comparison-of-post-quantum-algorithms-in-blockchain.pdf",
+                    type: "Peer Reviewed Research",
+                    publisher: "The JBBA",
                     year: "2022",
                     bullets: [
-                        "Discovery of new key-recovery attacks against the NIST PQC finalist Rainbow signature scheme.",
-                        "Practical full secret key recovery for SL 1 parameters in approximately 53 hours on a standard laptop.",
-                        "Combination with the rectangular MinRank attack to significantly improve attacks against SL 3 and SL 5 parameters."
-                    ]
-                },
-                {
-                    title: "Status Report on the Fourth Round of the NIST Post-Quantum Cryptography Standardization Process",
-                    link: "https://nvlpubs.nist.gov/nistpubs/ir/2025/NIST.IR.8545.pdf",
-                    type: "Internal Report",
-                    publisher: "NIST",
-                    year: "2025",
-                    bullets: [
-                        "Selection of HQC as the sole Key-Encapsulation Mechanism (KEM) to be standardized from the fourth round",
-                        "Elimination of SIKE due to critical vulnerabilities, and BIKE due to less mature Decryption Failure Rate (DFR) analysis.",
-                        "Postponement of Classic McEliece standardization due to large public key sizes and concurrent ISO standardization efforts."
+                        "Dilithium identified as a strong 'all-rounder'.",
+                        "Falcon noted for fast verification but complex implementation.",
+                        "Rainbow (multivariate) analyzed but noted for recent vulnerabilities."
                     ]
                 }
             ];
