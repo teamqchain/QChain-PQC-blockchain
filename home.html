@@ -149,7 +149,7 @@
                         <div class="chart-container">
                             <canvas id="timelineChart"></canvas>
                         </div>
-                        <p class="text-xs text-center text-slate-400 mt-2">Projection based on IBM Quantum Roadmaps to Fault Tolerance</p>
+                        <p class="text-xs text-center text-slate-400 mt-2">Projection based on IBM Quantum Roadmaps to Fault Tolerance & Google Quantum AI Research</p>
                     </div>
                     <div>
                         <h3 class="text-xl font-bold text-slate-800 mb-4">Vulnerability Matrix</h3>
@@ -504,16 +504,16 @@
             new Chart(ctxTimeline, {
                 type: 'line',
                 data: {
-                    labels: ['2023', '2026', '2029', '2033', '2035', '2040'],
+                    labels: ['2023', '2026', '2029', '2033'],
                     datasets: [{
                         label: 'Estimated Logical Qubits',
-                        data: [48, 100, 200, 2000, 3000, 4500],
+                        data: [48, 100, 200, 2000],
                         borderColor: '#0d9488',
                         backgroundColor: 'rgba(13, 148, 136, 0.1)',
                         tension: 0.4, fill: true
                     }, {
                         label: 'RSA-2048 Security Threshold (~4099 Qubits)',
-                        data: [4099, 4099, 4099, 4099, 4099, 4099],
+                        data: [1000, 1000, 1000, 1000, 1000],
                         borderColor: '#ef4444', borderDash: [5, 5],
                         pointRadius: 0, borderWidth: 2, fill: false
                     }]
