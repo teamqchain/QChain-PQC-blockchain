@@ -32,9 +32,10 @@ func main() {
 	fmt.Printf("[KeyGen] EXPOSED Private Key! Size: %d bytes\n", len(privateKey))
 
 	// 1. Upload the actual PDF to IPFS
-	fmt.Println("\n[1] Uploading actual PDF Transcript to IPFS...")
+	fmt.Println("\n[1] Uploading document(s) to IPFS...")
 	sh := shell.NewShell("host.docker.internal:5001")
 
+	// Open document stored within the same folder
 	pdfFile, err := os.Open("transcript.pdf")
 	if err != nil {
 		log.Fatalf("Failed to open transcript.pdf. Is it in the folder?: %v", err)
