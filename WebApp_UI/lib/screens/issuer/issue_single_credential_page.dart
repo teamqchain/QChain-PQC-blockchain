@@ -1,0 +1,1543 @@
+// view/issuing/issue_single_credential_page.dart
+//
+// Issue Single Credential — 5-step wizard
+//
+// Layout contract:
+//   • The outer widget fills its parent (AppShell content area) via Column.
+//   • The stepper strip, step label, and bottom buttons are FIXED in position.
+//   • Only the main card (Expanded) changes per step.
+//   • No outer SingleChildScrollView — only inner lists/forms scroll.
+//
+// Integration:
+//   case RouteName.issueSingle:
+//     return IssueSingleCredentialPage(
+//       onCancel:       () => onNavigate(RouteName.dashboard),
+//       onIssueAnother: () => onNavigate(RouteName.issueSingle),
+//     );
+
+import 'dart:math';
+import 'package:flutter/material.dart';
+import 'package:qportal_webapp/components/issuer/holderList.dart';
+import 'package:qportal_webapp/components/issuer/previewCard.dart';
+import 'package:qportal_webapp/components/issuer/schemeType.dart';
+import 'package:qportal_webapp/components/stepper.dart';
+import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/theme/appColours.dart';
+import 'package:qportal_webapp/theme/appTextStyle.dart';
+import 'package:qportal_webapp/view/responsive_layout.dart';
+import 'package:qportal_webapp/widgets/datePicker.dart';
+import 'package:qportal_webapp/widgets/app_button.dart';
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+
+const _kTotalSteps = 5;
+const _kOrgName = 'University of Sharjah';
+const _kIssuerName = 'Mohammed A.';
+
+const _kStepLabels = [
+  'Select Credential Type',
+  'Find Holder',
+  'Fill Credential Details',
+  'Credential Preview',
+  'Confirm & Issue',
+];
+
+// Per-schema dummy defaults used to pre-populate Step 3 fields.
+// Map key is fieldId, value is the default string to use.
+const _kSchemaDefaults = <String, Map<String, String>>{
+  'SCH-001': {
+    'f1': 'Bachelor of Computer Science',
+    'f2': 'College of Computing & Informatics',
+    'f3': 'STU-2025-0291',
+    'f4': 'Merit',
+    'f5': '2025',
+  },
+  'SCH-002': {
+    'f1': 'Master of Science in Cybersecurity',
+    'f2': 'College of Computing & Informatics',
+    'f3': 'STU-2025-0312',
+    'f4': 'Thesis Track',
+    'f5': '2025',
+  },
+  'SCH-003': {
+    'f1': 'Quantum Machine Learning',
+    'f2': 'College of Computing & Informatics',
+    'f3': 'STU-2025-0445',
+    'f4': '2025',
+  },
+  'SCH-004': {
+    'f1': 'Diploma in Business Technology',
+    'f2': 'College of Business Administration',
+    'f3': 'STU-2025-0547',
+    'f4': 'Merit',
+  },
+  'SCH-005': {
+    'f1': 'Advanced Information Security',
+    'f2': '120',
+    'f3': 'Pass',
+    'f4': 'TRN-2025-0101',
+  },
+  'SCH-006': {
+    'f1': 'Full Practicing License',
+    'f2': 'ML-2025-0184',
+    'f3': 'Internal Medicine',
+    'f4': 'Yes',
+  },
+  'SCH-007': {
+    'f1': 'Postdoctoral Research Fellow',
+    'f2': 'Quantum Computing',
+    'f3': 'RES-2025-0001',
+    'f4': 'Full-Time',
+  },
+  'SCH-008': {
+    'f1': 'Information Technology',
+    'f2': 'EMP-2025-0618',
+    'f3': 'Senior Engineer',
+  },
+};
+
+// ─── PAGE ─────────────────────────────────────────────────────────────────────
+
+class IssueSingleCredentialPage extends StatefulWidget {
+  final VoidCallback onCancel;
+  final VoidCallback onIssueAnother;
+
+  /// When non-null the wizard starts at Step 3 with schema, holder and
+  /// field values pre-populated from the existing credential.
+  final CredentialRecord? reissueFrom;
+
+  const IssueSingleCredentialPage({
+    super.key,
+    required this.onCancel,
+    required this.onIssueAnother,
+    this.reissueFrom,
+  });
+
+  @override
+  State<IssueSingleCredentialPage> createState() =>
+      _IssueSingleCredentialPageState();
+}
+
+class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
+  // ── navigation ─────────────────────────────────────────────────────────────
+  int _step = 1;
+
+  // ── step 1 ─────────────────────────────────────────────────────────────────
+  SchemaRecord? _selectedSchema;
+  bool _step1Error = false;
+
+  // ── step 2 ─────────────────────────────────────────────────────────────────
+  HolderRecord? _selectedHolder;
+  String _holderSearch = '';
+  bool _step2Error = false;
+  final _searchCtrl = TextEditingController();
+
+  // ── step 3 ─────────────────────────────────────────────────────────────────
+  final Map<String, String> _fieldValues = {};
+  final Map<String, TextEditingController> _fieldCtrl = {};
+  DateTime? _expiryDate;
+  bool _noExpiry = false;
+  bool _step3Error = false;
+
+  // ── step 5 ─────────────────────────────────────────────────────────────────
+  bool _confirmed = false;
+  bool _isIssuing = false;
+  bool _issued = false;
+  String _issuingStatus = '';
+  String _issuedId = '';
+
+  @override
+  void initState() {
+    super.initState();
+    final cred = widget.reissueFrom;
+    if (cred != null) _bootstrapReissue(cred);
+  }
+
+  /// Pre-populate schema, holder and field values from an existing credential
+  /// so the wizard opens directly at Step 3.
+  void _bootstrapReissue(CredentialRecord cred) {
+    // 1 — Match schema by name (exact first, then contains)
+    final schemas = _activeSchemas;
+    _selectedSchema = schemas.cast<SchemaRecord?>().firstWhere(
+          (s) => s!.name == cred.credentialType,
+          orElse: () => schemas.cast<SchemaRecord?>().firstWhere(
+                (s) => cred.credentialType.toLowerCase().contains(s!.name.toLowerCase()) ||
+                    s.name.toLowerCase().contains(cred.credentialType.toLowerCase()),
+                orElse: () => null,
+              ),
+        );
+
+    // 2 — Match holder by ID (fallback to name)
+    _selectedHolder = IssuingMockData.holders.cast<HolderRecord?>().firstWhere(
+          (h) => h!.id == cred.holderId,
+          orElse: () => IssuingMockData.holders.cast<HolderRecord?>().firstWhere(
+                (h) => h!.fullName == cred.holderName,
+                orElse: () => null,
+              ),
+        );
+
+    // 3 — Init field controllers from schema + credential attributes
+    if (_selectedSchema != null) {
+      _initFields(_selectedSchema!);
+      // Overwrite with values from the credential's attributes map
+      for (final f in _selectedSchema!.fields) {
+        final attrVal = cred.attributes[f.label];
+        if (attrVal != null) {
+          _fieldValues[f.id] = attrVal;
+          _fieldCtrl[f.id]?.text = attrVal;
+        }
+      }
+    }
+
+    // 4 — Map expiry
+    if (cred.expiryDate != null && cred.expiryDate!.isNotEmpty) {
+      _noExpiry = false;
+      // Keep the default parsed date; the text is informational
+    } else {
+      _noExpiry = true;
+    }
+
+    // 5 — Jump to Step 3 (only if schema was resolved; otherwise start at Step 1)
+    if (_selectedSchema != null) _step = 3;
+  }
+
+  // ─── helpers ─────────────────────────────────────────────────────────────
+
+  List<SchemaRecord> get _activeSchemas =>
+      IssuingMockData.schemas.where((s) => s.isActive).toList();
+
+  List<HolderRecord> get _filteredHolders {
+    final q = _holderSearch.toLowerCase().trim();
+    if (q.isEmpty) return IssuingMockData.holders;
+    return IssuingMockData.holders
+        .where(
+          (h) =>
+              h.fullName.toLowerCase().contains(q) ||
+              h.id.toLowerCase().contains(q) ||
+              h.email.toLowerCase().contains(q) ||
+              h.college.toLowerCase().contains(q),
+        )
+        .toList();
+  }
+
+  /// Dispose old field controllers and create fresh ones seeded with
+  /// schema-specific dummy defaults.
+  void _initFields(SchemaRecord schema) {
+    for (final c in _fieldCtrl.values) c.dispose();
+    _fieldCtrl.clear();
+    _fieldValues.clear();
+    _expiryDate = DateTime(2028, 6, 30);
+    _noExpiry = false;
+
+    final defaults = _kSchemaDefaults[schema.id] ?? {};
+
+    for (final f in schema.fields) {
+      final defaultVal = defaults[f.id] ?? '';
+      _fieldValues[f.id] = defaultVal;
+
+      if (f.type == SchemaFieldType.text || f.type == SchemaFieldType.number) {
+        final ctrl = TextEditingController(text: defaultVal);
+        ctrl.addListener(() => _fieldValues[f.id] = ctrl.text);
+        _fieldCtrl[f.id] = ctrl;
+      }
+    }
+  }
+
+  bool _validateStep3() {
+    if (_selectedSchema == null) return false;
+    for (final f in _selectedSchema!.fields) {
+      if (f.required && (_fieldValues[f.id] ?? '').trim().isEmpty) {
+        return false;
+      }
+    }
+    return _noExpiry || _expiryDate != null;
+  }
+
+  Future<void> _startIssuing() async {
+    setState(() {
+      _isIssuing = true;
+      _issuingStatus = 'Signing credential with Dilithium...';
+    });
+    await Future.delayed(const Duration(milliseconds: 1500));
+    setState(() => _issuingStatus = 'Submitting to blockchain...');
+    await Future.delayed(const Duration(milliseconds: 1200));
+    final id = 'QC-${DateTime.now().year}-${100000 + Random().nextInt(899999)}';
+    setState(() {
+      _isIssuing = false;
+      _issued = true;
+      _issuedId = id;
+    });
+  }
+
+  void _goNext() {
+    switch (_step) {
+      case 1:
+        if (_selectedSchema == null) {
+          setState(() => _step1Error = true);
+          return;
+        }
+        _initFields(_selectedSchema!);
+        setState(() {
+          _step1Error = false;
+          _step = 2;
+        });
+        break;
+      case 2:
+        if (_selectedHolder == null) {
+          setState(() => _step2Error = true);
+          return;
+        }
+        setState(() {
+          _step2Error = false;
+          _step = 3;
+        });
+        break;
+      case 3:
+        if (!_validateStep3()) {
+          setState(() => _step3Error = true);
+          return;
+        }
+        setState(() {
+          _step3Error = false;
+          _step = 4;
+        });
+        break;
+      case 4:
+        setState(() => _step = 5);
+        break;
+      case 5:
+        if (_confirmed) _startIssuing();
+        break;
+    }
+  }
+
+  void _goBack() {
+    if (_step > 1) setState(() => _step--);
+  }
+
+  // ─── ROOT BUILD ───────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    if (_issued) return _buildSuccess();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Issue Single Credential',
+            style: AppTextStyles.navLabelActive.copyWith(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          // ── Reusable step strip ────────────────────────────────────────────
+          IssuerStepStrip(
+            currentStep: _step,
+            stepLabels: _kStepLabels,
+            accentColor: AppColors.issuingAccent,
+          ),
+          const SizedBox(height: 12),
+
+          Text(
+            'Step $_step of $_kTotalSteps',
+            style: AppTextStyles.bodyTiny.copyWith(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDim,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            _kStepLabels[_step - 1],
+            style: AppTextStyles.navLabelActive.copyWith(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          Expanded(child: _buildStepContent()),
+          const SizedBox(height: 16),
+          _buildBottomButtons(),
+        ],
+      ),
+    );
+  }
+
+  // ─── STEP STRIP ──────────────────────────────────────────────────────────
+
+  // ─── STEP ROUTER ─────────────────────────────────────────────────────────
+
+  Widget _buildStepContent() {
+    switch (_step) {
+      case 1:
+        return _buildStep1();
+      case 2:
+        return _buildStep2();
+      case 3:
+        return _buildStep3();
+      case 4:
+        return _buildStep4();
+      case 5:
+        return _buildStep5();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // STEP 1 — Select Credential Type
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildStep1() {
+    final schemas = _activeSchemas;
+
+    if (schemas.isEmpty) {
+      return _card(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.schema_outlined,
+                size: 44,
+                color: AppColors.textDim,
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'You have no credential types yet.',
+                style: AppTextStyles.navLabelActive.copyWith(fontSize: 13),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                'Create your first schema before issuing.',
+                style: AppTextStyles.bodyTiny.copyWith(
+                  color: AppColors.textDim,
+                ),
+              ),
+              const SizedBox(height: 14),
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: Text(
+                  'Go to Schemas →',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.issuingAccent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return _card(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Left 50 % — schema list (scrollable) ───────────────────────
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                  child: Text(
+                    'CREDENTIAL TYPES',
+                    style: AppTextStyles.bodyTiny.copyWith(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.2,
+                      color: AppColors.textDim,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    itemCount: schemas.length,
+                    itemBuilder: (_, i) => SchemaListItem(
+                      schema: schemas[i],
+                      isSelected: _selectedSchema?.id == schemas[i].id,
+                      onTap: () => setState(() {
+                        _selectedSchema = schemas[i];
+                        _step1Error = false;
+                      }),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Vertical divider
+          Container(width: 1, color: AppColors.border),
+
+          // ── Right 50 % — preview (scrollable) ──────────────────────────
+          Expanded(
+            child: _selectedSchema == null
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.touch_app_outlined,
+                          size: 36,
+                          color: AppColors.textDim,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Select a credential type\nto see details',
+                          style: AppTextStyles.bodyTiny.copyWith(
+                            color: AppColors.textDim,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  )
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: _buildSchemaPreview(_selectedSchema!),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSchemaPreview(SchemaRecord s) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header
+        Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.issuingAccent.withOpacity(0.18),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.description_outlined,
+                size: 17,
+                color: AppColors.issuingAccent,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.name,
+                    style: AppTextStyles.navLabelActive.copyWith(fontSize: 13),
+                  ),
+                  Text(
+                    s.category,
+                    style: AppTextStyles.bodyTiny.copyWith(
+                      fontSize: 9,
+                      color: AppColors.textDim,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          s.description,
+          style: AppTextStyles.bodyTiny.copyWith(
+            fontSize: 11,
+            height: 1.5,
+            color: AppColors.textMuted,
+          ),
+        ),
+
+        const SizedBox(height: 16),
+        _previewDivider('WHAT IS REQUIRED'),
+        const SizedBox(height: 8),
+        ...s.requirements.map(
+          (r) => Padding(
+            padding: const EdgeInsets.only(bottom: 5),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Icon(
+                    Icons.circle,
+                    size: 4,
+                    color: AppColors.issuingAccent,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    r,
+                    style: AppTextStyles.bodyTiny.copyWith(
+                      fontSize: 11,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+        _previewDivider('CREDENTIAL FIELDS'),
+        const SizedBox(height: 8),
+        ...s.fields.map(
+          (f) => Padding(
+            padding: const EdgeInsets.only(bottom: 5),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.subdirectory_arrow_right,
+                  size: 12,
+                  color: AppColors.textDim,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  f.label,
+                  style: AppTextStyles.bodyTiny.copyWith(fontSize: 11),
+                ),
+                if (f.required)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Text(
+                      '*',
+                      style: TextStyle(fontSize: 11, color: Colors.redAccent),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            _statChip('${s.credentialsIssued}', 'Issued'),
+            const SizedBox(width: 8),
+            _statChip('${s.fieldsCount}', 'Fields'),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _previewDivider(String label) {
+    return Row(
+      children: [
+        Text(
+          label,
+          style: AppTextStyles.bodyTiny.copyWith(
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.1,
+            color: AppColors.textDim,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(child: Container(height: 1, color: AppColors.border)),
+      ],
+    );
+  }
+
+  Widget _statChip(String value, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceHover,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: AppTextStyles.bodyTiny.copyWith(
+              fontSize: 10,
+              color: AppColors.textDim,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // STEP 2 — Find Holder
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildStep2() {
+    final holders = _filteredHolders;
+
+    return _card(
+      child: Column(
+        children: [
+          // ── Search bar ────────────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration:  BoxDecoration(
+              border: Border(bottom: BorderSide(color: AppColors.border)),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.search,
+                  size: 15,
+                  color: AppColors.issuingAccent,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _searchCtrl,
+                    style: const TextStyle(fontSize: 12, color: Colors.white),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: InputBorder.none,
+                      hintText: 'Search by name, ID, college…',
+                      hintStyle: AppTextStyles.bodyTiny.copyWith(
+                        fontSize: 12,
+                        color: AppColors.white.withOpacity(0.5),
+                      ),
+                    ),
+                    onChanged: (v) => setState(() => _holderSearch = v),
+                  ),
+                ),
+                if (_holderSearch.isNotEmpty)
+                  GestureDetector(
+                    onTap: () {
+                      _searchCtrl.clear();
+                      setState(() => _holderSearch = '');
+                    },
+                    child: const Icon(
+                      Icons.close,
+                      size: 13,
+                      color: AppColors.textDim,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // ── Column headers ────────────────────────────────────────────────
+          Container(
+            color: AppColors.issuingAccent.withOpacity(0.16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+            child: Row(
+              children: [
+                const SizedBox(width: 40),
+                _colHeader('NAME', flex: 3),
+                _colHeader('TYPE', flex: 2),
+                _colHeader('COLLEGE', flex: 3),
+                _colHeader('ID', flex: 2),
+                const SizedBox(width: 80),
+              ],
+            ),
+          ),
+          Container(height: 1, color: AppColors.border),
+
+          // ── Scrollable list ───────────────────────────────────────────────
+          Expanded(
+            child: holders.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No holders found.',
+                      style: TextStyle(color: AppColors.textDim, fontSize: 12),
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: holders.length,
+                    separatorBuilder: (_, __) =>
+                        Container(height: 1, color: AppColors.border),
+                    itemBuilder: (_, i) => HolderRow(
+                      holder: holders[i],
+                      isSelected: _selectedHolder?.id == holders[i].id,
+                      onToggle: () => setState(() {
+                        _step2Error = false;
+                        if (_selectedHolder?.id == holders[i].id) {
+                          _selectedHolder = null; // toggle off
+                        } else {
+                          _selectedHolder = holders[i];
+                        }
+                      }),
+                    ),
+                  ),
+          ),
+
+          // ── Selected banner ───────────────────────────────────────────────
+          if (_selectedHolder != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4CAF50).withOpacity(0.1),
+                border: const Border(
+                  top: BorderSide(color: Color(0xFF4CAF50), width: 1),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.check_circle,
+                    size: 13,
+                    color: Color(0xFF4CAF50),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${_selectedHolder!.fullName} selected — ${_selectedHolder!.id}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF4CAF50),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _colHeader(String text, {int flex = 1}) => Expanded(
+    flex: flex,
+    child: Text(
+      text,
+      style: AppTextStyles.bodyTiny.copyWith(
+        fontSize: 9,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 1.1,
+        color: AppColors.white,
+      ),
+    ),
+  );
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // STEP 3 — Fill Credential Details
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildStep3() {
+    final schema = _selectedSchema!;
+
+    return _card(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Holder mini-chip
+            _holderChip(schema),
+            const SizedBox(height: 20),
+
+            // Dynamic fields from schema
+            ...schema.fields.map((f) => _buildField(f)),
+
+            const SizedBox(height: 4),
+            Container(height: 1, color: AppColors.border),
+            const SizedBox(height: 14),
+
+            // Expiry date row
+            _buildExpiryRow(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _holderChip(SchemaRecord schema) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceHover,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          HolderAvatar(holder: _selectedHolder!),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _selectedHolder!.fullName,
+                  style: AppTextStyles.navLabelActive.copyWith(fontSize: 12),
+                ),
+                Text(
+                  '${_selectedHolder!.id}  ·  ${_selectedHolder!.type.label}',
+                  style: AppTextStyles.bodyTiny.copyWith(
+                    fontSize: 10,
+                    color: AppColors.textDim,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.issuingAccent.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              schema.name,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: AppColors.issuingAccent,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildField(SchemaField f) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _fieldLabel(f.label, required: f.required),
+          const SizedBox(height: 6),
+          if (f.type == SchemaFieldType.text ||
+              f.type == SchemaFieldType.number)
+            _StyledTextField(
+              controller: _fieldCtrl[f.id]!,
+              hint: f.type == SchemaFieldType.number
+                  ? 'Enter number…'
+                  : 'Enter ${f.label.toLowerCase()}…',
+              keyboardType: f.type == SchemaFieldType.number
+                  ? TextInputType.number
+                  : TextInputType.text,
+            )
+          else if (f.type == SchemaFieldType.dropdown)
+            _StyledDropdown(
+              value: (_fieldValues[f.id] ?? '').isEmpty
+                  ? null
+                  : _fieldValues[f.id],
+              hint: 'Select ${f.label.toLowerCase()}',
+              options: f.dropdownOptions,
+              onChanged: (v) => setState(() {
+                _fieldValues[f.id] = v ?? '';
+                _step3Error = false;
+              }),
+            )
+          else if (f.type == SchemaFieldType.yesNo)
+            _YesNoToggle(
+              value: _fieldValues[f.id],
+              onChanged: (v) => setState(() {
+                _fieldValues[f.id] = v;
+                _step3Error = false;
+              }),
+            )
+          else if (f.type == SchemaFieldType.date)
+            DatePickerButton(
+              value: (_fieldValues[f.id] ?? '').isEmpty
+                  ? null
+                  : _fieldValues[f.id],
+              onPick: (picked) => setState(() {
+                _fieldValues[f.id] = _fmt(picked);
+                _step3Error = false;
+              }),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExpiryRow() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _fieldLabel('Expiry Date', required: !_noExpiry),
+              const SizedBox(height: 6),
+              DatePickerButton(
+                value: _noExpiry
+                    ? 'No expiry set'
+                    : (_expiryDate != null ? _fmt(_expiryDate!) : null),
+                disabled: _noExpiry,
+                hint: 'Select expiry date',
+                onPick: (picked) => setState(() {
+                  _expiryDate = picked;
+                  _step3Error = false;
+                }),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 20),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _fieldLabel('No Expiry'),
+            const SizedBox(height: 4),
+            Switch(
+              value: _noExpiry,
+              onChanged: (v) => setState(() {
+                _noExpiry = v;
+                if (v) _expiryDate = null;
+              }),
+              activeColor: AppColors.issuingAccent,
+              activeTrackColor: AppColors.issuingAccent.withOpacity(0.22),
+              inactiveThumbColor: AppColors.textDim,
+              inactiveTrackColor: AppColors.surfaceHover,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // STEP 4 — Credential Preview
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildStep4() {
+    return _card(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(28),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: CredentialPreviewCard(
+              schema: _selectedSchema!,
+              holder: _selectedHolder!,
+              fieldValues: Map.from(_fieldValues),
+              expiryDate: _noExpiry ? null : _expiryDate,
+              noExpiry: _noExpiry,
+              orgName: _kOrgName,
+              issuerName: _kIssuerName,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // STEP 5 — Confirm & Issue
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildStep5() {
+    if (_isIssuing) {
+      return _card(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(
+                width: 38,
+                height: 38,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    AppColors.issuingAccent,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                _issuingStatus,
+                style: AppTextStyles.navLabelActive.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return _card(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _previewDivider('SUMMARY'),
+            const SizedBox(height: 14),
+            _summaryRow('Issued To', _selectedHolder!.fullName),
+            _summaryRow('Holder ID', _selectedHolder!.id),
+            _summaryRow('Credential Type', _selectedSchema!.name),
+            _summaryRow(
+              'Expiry Date',
+              _noExpiry
+                  ? 'No expiry'
+                  : _expiryDate != null
+                  ? _fmt(_expiryDate!)
+                  : '—',
+            ),
+            _summaryRow('Issued By', _kIssuerName),
+            _summaryRow('Organization', _kOrgName),
+            _summaryRow('Signing Algorithm', 'Dilithium (CRYSTALS-Dilithium3)'),
+            const SizedBox(height: 20),
+            Container(height: 1, color: AppColors.border),
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: () => setState(() => _confirmed = !_confirmed),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: Checkbox(
+                      value: _confirmed,
+                      onChanged: (v) => setState(() => _confirmed = v ?? false),
+                      activeColor: AppColors.issuingAccent,
+                      checkColor: Colors.white,
+                      side: const BorderSide(
+                        color: AppColors.border,
+                        width: 1.5,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'I confirm this information is correct and I am authorized '
+                      'to issue this credential on behalf of $_kOrgName.',
+                      style: AppTextStyles.bodyTiny.copyWith(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _summaryRow(String label, String value) => Padding(
+    padding: const EdgeInsets.only(bottom: 9),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 170,
+          child: Text(
+            label,
+            style: AppTextStyles.bodyTiny.copyWith(
+              fontSize: 11,
+              color: AppColors.textDim,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: AppTextStyles.bodyTiny.copyWith(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  // ── SUCCESS ───────────────────────────────────────────────────────────────
+
+  Widget _buildSuccess() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.issuingAccent.withOpacity(0.14),
+              ),
+              child: Icon(
+                Icons.check_circle_outline,
+                size: 40,
+                color: AppColors.issuingAccent,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Credential Issued Successfully',
+              style: AppTextStyles.navLabelActive.copyWith(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceHover,
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Text(
+                'Credential ID: $_issuedId',
+                style: AppTextStyles.bodyTiny.copyWith(
+                  fontSize: 11,
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '"${_selectedHolder?.fullName}" has been notified via QWallet',
+              style: AppTextStyles.bodyTiny.copyWith(
+                fontSize: 12,
+                color: AppColors.textDim,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            if (isSmallScreen(context)) ...[
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AppButton(
+                    label: 'Return to Dashboard',
+                    onTap: widget.onCancel,
+                    width: 190,
+                    showBorder: true,
+                    borderColor: AppColors.border,
+                    hoverColor: AppColors.surfaceHover,
+                  ),
+                  const SizedBox(height: 12),
+                  AppButton(
+                    label: 'Issue Another Credential',
+                    backgroundColor: AppColors.issuingAccent,
+                    hoverColor: AppColors.issuingAccent.withOpacity(0.82),
+                    onTap: widget.onIssueAnother,
+                    width: 190,
+                  ),
+                ],
+              ),
+            ] else ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AppButton(
+                    label: 'Return to Dashboard',
+                    onTap: widget.onCancel,
+                    width: 164,
+                    showBorder: true,
+                    borderColor: AppColors.issuingAccent,
+                    hoverColor: AppColors.surfaceHover,
+                  ),
+                  const SizedBox(width: 12),
+                  AppButton(
+                    label: 'Issue Another Credential',
+                    backgroundColor: AppColors.issuingAccent,
+                    hoverColor: AppColors.issuingAccent.withOpacity(0.82),
+                    onTap: widget.onIssueAnother,
+                    width: 190,
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── BOTTOM BUTTONS ───────────────────────────────────────────────────────
+
+  Widget _buildBottomButtons() {
+    String? errorMsg;
+    if (_step == 1 && _step1Error) {
+      errorMsg = 'Please select a credential type to continue.';
+    } else if (_step == 2 && _step2Error) {
+      errorMsg = 'Please select a holder to continue.';
+    } else if (_step == 3 && _step3Error) {
+      errorMsg = 'Please complete all required fields.';
+    }
+
+    return Row(
+      children: [
+        if (_step == 1)
+          AppButton(
+            label: 'Cancel',
+            onTap: widget.onCancel,
+            width: 80,
+            backgroundColor: Colors.red,
+            showBorder: true,
+            borderColor: Colors.redAccent,
+            hoverColor: AppColors.surfaceHover,
+          ),
+        if (_step == 1) const SizedBox(width: 10),
+        if (_step > 1)
+          AppButton(label: '← Back', onTap: _goBack, width: 80, showBorder: true, borderColor: AppColors.border, hoverColor: AppColors.surfaceHover),
+        if (_step > 1) const SizedBox(width: 10),
+        if (_step == 4)
+          AppButton(
+            label: 'Edit Details',
+            onTap: () => setState(() => _step = 3),
+            width: 107,
+            showBorder: true,
+            borderColor: AppColors.issuingAccent,
+            hoverColor: AppColors.surfaceHover,
+          ),
+        if (_step == 4) const SizedBox(width: 10),
+        AppButton(
+          label: _step == _kTotalSteps ? 'Issue Credential' : 'Next →',
+          backgroundColor: AppColors.issuingAccent,
+          hoverColor: AppColors.issuingAccent.withOpacity(0.82),
+          enabled: _step == _kTotalSteps ? _confirmed : true,
+          onTap: _goNext,
+          width: _step == _kTotalSteps ? 150 : 90,
+        ),
+        if (errorMsg != null) ...[
+          const SizedBox(width: 14),
+          const Icon(Icons.error_outline, size: 13, color: Colors.redAccent),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              errorMsg,
+              style: const TextStyle(fontSize: 11, color: Colors.redAccent),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ─── SHARED HELPERS ───────────────────────────────────────────────────────
+
+  /// Standard dark card that fills its parent via BoxConstraints.expand().
+  Widget _card({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFF111111),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: child,
+    );
+  }
+
+  Widget _fieldLabel(String label, {bool required = false}) => Row(
+    children: [
+      Text(
+        label,
+        style: AppTextStyles.bodyTiny.copyWith(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textMuted,
+        ),
+      ),
+      if (required)
+        const Text(
+          '  *',
+          style: TextStyle(fontSize: 11, color: Colors.redAccent),
+        ),
+    ],
+  );
+
+  String _fmt(DateTime d) {
+    const m = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${d.day.toString().padLeft(2, '0')} ${m[d.month - 1]} ${d.year}';
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    for (final c in _fieldCtrl.values) c.dispose();
+    super.dispose();
+  }
+}
+
+class _StyledTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final String hint;
+  final TextInputType keyboardType;
+  const _StyledTextField({
+    required this.controller,
+    required this.hint,
+    this.keyboardType = TextInputType.text,
+  });
+
+  @override
+  Widget build(BuildContext context) => TextField(
+    controller: controller,
+    keyboardType: keyboardType,
+    style: const TextStyle(fontSize: 12, color: Colors.white),
+    decoration: InputDecoration(
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      hintText: hint,
+      hintStyle: const TextStyle(fontSize: 12, color: AppColors.textDim),
+      filled: true,
+      fillColor: AppColors.surfaceHover,
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(7),
+        borderSide: const BorderSide(color: AppColors.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(7),
+        borderSide: BorderSide(color: AppColors.issuingAccent, width: 1.5),
+      ),
+    ),
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// STYLED DROPDOWN
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _StyledDropdown extends StatelessWidget {
+  final String? value;
+  final String hint;
+  final List<String> options;
+  final ValueChanged<String?> onChanged;
+  const _StyledDropdown({
+    required this.value,
+    required this.hint,
+    required this.options,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) => DropdownButtonFormField<String>(
+    value: value,
+    isExpanded: true,
+    hint: Text(
+      hint,
+      style: const TextStyle(fontSize: 12, color: AppColors.textDim),
+    ),
+    dropdownColor: const Color(0xFF1C1C1C),
+    style: const TextStyle(fontSize: 12, color: Colors.white),
+    icon: const Icon(
+      Icons.keyboard_arrow_down,
+      size: 18,
+      color: AppColors.textDim,
+    ),
+    decoration: InputDecoration(
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      filled: true,
+      fillColor: AppColors.surfaceHover,
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(7),
+        borderSide: const BorderSide(color: AppColors.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(7),
+        borderSide: BorderSide(color: AppColors.issuingAccent, width: 1.5),
+      ),
+    ),
+    items: options
+        .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+        .toList(),
+    onChanged: onChanged,
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// YES / NO TOGGLE
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _YesNoToggle extends StatelessWidget {
+  final String? value;
+  final ValueChanged<String> onChanged;
+  const _YesNoToggle({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: ['Yes', 'No'].map((opt) {
+      final sel = value == opt;
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: () => onChanged(opt),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              decoration: BoxDecoration(
+                color: sel
+                    ? AppColors.issuingAccent.withOpacity(0.14)
+                    : AppColors.surfaceHover,
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(
+                  color: sel ? AppColors.issuingAccent : AppColors.border,
+                  width: sel ? 1.5 : 1,
+                ),
+              ),
+              child: Text(
+                opt,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: sel ? AppColors.issuingAccent : AppColors.textMuted,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }).toList(),
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+
