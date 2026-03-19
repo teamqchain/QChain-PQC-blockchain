@@ -23,7 +23,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
-      title: 'QPortal',
+      title: 'QWallet',
       debugShowCheckedModeBanner: true,
       theme: lightMode,
       darkTheme: darkMode,
