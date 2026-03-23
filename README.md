@@ -1,6 +1,6 @@
 ## QChain - Blockchain + Quantum Security
 
-A student Junior Project combining blockchain and post-quantum cryptography.
+A student Junior Project combining Blockchain and Post-Quantum Cryptography.
 
 ### Meet our Team
 
