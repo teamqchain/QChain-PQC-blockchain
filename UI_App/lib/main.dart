@@ -24,7 +24,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return GetMaterialApp(
       title: 'QWallet',
-      debugShowCheckedModeBanner: false,
+      debugShowCheckedModeBanner: true,
       theme: lightMode,
       darkTheme: darkMode,
       themeMode: ThemeMode.dark,
