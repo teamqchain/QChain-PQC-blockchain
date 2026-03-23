@@ -110,6 +110,16 @@ QChain-PQC-blockchain/
 
 ---
 
+### UI Components
+
+- 📱 **Mobile App (Flutter)**  
+  See detailed documentation: [UI_App README](./UI_App/README.md)
+
+- 🌐 **Web App Interface**  
+  See detailed documentation: [UI_WebApp README](./UI_WebApp/README.md)
+
+---
+
 ### Getting Started
 
 #### Prerequisites
