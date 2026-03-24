@@ -13,7 +13,7 @@
 | --- | --- | --- |
 | Mohammed Bin Ali Maqqavi | U22106429 | Project Lead, Quantum Engineer |
 | Mohammed Abdul Haris | U23100877 | Technical Lead, Software Engineer |
-| Muhammed Nihal Valiya Puthiyakath | U22102175 | UI/UX Designer, Quality Assurance Lead |
+| Muhammed Nihal |  | UI/UX Designer, Quality Assurance Lead |
 | Mohammed Hisham Obeid | U22105997 | Blockchain Engineer, Security Analyst |
 
 ---
