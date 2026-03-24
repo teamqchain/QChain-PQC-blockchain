@@ -1,7 +1,7 @@
 # QChain — Literature Review
 
 **Topic:** Post-Quantum Cryptography in Blockchain Technology  
-**Compiled by:** Mohammed Bin Ali Maqqavi, Mohammed Hisham Obeid, Muhammed Nihal Valiya Puthiyakath, Mohammed Abdul Haris  
+**Compiled by:** Mohammed Bin Ali Maqqavi, Mohammed Hisham Obeid, Muhammed Nihal , Mohammed Abdul Haris  
 **Supervised by:** Dr. Manar Abu Talib, Dr. Sohail Abbas
 **Last Updated:** 1st March 2026
 
