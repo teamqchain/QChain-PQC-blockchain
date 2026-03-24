@@ -6,51 +6,70 @@ import (
 	"github.com/open-quantum-safe/liboqs-go/oqs"
 )
 
-const sigName = "ML-DSA-44"
+// levels for ML-DSA
+var algorithms = []string{
+	"ML-DSA-44",
+	"ML-DSA-65",
+	"ML-DSA-87",
+}
 
 // Key Generation Speed
 func BenchmarkKeyGeneration(b *testing.B) {
-	signer := oqs.Signature{}
-	signer.Init(sigName, nil)
-	defer signer.Clean()
+	for _, alg := range algorithms {
+		b.Run(alg, func(b *testing.B) {
+			signer := oqs.Signature{}
+			signer.Init(alg, nil)
+			defer signer.Clean()
 
-	b.ResetTimer() // Only measure the actual math, not the setup
-	for i := 0; i < b.N; i++ {
-		_, _ = signer.GenerateKeyPair()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, _ = signer.GenerateKeyPair()
+			}
+		})
 	}
 }
 
 // Signing Speed
 func BenchmarkSigning(b *testing.B) {
-	signer := oqs.Signature{}
-	signer.Init(sigName, nil)
-	defer signer.Clean()
-
-	_, _ = signer.GenerateKeyPair()
 	dummyCID := []byte("bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi")
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, _ = signer.Sign(dummyCID)
+	for _, alg := range algorithms {
+		b.Run(alg, func(b *testing.B) {
+			signer := oqs.Signature{}
+			signer.Init(alg, nil)
+			defer signer.Clean()
+
+			_, _ = signer.GenerateKeyPair()
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, _ = signer.Sign(dummyCID)
+			}
+		})
 	}
 }
 
 // Verification Speed
 func BenchmarkVerification(b *testing.B) {
-	signer := oqs.Signature{}
-	signer.Init(sigName, nil)
-	defer signer.Clean()
-
-	pubKey, _ := signer.GenerateKeyPair()
 	dummyCID := []byte("bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi")
-	signature, _ := signer.Sign(dummyCID)
 
-	verifier := oqs.Signature{}
-	verifier.Init(sigName, nil)
-	defer verifier.Clean()
+	for _, alg := range algorithms {
+		b.Run(alg, func(b *testing.B) {
+			signer := oqs.Signature{}
+			signer.Init(alg, nil)
+			defer signer.Clean()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, _ = verifier.Verify(dummyCID, signature, pubKey)
+			pubKey, _ := signer.GenerateKeyPair()
+			signature, _ := signer.Sign(dummyCID)
+
+			verifier := oqs.Signature{}
+			verifier.Init(alg, nil)
+			defer verifier.Clean()
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, _ = verifier.Verify(dummyCID, signature, pubKey)
+			}
+		})
 	}
 }
