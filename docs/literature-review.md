@@ -5,7 +5,7 @@
 **Supervised by:** Dr. Manar Abu Talib, Dr. Sohail Abbas
 **Last Updated:** 1st March 2026
 
-> Full interactive database: https://muhammed.me/QChain-PQC-blockchain/home.html
+> Full interactive database: https://muhammed.me/QChain-PQC-blockchain/
 
 ---
 
