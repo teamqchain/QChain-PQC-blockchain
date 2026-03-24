@@ -182,6 +182,9 @@ class ShellRouterDelegate extends RouterDelegate<String> with ChangeNotifier {
     if (_verifierRoutes.contains(route) && !_variant.canVerify) {
       return DashboardVariant.verifierOnly;
     }
+    if (_ITAdminRoutes.contains(route) && !_variant.canManage) {
+      return DashboardVariant.ITadmin;
+    }
     return null; // no switch needed
   }
 
@@ -429,7 +432,9 @@ class _AppShellState extends State<_AppShell> {
         );
 
       case RouteName.alertHistory:
-        return AlertsPage(onBack: () => _handleNavigate(RouteName.subscription));
+        return AlertsPage(
+          onBack: () => _handleNavigate(RouteName.subscription),
+        );
 
       case RouteName.policies:
         return PoliciesPage(
