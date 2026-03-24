@@ -9,12 +9,12 @@
 
 ## Team Members
 
-| Name | Student ID | Role |
-| --- | --- | --- |
-| Mohammed Bin Ali Maqqavi | U22106429 | Project Lead, Quantum Engineer |
-| Mohammed Abdul Haris | U23100877 | Technical Lead, Software Engineer |
-| Muhammed Nihal |  | UI/UX Designer, Quality Assurance Lead |
-| Mohammed Hisham Obeid | U22105997 | Blockchain Engineer, Security Analyst |
+| Name | Role | GitHub |
+| ---  | --- | --- |
+| Mohammed Bin Ali Maqqavi | Project Lead, Quantum Engineer | @M0hd-Maqqavi |
+| Mohammed Abdul Haris | Technical Lead, Software Engineer | @mohammed-ah-14 |
+| Muhammed Nihal | UI/UX Designer, Quality Assurance Lead | @nihvp 
+| Mohammed Hisham Obeid | Blockchain Engineer, Security Analyst | @MohammedObeid88 |
 
 ---
 
