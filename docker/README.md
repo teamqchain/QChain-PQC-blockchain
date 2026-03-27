@@ -69,6 +69,7 @@ Profiles let you start only what you need. Use `--profile <name>`:
 | `web` | Web app (QPortal) | Working on Issuer/Verifier UI |
 | `mobile-dev` | Flutter mobile env | Building Android APK |
 | `web-dev` | Web app + hot reload | Developing web UI (see changes live) |
+| `native-dev` | Go backend + hot reload | Developing Go backend (requires dev compose file) |
 | `full` | Everything | Running complete stack |
 
 ---

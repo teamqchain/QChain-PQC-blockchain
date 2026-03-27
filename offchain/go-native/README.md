@@ -1,5 +1,14 @@
 # QChain: Post-Quantum Credentialing (Using native Go algorithms from CIRCL)
 
+> **Recommended:** Use the centralized Docker setup for easier development.
+> ```bash
+> cd docker
+> docker compose --profile native run --rm go-native
+> ```
+> See [Docker Setup Guide](../../docker/README.md) for complete documentation.
+
+---
+
 This repository contains the core cryptographic and storage logic for **QChain**, a decentralized academic credentialing system. It uses purely native Go implementations of Post-Quantum Cryptography (NIST ML-DSA) and IPFS for decentralized storage.
 
 ## 📄 Files Included
