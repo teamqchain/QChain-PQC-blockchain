@@ -1,0 +1,31 @@
+# Flutter Mobile App .dockerignore
+
+# Build artifacts
+build/
+.dart_tool/
+.pub-cache/
+.pub/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS files
+.DS_Store
+*.log
+
+# Generated code
+*.g.dart
+*.freezed.dart
+
+# Large cache directories
+android/.gradle/
+ios/Pods/
+
+# Documentation
+*.md
+
+# Git
+.git
+.gitignore

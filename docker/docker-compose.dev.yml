@@ -1,0 +1,48 @@
+version: "3.9"
+
+# Development overrides - use with:
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  # Hot reload for web app development
+  webapp-dev:
+    image: ghcr.io/cirruslabs/flutter:3.27.0
+    container_name: qchain-webapp-dev
+    ports:
+      - "${WEBAPP_DEV_PORT:-8081}:8081"
+    volumes:
+      - ../UI_WebApp:/app
+      - webapp_pub_cache:/root/.pub-cache
+    working_dir: /app
+    command: >
+      sh -c "flutter pub get &&
+             flutter run -d web-server --web-port=8081 --web-hostname=0.0.0.0"
+    networks:
+      - qchain-network
+    profiles:
+      - web-dev
+    stdin_open: true
+    tty: true
+
+  # Development mode for go-native with live reload
+  go-native-dev:
+    image: golang:1.23-alpine
+    container_name: qchain-go-native-dev
+    depends_on:
+      ipfs:
+        condition: service_healthy
+    environment:
+      - IPFS_API_HOST=ipfs
+      - IPFS_API_PORT=5001
+    volumes:
+      - ../offchain/go-native:/app
+    working_dir: /app
+    command: ["go", "run", "main.go"]
+    networks:
+      - qchain-network
+    profiles:
+      - native-dev
+
+volumes:
+  webapp_pub_cache:
+    driver: local
