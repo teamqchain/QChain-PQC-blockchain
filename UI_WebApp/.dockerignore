@@ -1,34 +1,63 @@
-# Flutter Web App .dockerignore
+# =============================================================================
+# DOCKERIGNORE - Flutter Web App (UI_WebApp)
+# =============================================================================
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  WHAT IS THIS FILE?                                                     │
+# ├─────────────────────────────────────────────────────────────────────────┤
+# │  .dockerignore tells Docker which files to SKIP when building.          │
+# │  This is especially important for Flutter because the web build         │
+# │  doesn't need Android/iOS platform folders (saves ~200MB+).             │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# =============================================================================
 
-# Build artifacts
-build/
-.dart_tool/
-.pub-cache/
-.pub/
+# -----------------------------------------------------------------------------
+# BUILD ARTIFACTS - Will be rebuilt inside the container
+# -----------------------------------------------------------------------------
+build/              # Previous build output
+.dart_tool/         # Dart analyzer cache
+.pub-cache/         # Downloaded packages
+.pub/               # Pub temporary files
 
-# IDE
-.idea/
-*.iml
-.vscode/
+# -----------------------------------------------------------------------------
+# IDE FILES - Not needed for building
+# -----------------------------------------------------------------------------
+.idea/              # IntelliJ/Android Studio
+*.iml               # IntelliJ module files
+.vscode/            # VS Code settings
 
-# OS files
-.DS_Store
-*.log
+# -----------------------------------------------------------------------------
+# OS FILES
+# -----------------------------------------------------------------------------
+.DS_Store           # macOS folder metadata
+*.log               # Log files
 
-# Test and coverage
-coverage/
-test/
+# -----------------------------------------------------------------------------
+# TEST FILES - Not needed for production build
+# -----------------------------------------------------------------------------
+coverage/           # Test coverage reports
+test/               # Test files (we're only building, not testing)
 
-# Platform-specific (not needed for web build)
-android/
-ios/
-linux/
-macos/
-windows/
+# -----------------------------------------------------------------------------
+# PLATFORM FOLDERS - NOT NEEDED FOR WEB BUILD!
+# -----------------------------------------------------------------------------
+# These folders are for native mobile/desktop builds.
+# Since we're building for WEB only, we skip them entirely.
+# This saves a LOT of space and build time!
+android/            # Android platform code (~100MB)
+ios/                # iOS platform code (~50MB)
+linux/              # Linux desktop code
+macos/              # macOS desktop code
+windows/            # Windows desktop code
 
-# Documentation
-*.md
+# -----------------------------------------------------------------------------
+# DOCUMENTATION - Not needed for building
+# -----------------------------------------------------------------------------
+*.md                # README and other docs
 
-# Git
-.git
-.gitignore
+# -----------------------------------------------------------------------------
+# GIT - Version control files
+# -----------------------------------------------------------------------------
+.git                # Git repository data
+.gitignore          # Git ignore file
