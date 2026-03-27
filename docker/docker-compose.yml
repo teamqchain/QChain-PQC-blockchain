@@ -1,117 +1,357 @@
+# =============================================================================
+# QCHAIN DOCKER COMPOSE - MAIN CONFIGURATION FILE
+# =============================================================================
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  WHAT IS DOCKER COMPOSE?                                                │
+# ├─────────────────────────────────────────────────────────────────────────┤
+# │  Docker Compose is a tool for running multiple "containers" together.   │
+# │                                                                         │
+# │  What is a container?                                                   │
+# │  → A container is like a mini virtual machine that runs ONE application │
+# │  → Each container is isolated (has its own files, network, etc.)        │
+# │  → Containers are defined by "Dockerfiles" (recipes to build them)      │
+# │                                                                         │
+# │  Why use Docker?                                                        │
+# │  → Everyone gets the EXACT same environment (no "works on my machine")  │
+# │  → Easy to set up - just run one command                                │
+# │  → Easy to share - just share this file                                 │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  HOW TO USE THIS FILE                                                   │
+# ├─────────────────────────────────────────────────────────────────────────┤
+# │  STEP 1: Navigate to this folder                                        │
+# │          cd docker                                                      │
+# │                                                                         │
+# │  STEP 2: Copy the environment template                                  │
+# │          cp .env.example .env                                           │
+# │                                                                         │
+# │  STEP 3: Start the services you need (pick one):                        │
+# │          docker compose --profile native up -d    # Go + IPFS           │
+# │          docker compose --profile web up -d       # Web app only        │
+# │          docker compose --profile full up -d      # Everything          │
+# │                                                                         │
+# │  STEP 4: When done, stop everything:                                    │
+# │          docker compose down                                            │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  PROFILES EXPLAINED (--profile flag)                                    │
+# ├─────────────────────────────────────────────────────────────────────────┤
+# │  Profiles let you start ONLY what you need (saves computer resources):  │
+# │                                                                         │
+# │  --profile native     → IPFS + go-native (pure Go, lightweight)         │
+# │  --profile bindings   → IPFS + go-bindings (C library, heavier)         │
+# │  --profile web        → Flutter web app (QPortal)                       │
+# │  --profile mobile-dev → Flutter mobile dev environment                  │
+# │  --profile full       → Start EVERYTHING                                │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  COMMON COMMANDS CHEAT SHEET                                            │
+# ├─────────────────────────────────────────────────────────────────────────┤
+# │  # See what's running:                                                  │
+# │  docker compose ps                                                      │
+# │                                                                         │
+# │  # View live logs (press Ctrl+C to exit):                               │
+# │  docker compose logs -f ipfs                                            │
+# │                                                                         │
+# │  # Rebuild after changing code:                                         │
+# │  docker compose --profile native build                                  │
+# │                                                                         │
+# │  # Run a one-time command (--rm deletes container after):               │
+# │  docker compose --profile native run --rm go-native                     │
+# │                                                                         │
+# │  # Stop and remove everything (keeps data):                             │
+# │  docker compose down                                                    │
+# │                                                                         │
+# │  # Stop and DELETE ALL DATA (careful!):                                 │
+# │  docker compose down -v                                                 │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# =============================================================================
+
+# Docker Compose file format version (3.9 is latest stable with all features)
 version: "3.9"
 
+# =============================================================================
+# SERVICES - Each service becomes a container (isolated mini-computer)
+# =============================================================================
+
 services:
-  # ==========================================================================
-  # Infrastructure Services
-  # ==========================================================================
+
+  # ===========================================================================
+  # IPFS - InterPlanetary File System (Shared Storage)
+  # ===========================================================================
+  #
+  # WHAT IS IPFS?
+  # → Decentralized file storage (like Google Drive, but no central server)
+  # → When you upload a file, you get a unique "CID" (Content ID)
+  # → Anyone with the CID can download the file
+  #
+  # WHY DO WE USE IT?
+  # → Post-quantum signatures are HUGE (2-3KB vs 64 bytes for classical)
+  # → Storing directly on blockchain = expensive and slow
+  # → Instead: store on IPFS, put only the small CID on blockchain
+  #
+  # AFTER STARTING:
+  # → API (for code): http://localhost:5001
+  # → Gateway (browser): http://localhost:8080/ipfs/<your-CID>
+  #
   ipfs:
+    # "image" = download pre-built container from Docker Hub (not build from code)
+    # ipfs/kubo is the official IPFS software (formerly called go-ipfs)
     image: ipfs/kubo:latest
+
+    # Friendly name for this container (shows up when you run "docker ps")
     container_name: qchain-ipfs
+
+    # PORTS: Make container accessible from your computer
+    # Format: "YOUR_COMPUTER_PORT:CONTAINER_PORT"
+    # ${IPFS_API_PORT:-5001} means: use .env value, or default to 5001
     ports:
-      - "${IPFS_API_PORT:-5001}:5001"    # API
-      - "${IPFS_GATEWAY_PORT:-8080}:8080" # Gateway
-      - "4001:4001"                       # Swarm
+      - "${IPFS_API_PORT:-5001}:5001"    # API - your code connects here to upload files
+      - "${IPFS_GATEWAY_PORT:-8080}:8080" # Gateway - view files in browser
+      - "4001:4001"                       # Swarm - connects to global IPFS network
+
+    # VOLUMES: Save data even when container stops
+    # Without this, all uploaded files would DISAPPEAR on restart!
     volumes:
-      - ipfs_data:/data/ipfs
+      - ipfs_data:/data/ipfs  # "ipfs_data" is defined at bottom of this file
+
+    # ENVIRONMENT: Settings passed into the container
     environment:
-      - IPFS_PROFILE=server
+      - IPFS_PROFILE=server  # Optimize for server (vs desktop) use
+
+    # HEALTHCHECK: How Docker knows IPFS is ready
+    # Other services wait for this before starting (see "depends_on" below)
     healthcheck:
-      test: ["CMD-SHELL", "ipfs id || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "ipfs id || exit 1"]  # Run "ipfs id" to check if working
+      interval: 10s   # Check every 10 seconds
+      timeout: 5s     # Fail if no response in 5 seconds
+      retries: 5      # Mark unhealthy after 5 failures
+
+    # RESTART: What to do if IPFS crashes
+    # "unless-stopped" = auto-restart, except if you manually stop it
     restart: unless-stopped
+
+    # NETWORKS: Connect to our private network
+    # Services on same network can talk to each other by name
     networks:
       - qchain-network
 
-  # ==========================================================================
-  # Backend Services
-  # ==========================================================================
+  # ===========================================================================
+  # GO-BINDINGS - Post-Quantum Crypto Backend (liboqs C Library)
+  # ===========================================================================
+  #
+  # WHAT DOES THIS DO?
+  # → Generates ML-DSA-44 (Dilithium) quantum-resistant key pairs
+  # → Signs PDF documents with post-quantum signatures
+  # → Uploads documents and signatures to IPFS
+  # → Returns a CID to store on Hyperledger Fabric blockchain
+  #
+  # WHEN TO USE go-bindings vs go-native?
+  # → go-bindings: Uses C library (liboqs), potentially faster, complex build
+  # → go-native: Pure Go (CIRCL), easier build, smaller image
+  # → Both produce identical results, just different implementations
+  #
+  # HOW TO RUN:
+  # → docker compose --profile bindings run --rm go-bindings
+  #
   go-bindings:
+    # BUILD: Create container from our Dockerfile (not download pre-built)
     build:
-      context: ../offchain/go-bindings
-      dockerfile: Dockerfile
+      context: ../offchain/go-bindings  # Folder with the code
+      dockerfile: Dockerfile             # Recipe file to build the container
+
     container_name: qchain-go-bindings
+
+    # DEPENDS_ON: Wait for IPFS to be ready before starting
+    # Without this, go-bindings might fail with "connection refused"
     depends_on:
       ipfs:
-        condition: service_healthy
+        condition: service_healthy  # Wait for IPFS healthcheck to pass
+
+    # ENVIRONMENT: Variables our Go code reads with os.Getenv()
+    # "ipfs" is the SERVICE NAME - Docker automatically resolves it to IP address!
     environment:
-      - IPFS_API_HOST=ipfs
+      - IPFS_API_HOST=ipfs  # Points to the "ipfs" service above
       - IPFS_API_PORT=5001
+
+    # VOLUMES: Share files between your computer and container
+    # Format: "PATH_ON_YOUR_COMPUTER:PATH_IN_CONTAINER:OPTIONS"
+    # ":ro" = read-only (container can't modify your files)
     volumes:
       - ../offchain/go-bindings/transcript.pdf:/app/transcript.pdf:ro
+
     networks:
       - qchain-network
+
+    # PROFILES: Only starts when you use --profile bindings or --profile full
+    # This prevents it from starting accidentally when you only want webapp
     profiles:
       - bindings
       - full
 
+  # ===========================================================================
+  # GO-NATIVE - Post-Quantum Crypto Backend (Cloudflare CIRCL - Pure Go)
+  # ===========================================================================
+  #
+  # SAME as go-bindings, but uses Cloudflare's CIRCL library (pure Go).
+  #
+  # ADVANTAGES:
+  # → Much smaller container (~20MB vs ~150MB)
+  # → Faster to build (no C compilation)
+  # → Easier to understand and debug
+  #
+  # HOW TO RUN:
+  # → docker compose --profile native run --rm go-native
+  #
   go-native:
     build:
       context: ../offchain/go-native
       dockerfile: Dockerfile
+
     container_name: qchain-go-native
+
     depends_on:
       ipfs:
         condition: service_healthy
+
     environment:
       - IPFS_API_HOST=ipfs
       - IPFS_API_PORT=5001
+
     volumes:
       - ../offchain/go-native/transcript.pdf:/app/transcript.pdf:ro
+
     networks:
       - qchain-network
+
     profiles:
       - native
       - full
 
-  # ==========================================================================
-  # Frontend Services
-  # ==========================================================================
+  # ===========================================================================
+  # WEBAPP - Flutter Web Application (QPortal - Production Build)
+  # ===========================================================================
+  #
+  # WHAT IS THIS?
+  # → QPortal web interface for Issuers, Verifiers, and IT Admins
+  # → The Dockerfile compiles Flutter to HTML/CSS/JS
+  # → Then serves it using Nginx (a fast web server)
+  #
+  # AFTER STARTING:
+  # → Open browser: http://localhost:3000
+  #
+  # HOW TO START:
+  # → docker compose --profile web up -d
+  #
   webapp:
     build:
       context: ../UI_WebApp
       dockerfile: Dockerfile
+
     container_name: qchain-webapp
+
+    # Map container's port 80 to your computer's port 3000
+    # So http://localhost:3000 shows the Flutter app
     ports:
       - "${WEBAPP_PORT:-3000}:80"
+
     networks:
       - qchain-network
+
     profiles:
       - web
       - full
+
+    # Verify the web server is responding
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
       interval: 30s
       timeout: 3s
       retries: 3
 
-  # Mobile Development Environment
+  # ===========================================================================
+  # MOBILE-DEV - Flutter Mobile Development Environment
+  # ===========================================================================
+  #
+  # WHAT IS THIS?
+  # → Development environment for QWallet mobile app
+  # → NOT for production - just for building APKs and running flutter commands
+  #
+  # HOW TO USE:
+  # → Build APK:
+  #   docker compose --profile mobile-dev run --rm mobile-dev flutter build apk
+  #
+  # → Run tests:
+  #   docker compose --profile mobile-dev run --rm mobile-dev flutter test
+  #
+  # → Get interactive shell:
+  #   docker compose --profile mobile-dev run --rm mobile-dev bash
+  #
   mobile-dev:
     build:
       context: ../UI_App
       dockerfile: Dockerfile
+
     container_name: qchain-mobile-dev
+
+    # BIND MOUNTS: Share your code folder with the container
+    # Changes you make appear instantly inside container (and vice versa)
     volumes:
-      - ../UI_App:/app
-      - mobile_gradle_cache:/root/.gradle
-      - mobile_pub_cache:/root/.pub-cache
+      - ../UI_App:/app                     # Your Flutter source code
+      - mobile_gradle_cache:/root/.gradle  # Android build cache (speeds up builds A LOT)
+      - mobile_pub_cache:/root/.pub-cache  # Flutter packages cache
+
     environment:
       - FLUTTER_HOME=/sdks/flutter
+
+    # Start in /app directory
     working_dir: /app
+
     profiles:
       - mobile-dev
-    stdin_open: true
-    tty: true
 
+    # Allow interactive terminal (needed for flutter run, etc.)
+    stdin_open: true  # Keep input open (like -i flag)
+    tty: true         # Allocate terminal (like -t flag)
+
+# =============================================================================
+# NETWORKS - How containers communicate with each other
+# =============================================================================
+#
+# All services on the same network can reach each other BY NAME.
+# Example: go-native connects to "ipfs:5001" - Docker resolves "ipfs" to IP.
+#
 networks:
   qchain-network:
-    driver: bridge
+    driver: bridge  # Default driver, creates isolated virtual network
 
+# =============================================================================
+# VOLUMES - Persistent storage that survives container restarts
+# =============================================================================
+#
+# Without volumes, all data is LOST when container stops!
+#
+# USEFUL COMMANDS:
+# → See all volumes:     docker volume ls
+# → Inspect a volume:    docker volume inspect ipfs_data
+# → Delete ALL volumes:  docker compose down -v   (CAREFUL - loses data!)
+#
 volumes:
+  # All files uploaded to IPFS are stored here
+  # DELETE THIS = DELETE ALL YOUR UPLOADED FILES!
   ipfs_data:
     driver: local
+
+  # Android Gradle cache - makes builds much faster after first time
+  # First build: ~10 minutes, subsequent: ~1 minute
   mobile_gradle_cache:
     driver: local
+
+  # Flutter pub (package) cache - stores downloaded Dart packages
   mobile_pub_cache:
     driver: local
