@@ -112,23 +112,54 @@ QChain-PQC-blockchain/
 
 ### UI Components
 
-- 📱 **Mobile App (Flutter)**  
+- 📱 **Mobile App (Flutter)**
   See detailed documentation: [UI_App README](./UI_App/README.md)
 
-- 🌐 **Web App Interface**  
+- 🌐 **Web App Interface**
   See detailed documentation: [UI_WebApp README](./UI_WebApp/README.md)
+
+- 🔧 **Backend (Go + PQC)**
+  See detailed documentation: [offchain README](./offchain/README.md)
+
+- 🐳 **Docker Setup**
+  See detailed documentation: [Docker README](./docker/README.md)
 
 ---
 
 ### Getting Started
 
-#### Prerequisites
+#### Option 1: Using Docker (Recommended)
+
+Docker ensures everyone has the exact same environment. Perfect for team collaboration.
+
+```bash
+# Navigate to docker folder
+cd docker
+
+# Copy environment template
+cp .env.example .env
+
+# Start IPFS (required for backend)
+docker compose up -d ipfs
+
+# Run the PQC backend demo
+docker compose --profile native run --rm go-native
+
+# Start the web app
+docker compose --profile web up -d
+# Open http://localhost:3000
+```
+
+See the [Docker Setup Guide](./docker/README.md) for complete documentation.
+
+#### Option 2: Local Development
+
+##### Prerequisites
 - Go 1.18+
 - Flutter SDK 3.0+
-- Docker (optional)
-- IPFS node
+- IPFS node running locally
 
-#### Run the Backend
+##### Run the Backend
 
 ```bash
 cd offchain
@@ -136,7 +167,7 @@ go mod download
 go run main.go
 ```
 
-#### Run the Mobile App
+##### Run the Mobile App
 
 ```bash
 cd UI_App

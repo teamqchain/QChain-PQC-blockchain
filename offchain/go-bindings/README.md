@@ -1,6 +1,15 @@
 # QChain: Post-Quantum Credentialing (Using liboqs-go bindings)
 
-This repository contains the cryptographic and storage logic for **QChain**. It implements NIST ML-DSA using the `liboqs-go` wrapper (which relies on the Open Quantum Safe C-library) and uses IPFS for decentralized document storage. 
+> **Recommended:** Use the centralized Docker setup for easier development.
+> ```bash
+> cd docker
+> docker compose --profile bindings run --rm go-bindings
+> ```
+> See [Docker Setup Guide](../../docker/README.md) for complete documentation.
+
+---
+
+This repository contains the cryptographic and storage logic for **QChain**. It implements NIST ML-DSA using the `liboqs-go` wrapper (which relies on the Open Quantum Safe C-library) and uses IPFS for decentralized document storage.
 
 Because `liboqs-go` requires OS-level C dependencies, the entire execution environment is containerized using Docker.
 
