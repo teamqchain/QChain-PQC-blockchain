@@ -1,0 +1,117 @@
+version: "3.9"
+
+services:
+  # ==========================================================================
+  # Infrastructure Services
+  # ==========================================================================
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: qchain-ipfs
+    ports:
+      - "${IPFS_API_PORT:-5001}:5001"    # API
+      - "${IPFS_GATEWAY_PORT:-8080}:8080" # Gateway
+      - "4001:4001"                       # Swarm
+    volumes:
+      - ipfs_data:/data/ipfs
+    environment:
+      - IPFS_PROFILE=server
+    healthcheck:
+      test: ["CMD-SHELL", "ipfs id || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - qchain-network
+
+  # ==========================================================================
+  # Backend Services
+  # ==========================================================================
+  go-bindings:
+    build:
+      context: ../offchain/go-bindings
+      dockerfile: Dockerfile
+    container_name: qchain-go-bindings
+    depends_on:
+      ipfs:
+        condition: service_healthy
+    environment:
+      - IPFS_API_HOST=ipfs
+      - IPFS_API_PORT=5001
+    volumes:
+      - ../offchain/go-bindings/transcript.pdf:/app/transcript.pdf:ro
+    networks:
+      - qchain-network
+    profiles:
+      - bindings
+      - full
+
+  go-native:
+    build:
+      context: ../offchain/go-native
+      dockerfile: Dockerfile
+    container_name: qchain-go-native
+    depends_on:
+      ipfs:
+        condition: service_healthy
+    environment:
+      - IPFS_API_HOST=ipfs
+      - IPFS_API_PORT=5001
+    volumes:
+      - ../offchain/go-native/transcript.pdf:/app/transcript.pdf:ro
+    networks:
+      - qchain-network
+    profiles:
+      - native
+      - full
+
+  # ==========================================================================
+  # Frontend Services
+  # ==========================================================================
+  webapp:
+    build:
+      context: ../UI_WebApp
+      dockerfile: Dockerfile
+    container_name: qchain-webapp
+    ports:
+      - "${WEBAPP_PORT:-3000}:80"
+    networks:
+      - qchain-network
+    profiles:
+      - web
+      - full
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # Mobile Development Environment
+  mobile-dev:
+    build:
+      context: ../UI_App
+      dockerfile: Dockerfile
+    container_name: qchain-mobile-dev
+    volumes:
+      - ../UI_App:/app
+      - mobile_gradle_cache:/root/.gradle
+      - mobile_pub_cache:/root/.pub-cache
+    environment:
+      - FLUTTER_HOME=/sdks/flutter
+    working_dir: /app
+    profiles:
+      - mobile-dev
+    stdin_open: true
+    tty: true
+
+networks:
+  qchain-network:
+    driver: bridge
+
+volumes:
+  ipfs_data:
+    driver: local
+  mobile_gradle_cache:
+    driver: local
+  mobile_pub_cache:
+    driver: local

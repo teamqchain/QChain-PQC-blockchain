@@ -11,6 +11,19 @@ import (
 	"github.com/open-quantum-safe/liboqs-go/oqs"
 )
 
+// getIPFSShell creates an IPFS shell connection using environment variables
+func getIPFSShell() *shell.Shell {
+	host := os.Getenv("IPFS_API_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	port := os.Getenv("IPFS_API_PORT")
+	if port == "" {
+		port = "5001"
+	}
+	return shell.NewShell(fmt.Sprintf("%s:%s", host, port))
+}
+
 func main() {
 	sigName := "ML-DSA-44"
 	signer := oqs.Signature{}
@@ -33,7 +46,7 @@ func main() {
 
 	// 1. Upload the actual PDF to IPFS
 	fmt.Println("\n[1] Uploading document(s) to IPFS...")
-	sh := shell.NewShell("host.docker.internal:5001")
+	sh := getIPFSShell()
 
 	// Open document stored within the same folder
 	pdfFile, err := os.Open("transcript.pdf")

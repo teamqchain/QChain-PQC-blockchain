@@ -12,6 +12,19 @@ import (
 	shell "github.com/ipfs/go-ipfs-api"
 )
 
+// getIPFSShell creates an IPFS shell connection using environment variables
+func getIPFSShell() *shell.Shell {
+	host := os.Getenv("IPFS_API_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	port := os.Getenv("IPFS_API_PORT")
+	if port == "" {
+		port = "5001"
+	}
+	return shell.NewShell(fmt.Sprintf("%s:%s", host, port))
+}
+
 func main() {
 	fmt.Println("[Success] Enabled Pure Go Post-Quantum Algorithm: ML-DSA-44 (CIRCL)")
 
@@ -29,7 +42,7 @@ func main() {
 
 	// Upload the actual PDF to IPFS
 	fmt.Println("\n[1] Uploading actual PDF Transcript to IPFS...")
-	sh := shell.NewShell("localhost:5001")
+	sh := getIPFSShell()
 
 	pdfFile, err := os.Open("transcript.pdf")
 	if err != nil {

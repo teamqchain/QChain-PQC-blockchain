@@ -1,0 +1,34 @@
+# Flutter Web App .dockerignore
+
+# Build artifacts
+build/
+.dart_tool/
+.pub-cache/
+.pub/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS files
+.DS_Store
+*.log
+
+# Test and coverage
+coverage/
+test/
+
+# Platform-specific (not needed for web build)
+android/
+ios/
+linux/
+macos/
+windows/
+
+# Documentation
+*.md
+
+# Git
+.git
+.gitignore

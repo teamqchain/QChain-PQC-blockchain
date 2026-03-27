@@ -1,0 +1,19 @@
+# Go bindings .dockerignore
+# Exclude test documents (mount them separately)
+*.pdf
+*.txt
+
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Test binaries
+*.test
+
+# IDE
+.vscode/
+.idea/
