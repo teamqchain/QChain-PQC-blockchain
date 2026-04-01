@@ -36,7 +36,7 @@ func main() {
 	sh := shell.NewShell("host.docker.internal:5001")
 
 	// Open document stored within the same folder
-	pdfFile, err := os.Open("../sample_transcript.pdf")
+	pdfFile, err := os.Open("sample_transcript.pdf")
 	if err != nil {
 		log.Fatalf("Failed to open transcript.pdf. Is it in the folder?: %v", err)
 	}
