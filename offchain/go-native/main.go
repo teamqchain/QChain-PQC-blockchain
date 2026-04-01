@@ -31,7 +31,7 @@ func main() {
 	fmt.Println("\n[1] Uploading actual PDF Transcript to IPFS...")
 	sh := shell.NewShell("localhost:5001")
 
-	pdfFile, err := os.Open("../sample_transcript.pdf")
+	pdfFile, err := os.Open("sample_transcript.pdf")
 	if err != nil {
 		log.Fatalf("Failed to open transcript.pdf. Is it in the folder?: %v", err)
 	}
