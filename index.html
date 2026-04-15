@@ -101,12 +101,16 @@
                 <p class="text-lg text-slate-300 mb-8 max-w-lg">
                     A strategic analysis of implementing Post-Quantum Cryptography (PQC) in Hyperledger Fabric. Exploring the shift from ECDSA/RSA to Lattice-based signatures.
                 </p>
-                <div class="flex space-x-4">
-                    <a href="#architecture" class="bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 px-6 rounded-lg transition shadow-lg">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <a href="#architecture" class="inline-flex w-full h-12 items-center justify-center whitespace-nowrap bg-slate-700 hover:bg-slate-600 text-white font-semibold px-4 rounded-lg transition shadow-lg hover:shadow-xl">
                         View Architecture
                     </a>
-                    <a href="#algorithms" class="bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 px-6 rounded-lg transition">
-                        Compare Algos
+                    <a href="#algorithms" class="inline-flex w-full h-12 items-center justify-center whitespace-nowrap bg-slate-700 hover:bg-slate-600 text-white font-semibold px-4 rounded-lg transition shadow-md hover:shadow-lg">
+                        Compare Algorithms
+                    </a>
+                    <a href="https://github.com/nihvp/QChain-PQC-blockchain" class="inline-flex w-full h-12 items-center justify-center gap-2 whitespace-nowrap bg-teal-700 hover:bg-teal-600 text-white font-semibold px-4 rounded-lg transition shadow-md hover:shadow-lg">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.418 22 12c0-5.523-4.477-10-10-10z"></path></svg>
+                        Source code
                     </a>
                 </div>
             </div>
@@ -276,69 +280,78 @@
             </div>
         </section>
 
-        <section id="architecture" class="py-16 bg-slate-50 border-t border-slate-200">
+<section id="architecture" class="py-16 bg-slate-50 border-t border-slate-200">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="mb-12 text-center">
-                    <h2 class="text-3xl font-bold text-slate-900 mb-4">Proposed Hybrid Architecture</h2>
+                    <h2 class="text-3xl font-bold text-slate-900 mb-4">Proposed System Architecture</h2>
                     <p class="text-slate-600 max-w-2xl mx-auto">
-                        To mitigate the storage overhead of PQC, research suggests a modular <strong>Off-Chain Storage Pattern</strong> using IPFS.
+                        A full-stack, crypto-agile credentialing system featuring a custom Hyperledger Fabric Crypto Service Provider (CSP) backed by <strong>liboqs</strong>.
                     </p>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div class="lg:col-span-2 bg-white p-8 rounded-xl shadow-lg border border-slate-200 relative overflow-hidden">
                         <div class="absolute top-0 left-0 w-full h-1 bg-teal-500"></div>
-                        <h3 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-8">System Flow Topology</h3>
+                        <h3 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">System Flow Topology</h3>
                         
-                        <div class="flex flex-col md:flex-row items-center justify-between w-full space-y-8 md:space-y-0">
-                            <div class="flex flex-col items-center space-y-6 w-full md:w-1/4">
-                                <div onclick="showArchDetail('client')" class="interactive-block bg-slate-100 border border-slate-300 rounded-lg p-4 text-center flex flex-col items-center justify-center h-28">
-                                    <span class="text-2xl mb-1">💻</span>
-                                    <span class="font-bold text-slate-700 text-sm">Client App</span>
-                                </div>
-                                <div class="hidden md:block h-8 w-px bg-slate-300"></div>
-                                <div onclick="showArchDetail('msp')" class="interactive-block bg-blue-50 border border-blue-200 rounded-lg p-4 text-center flex flex-col items-center justify-center h-28">
-                                    <span class="text-2xl mb-1">🔑</span>
-                                    <span class="font-bold text-blue-800 text-sm">Fabric CA</span>
+                        <div class="flex flex-col space-y-4 w-full">
+                            <div onclick="showArchDetail('users')" class="interactive-block bg-slate-100 border border-slate-300 rounded-lg p-4 text-center">
+                                <span class="text-xl mb-1 block">📱</span>
+                                <span class="font-bold text-slate-700 text-sm mb-2 block">Client Applications (Flutter)</span>
+                                <div class="grid grid-cols-3 gap-2 text-xs">
+                                    <div class="bg-white p-2 rounded shadow-sm"><strong>Issuer</strong><br>Issuing Organization</div>
+                                    <div class="bg-white p-2 rounded shadow-sm border border-teal-300"><strong>Holder</strong><br>User Wallet</div>
+                                    <div class="bg-white p-2 rounded shadow-sm"><strong>Verifier</strong><br>Verifying Organization</div>
                                 </div>
                             </div>
 
-                            <div class="text-slate-300 text-3xl hidden md:block">➔</div>
-                            <div class="text-slate-300 text-3xl md:hidden">⬇</div>
+                            <div class="text-slate-300 text-2xl text-center">⬇</div>
 
-                            <div class="flex flex-col items-center space-y-6 w-full md:w-1/4">
-                                <div onclick="showArchDetail('peer')" class="interactive-block bg-teal-50 border border-teal-200 rounded-lg p-4 text-center flex flex-col items-center justify-center h-28 relative">
-                                    <span class="text-2xl mb-1">🏢</span>
-                                    <span class="font-bold text-teal-800 text-sm">Fabric Peer</span>
-                                    <span class="absolute top-1 right-1 text-[10px] bg-teal-200 text-teal-800 px-1 rounded">PQC</span>
-                                </div>
-                                <div class="h-6 w-px border-l-2 border-dashed border-slate-300"></div>
-                                <div onclick="showArchDetail('ipfs')" class="interactive-block bg-purple-50 border border-purple-200 rounded-lg p-4 text-center flex flex-col items-center justify-center h-28">
-                                    <span class="text-2xl mb-1">📦</span>
-                                    <span class="font-bold text-purple-800 text-sm">IPFS Node</span>
+                            <div onclick="showArchDetail('backend')" class="interactive-block bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                                <span class="text-xl mb-1 block">⚙️</span>
+                                <span class="font-bold text-blue-800 text-sm mb-2 block">Backend Server (Go)</span>
+                                <div class="text-xs text-slate-600 bg-white p-2 rounded shadow-sm inline-block w-full">
+                                    <span class="font-semibold text-blue-700">PQC Library Stack:</span><br>
+                                    Go Code ↔ <code>liboqs-go</code> ↔ Open Quantum Safe (C) ↔ Dilithium / Falcon
                                 </div>
                             </div>
 
-                            <div class="text-slate-300 text-3xl hidden md:block">➔</div>
-                            <div class="text-slate-300 text-3xl md:hidden">⬇</div>
+                            <div class="text-slate-300 text-2xl text-center">⬇</div>
 
-                            <div class="flex flex-col items-center w-full md:w-1/4">
-                                <div onclick="showArchDetail('orderer')" class="interactive-block bg-slate-100 border border-slate-300 rounded-lg p-4 text-center flex flex-col items-center justify-center h-28">
-                                    <span class="text-2xl mb-1">⚖️</span>
-                                    <span class="font-bold text-slate-700 text-sm">Orderer</span>
+                            <div onclick="showArchDetail('fabric')" class="interactive-block bg-teal-50 border border-teal-200 rounded-lg p-4 text-center">
+                                <span class="text-xl mb-1 block">⛓️</span>
+                                <span class="font-bold text-teal-800 text-sm mb-2 block">Hyperledger Fabric Network</span>
+                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <div class="bg-white p-2 rounded shadow-sm border-2 border-teal-400">
+                                        <strong>Custom CSP</strong><br>ECDSA + Dilithium + Falcon
+                                    </div>
+                                    <div class="bg-white p-2 rounded shadow-sm">
+                                        <strong>Chaincode</strong><br>Issue / Verify / Revoke
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="text-slate-300 text-2xl text-center">⬇</div>
+
+                            <div onclick="showArchDetail('storage')" class="interactive-block bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
+                                <span class="text-xl mb-1 block">🗄️</span>
+                                <span class="font-bold text-purple-800 text-sm mb-2 block">Storage Layer</span>
+                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <div class="bg-white p-2 rounded shadow-sm"><strong>On-Chain (Fabric)</strong><br>Hashes & PQC Signatures</div>
+                                    <div class="bg-white p-2 rounded shadow-sm"><strong>Off-Chain (IPFS)</strong><br>Full Credentials</div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     <div class="lg:col-span-1">
-                        <div id="arch-detail" class="bg-white p-6 rounded-xl shadow-lg border-l-4 border-teal-500 h-full">
+                        <div id="arch-detail" class="bg-white p-6 rounded-xl shadow-lg border-l-4 border-teal-500 h-full sticky top-24">
                             <h3 class="text-xl font-bold text-slate-800 mb-2" id="detail-title">Interactive Diagram</h3>
                             <p class="text-sm text-slate-600 mb-4" id="detail-text">
-                                Click on the components in the diagram to explore how PQC integration changes the standard flow.
+                                Click on the components in the diagram to explore how PQC integration works across the full stack.
                             </p>
                             <div class="bg-slate-100 p-4 rounded text-xs text-slate-500 font-mono">
-                                Note: Architecture is in active development and may change.
+                                Note: Implementation of a Custom CSP requires modifications to Fabric core components.
                             </div>
                         </div>
                     </div>
@@ -373,9 +386,13 @@
         </section>
     </main>
 
-    <footer class="bg-slate-900 text-slate-400 py-8 border-t border-slate-800">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <p>&copy; 2026 Team QChain</p>
+    <footer class="bg-slate-950 text-slate-500 py-10 border-t border-slate-900">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-2">
+                <div class="w-6 h-6 bg-slate-800 rounded flex items-center justify-center text-slate-400 font-bold font-mono text-[10px]">QC</div>
+                <span class="font-mono text-sm tracking-tight">QChain Research</span>
+            </div>
+            <p class="text-sm">&copy; 2026 Team QChain</p>
         </div>
     </footer>
 
@@ -629,26 +646,22 @@
             
             blocks.forEach(b => b.classList.remove('block-selected'));
             
-            if (part === 'msp') {
-                title.textContent = "Fabric CA / MSP";
+            if (part === 'users') {
+                title.textContent = "Client Applications";
+                title.className = "text-xl font-bold text-slate-800 mb-2";
+                text.innerHTML = "Flutter-based interfaces. <b>Issuers</b> (Organizations) issue degrees, <b>Holders</b> (Users) manage keys in mobile wallets, and <b>Verifiers</b> query the ledger for authenticity.";
+            } else if (part === 'backend') {
+                title.textContent = "Backend Server (Go)";
                 title.className = "text-xl font-bold text-blue-800 mb-2";
-                text.innerHTML = "Issues PQC X.509 certificates to establish Quantum-Resistant Identity.";
-            } else if (part === 'client') {
-                title.textContent = "Client Application";
-                title.className = "text-xl font-bold text-slate-800 mb-2";
-                text.innerHTML = "Uses PQC SDKs to sign transactions. gRPC message limits may need expanding.";
-            } else if (part === 'peer') {
-                title.textContent = "Peer Node";
+                text.innerHTML = "The core bridge. A Crypto-Agility Controller utilizes <code>liboqs-go</code> to wrap the C-based Open Quantum Safe (OQS) library, executing Dilithium/Falcon operations before interacting with the Fabric SDK.";
+            } else if (part === 'fabric') {
+                title.textContent = "Fabric & Custom CSP";
                 title.className = "text-xl font-bold text-teal-800 mb-2";
-                text.innerHTML = "Validates PQC signatures (FN-DSA is best here to minimize latency). Interacts with IPFS to fetch large payloads.";
-            } else if (part === 'ipfs') {
-                title.textContent = "IPFS Node";
+                text.innerHTML = "The research core. We extend Fabric's Crypto Service Provider (CSP) interface to natively support Dilithium and Falcon alongside default ECDSA. Chaincode handles the `IssueCredential` and `VerifyCredential` logic.";
+            } else if (part === 'storage') {
+                title.textContent = "Hybrid Storage";
                 title.className = "text-xl font-bold text-purple-800 mb-2";
-                text.innerHTML = "Stores the heavy PQC signatures (2KB-17KB) off-chain. Ledger only records the CID hash.";
-            } else if (part === 'orderer') {
-                title.textContent = "Orderer Node";
-                title.className = "text-xl font-bold text-slate-800 mb-2";
-                text.innerHTML = "BFT consensus layer must be fortified against quantum voting interference.";
+                text.innerHTML = "Mitigates PQC bloat. Heavy degree PDFs and metadata are stored off-chain via <b>IPFS</b>. The immutable Fabric ledger only records the IPFS hashes, student public keys, and the PQC signatures.";
             }
         }
 
