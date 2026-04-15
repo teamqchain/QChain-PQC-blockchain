@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QChain - Secure Blockchain</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+        }
+        
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 350px;
+            max-height: 400px;
+        }
+
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .interactive-block {
+            transition: all 0.3s ease;
+            cursor: pointer;
+            width: 100%;
+        }
+        .interactive-block:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border-color: #0d9488;
+        }
+        .block-selected {
+            background-color: #f0fdfa;
+            border-color: #0f766e;
+            border-width: 2px;
+        }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen">
+
+    <nav class="bg-white shadow-sm sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <img src="assets/qchain_logo.jpeg" alt="QChain Logo" class="w-8 h-8 mr-3 rounded shadow-sm">
+                    <span class="text-2xl font-bold text-slate-800 tracking-tight">Q<span class="text-teal-600">Chain</span></span>
+                </div>
+                <div class="hidden md:flex space-x-8 items-center">
+                    <a href="#threat" class="text-slate-500 hover:text-slate-900 px-3 py-2 text-sm font-medium transition-colors">The Threat</a>
+                    <a href="#algorithms" class="text-slate-500 hover:text-slate-900 px-3 py-2 text-sm font-medium transition-colors">Algorithms</a>
+                    <a href="#performance" class="text-slate-500 hover:text-slate-900 px-3 py-2 text-sm font-medium transition-colors">Performance</a>
+                    <a href="#architecture" class="text-slate-500 hover:text-slate-900 px-3 py-2 text-sm font-medium transition-colors">Implementation</a>
+                    <a href="#references" class="text-slate-500 hover:text-slate-900 px-3 py-2 text-sm font-medium transition-colors">References</a>
+                </div>
+              
+                <div class="flex items-center md:hidden">
+                    <button onclick="toggleMobileMenu()" class="text-slate-500 hover:text-slate-900 focus:outline-none">
+                        <span class="text-2xl">☰</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="mobile-menu" class="hidden md:hidden bg-white border-t border-slate-100">
+            <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                <a href="#threat" onclick="toggleMobileMenu()" class="block text-slate-500 hover:text-slate-900 px-3 py-2 text-base font-medium">The Threat</a>
+                <a href="#algorithms" onclick="toggleMobileMenu()" class="block text-slate-500 hover:text-slate-900 px-3 py-2 text-base font-medium">Algorithms</a>
+                <a href="#performance" onclick="toggleMobileMenu()" class="block text-slate-500 hover:text-slate-900 px-3 py-2 text-base font-medium">Performance</a>
+                <a href="#architecture" onclick="toggleMobileMenu()" class="block text-slate-500 hover:text-slate-900 px-3 py-2 text-base font-medium">Implementation</a>
+                <a href="#references" onclick="toggleMobileMenu()" class="block text-slate-500 hover:text-slate-900 px-3 py-2 text-base font-medium">References</a>
+            </div>
+        </div>
+    </nav>
+
+    <header class="bg-slate-900 text-white py-16">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+            <div>
+                <h1 class="text-4xl md:text-5xl font-bold leading-tight mb-4">
+                    Securing the Ledger Against <br> <span class="text-teal-400">Quantum Supremacy</span>
+                </h1>
+                <p class="text-lg text-slate-300 mb-8 max-w-lg">
+                    A strategic analysis of implementing Post-Quantum Cryptography (PQC) in Hyperledger Fabric. Exploring the shift from ECDSA/RSA to Lattice-based signatures.
+                </p>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <a href="#architecture" class="inline-flex w-full h-12 items-center justify-center whitespace-nowrap bg-slate-700 hover:bg-slate-600 text-white font-semibold px-4 rounded-lg transition shadow-lg hover:shadow-xl">
+                        View Architecture
+                    </a>
+                    <a href="#algorithms" class="inline-flex w-full h-12 items-center justify-center whitespace-nowrap bg-slate-700 hover:bg-slate-600 text-white font-semibold px-4 rounded-lg transition shadow-md hover:shadow-lg">
+                        Compare Algorithms
+                    </a>
+                    <a href="https://github.com/nihvp/QChain-PQC-blockchain" class="inline-flex w-full h-12 items-center justify-center gap-2 whitespace-nowrap bg-teal-700 hover:bg-teal-600 text-white font-semibold px-4 rounded-lg transition shadow-md hover:shadow-lg">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.418 22 12c0-5.523-4.477-10-10-10z"></path></svg>
+                        Source code
+                    </a>
+                </div>
+            </div>
+            <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-2xl">
+                <h3 class="text-teal-400 font-semibold mb-2 uppercase tracking-wide text-xs">Executive Summary</h3>
+                <ul class="space-y-3 text-slate-300 text-sm">
+                    <li class="flex items-start">
+                        <span class="mr-2 text-teal-400">☞</span>
+                        <span><strong>The Risk:</strong> Shor's algorithm threatens ECDSA signatures used in Fabric MSPs.</span>
+                    </li>
+                    <li class="flex items-start">
+                        <span class="mr-2 text-teal-400">☞</span>
+                        <span><strong>The Solution:</strong> Migration to NIST finalists: <em>ML-DSA (Dilithium)</em> or <em>FN-DSA (Falcon)</em>.</span>
+                    </li>
+                    <li class="flex items-start">
+                        <span class="mr-2 text-teal-400">☞</span>
+                        <span><strong>The Cost:</strong> PQC signatures are ~100x larger. Throughput may drop by 50-70%.</span>
+                    </li>
+                    <li class="flex items-start">
+                        <span class="mr-2 text-teal-400">☞</span>
+                        <span><strong>The Fix:</strong> Hybrid architectures using IPFS for off-chain storage of heavy signatures.</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow">
+        <section id="threat" class="py-16 bg-white">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="mb-12 text-center max-w-3xl mx-auto">
+                    <h2 class="text-3xl font-bold text-slate-900 mb-4">The Quantum Threat Horizon</h2>
+                    <p class="text-slate-600">
+                        Blockchain immutability is a double-edged sword. Encrypted data captured today can be decrypted tomorrow. While hashing remains robust, the asymmetric cryptography foundation of Hyperledger is vulnerable.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+                    <div class="bg-slate-50 p-6 rounded-xl shadow-sm border border-slate-200">
+                        <div class="chart-container">
+                            <canvas id="timelineChart"></canvas>
+                        </div>
+                        <p class="text-xs text-center text-slate-400 mt-2">Projection based on IBM Quantum Roadmaps to Fault Tolerance & Google Quantum AI Research</p>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-800 mb-4">Vulnerability Matrix</h3>
+                        <div class="grid grid-cols-1 gap-4">
+                            <div class="bg-red-50 border-l-4 border-red-500 p-4">
+                                <div class="flex justify-between">
+                                    <h4 class="font-bold text-red-700">ECDSA / RSA</h4>
+                                    <span class="text-xs font-bold bg-red-200 text-red-800 px-2 py-1 rounded">CRITICAL</span>
+                                </div>
+                                <p class="text-sm text-red-600 mt-1">Completely broken by Shor's algorithm. Allows forgery of admin identities.</p>
+                            </div>
+                            <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4">
+                                <div class="flex justify-between">
+                                    <h4 class="font-bold text-yellow-700">SHA-256 / SHA-3</h4>
+                                    <span class="text-xs font-bold bg-yellow-200 text-yellow-800 px-2 py-1 rounded">MODERATE</span>
+                                </div>
+                                <p class="text-sm text-yellow-600 mt-1">Weakened by Grover's algorithm, but key length doubling mitigates risk.</p>
+                            </div>
+                            <div class="bg-green-50 border-l-4 border-green-500 p-4">
+                                <div class="flex justify-between">
+                                    <h4 class="font-bold text-green-700">Lattice-Based (PQC)</h4>
+                                    <span class="text-xs font-bold bg-green-200 text-green-800 px-2 py-1 rounded">SECURE</span>
+                                </div>
+                                <p class="text-sm text-green-600 mt-1">NIST standardized replacements (ML-DSA, FN-DSA). Resistant to known vectors.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="algorithms" class="py-16 bg-slate-50 border-t border-slate-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="mb-12">
+                    <h2 class="text-3xl font-bold text-slate-900 mb-4">The Candidates: NIST PQC Standards</h2>
+                    <p class="text-slate-600 max-w-3xl">
+                        Not all PQC algorithms are suitable for blockchain. We compare the three primary NIST finalized standards based on recent performance benchmarks.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-1 space-y-4">
+                        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-full">
+                            <h3 class="font-bold text-lg mb-4 text-slate-800">Algorithm Details</h3>
+                            <div class="space-y-4">
+                                <button onclick="updateAlgoInfo('dilithium')" class="w-full text-left p-4 rounded-lg border border-slate-200 hover:bg-teal-50 hover:border-teal-300 transition focus:outline-none focus:ring-2 focus:ring-teal-500 group">
+                                    <div class="flex justify-between items-center">
+                                        <span class="font-bold text-slate-700 group-hover:text-teal-700">Dilithium (ML-DSA)</span>
+                                        <span class="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">Lattice</span>
+                                    </div>
+                                    <p class="text-xs text-slate-500 mt-1">The "All-rounder". Balanced size and speed.</p>
+                                </button>
+                                
+                                <button onclick="updateAlgoInfo('falcon')" class="w-full text-left p-4 rounded-lg border border-slate-200 hover:bg-teal-50 hover:border-teal-300 transition focus:outline-none focus:ring-2 focus:ring-teal-500 group">
+                                    <div class="flex justify-between items-center">
+                                        <span class="font-bold text-slate-700 group-hover:text-teal-700">Falcon (FN-DSA)</span>
+                                        <span class="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">Lattice</span>
+                                    </div>
+                                    <p class="text-xs text-slate-500 mt-1">Fastest verification, complex implementation.</p>
+                                </button>
+                                
+                                <button onclick="updateAlgoInfo('sphincs')" class="w-full text-left p-4 rounded-lg border border-slate-200 hover:bg-teal-50 hover:border-teal-300 transition focus:outline-none focus:ring-2 focus:ring-teal-500 group">
+                                    <div class="flex justify-between items-center">
+                                        <span class="font-bold text-slate-700 group-hover:text-teal-700">SPHINCS+ (SLH-DSA)</span>
+                                        <span class="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">Hash-based</span>
+                                    </div>
+                                    <p class="text-xs text-slate-500 mt-1">Stateless & conservative. Very large signatures.</p>
+                                </button>
+                            </div>
+                            
+                            <div id="algo-verdict" class="mt-6 p-4 bg-slate-100 rounded-lg border border-slate-200 text-sm">
+                                <strong class="block text-slate-800 mb-1">Recommendation:</strong>
+                                <span class="text-slate-600">Select an algorithm above to see the verdict for Hyperledger Fabric.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                        <div class="chart-container">
+                            <canvas id="radarChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="performance" class="py-16 bg-white border-t border-slate-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
+                    <div>
+                        <h2 class="text-3xl font-bold text-slate-900 mb-4">The Cost of Security</h2>
+                        <p class="text-slate-600 mb-6">
+                            PQC is a "defensive downgrade" in terms of performance. The primary bottlenecks are <strong>Key Size</strong> and <strong>Verification Time</strong>.
+                        </p>
+                        
+                        <div class="bg-orange-50 p-6 rounded-xl border border-orange-100 mb-6">
+                            <h4 class="font-bold text-orange-800 mb-2">Impact on Throughput (TPS)</h4>
+                            <p class="text-sm text-orange-700 mb-4">
+                                Research indicates a potential <strong>50-70% drop</strong> in throughput when moving from ECDSA to hybrid PQC schemes due to verification overhead.
+                            </p>
+                            <div class="w-full bg-white rounded-full h-4 mb-1">
+                                <div class="bg-slate-400 h-4 rounded-full" style="width: 100%"></div>
+                            </div>
+                            <div class="flex justify-between text-xs text-slate-500 mb-2">
+                                <span>Classic Fabric (ECDSA) ~3000 TPS</span>
+                            </div>
+                            <div class="w-full bg-white rounded-full h-4 mb-1">
+                                <div class="bg-teal-500 h-4 rounded-full" style="width: 40%"></div>
+                            </div>
+                            <div class="flex justify-between text-xs text-slate-500">
+                                <span>Post-Quantum Fabric ~1200 TPS</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 p-6 rounded-xl shadow-sm border border-slate-200">
+                        <h3 class="text-lg font-bold text-slate-800 mb-4 text-center">Data Bloat: Signature Size Comparison</h3>
+                        <div class="chart-container">
+                            <canvas id="barChart"></canvas>
+                        </div>
+                        <p class="text-xs text-center text-slate-400 mt-2">Logarithmic Scale (Bytes).</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+<section id="architecture" class="py-16 bg-slate-50 border-t border-slate-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="mb-12 text-center">
+                    <h2 class="text-3xl font-bold text-slate-900 mb-4">Proposed System Architecture</h2>
+                    <p class="text-slate-600 max-w-2xl mx-auto">
+                        A full-stack, crypto-agile credentialing system featuring a custom Hyperledger Fabric Crypto Service Provider (CSP) backed by <strong>liboqs</strong>.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-2 bg-white p-8 rounded-xl shadow-lg border border-slate-200 relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-teal-500"></div>
+                        <h3 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">System Flow Topology</h3>
+                        
+                        <div class="flex flex-col space-y-4 w-full">
+                            <div onclick="showArchDetail('users')" class="interactive-block bg-slate-100 border border-slate-300 rounded-lg p-4 text-center">
+                                <span class="text-xl mb-1 block">📱</span>
+                                <span class="font-bold text-slate-700 text-sm mb-2 block">Client Applications (Flutter)</span>
+                                <div class="grid grid-cols-3 gap-2 text-xs">
+                                    <div class="bg-white p-2 rounded shadow-sm"><strong>Issuer</strong><br>Issuing Organization</div>
+                                    <div class="bg-white p-2 rounded shadow-sm border border-teal-300"><strong>Holder</strong><br>User Wallet</div>
+                                    <div class="bg-white p-2 rounded shadow-sm"><strong>Verifier</strong><br>Verifying Organization</div>
+                                </div>
+                            </div>
+
+                            <div class="text-slate-300 text-2xl text-center">⬇</div>
+
+                            <div onclick="showArchDetail('backend')" class="interactive-block bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                                <span class="text-xl mb-1 block">⚙️</span>
+                                <span class="font-bold text-blue-800 text-sm mb-2 block">Backend Server (Go)</span>
+                                <div class="text-xs text-slate-600 bg-white p-2 rounded shadow-sm inline-block w-full">
+                                    <span class="font-semibold text-blue-700">PQC Library Stack:</span><br>
+                                    Go Code ↔ <code>liboqs-go</code> ↔ Open Quantum Safe (C) ↔ Dilithium / Falcon
+                                </div>
+                            </div>
+
+                            <div class="text-slate-300 text-2xl text-center">⬇</div>
+
+                            <div onclick="showArchDetail('fabric')" class="interactive-block bg-teal-50 border border-teal-200 rounded-lg p-4 text-center">
+                                <span class="text-xl mb-1 block">⛓️</span>
+                                <span class="font-bold text-teal-800 text-sm mb-2 block">Hyperledger Fabric Network</span>
+                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <div class="bg-white p-2 rounded shadow-sm border-2 border-teal-400">
+                                        <strong>Custom CSP</strong><br>ECDSA + Dilithium + Falcon
+                                    </div>
+                                    <div class="bg-white p-2 rounded shadow-sm">
+                                        <strong>Chaincode</strong><br>Issue / Verify / Revoke
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="text-slate-300 text-2xl text-center">⬇</div>
+
+                            <div onclick="showArchDetail('storage')" class="interactive-block bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
+                                <span class="text-xl mb-1 block">🗄️</span>
+                                <span class="font-bold text-purple-800 text-sm mb-2 block">Storage Layer</span>
+                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <div class="bg-white p-2 rounded shadow-sm"><strong>On-Chain (Fabric)</strong><br>Hashes & PQC Signatures</div>
+                                    <div class="bg-white p-2 rounded shadow-sm"><strong>Off-Chain (IPFS)</strong><br>Full Credentials</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-1">
+                        <div id="arch-detail" class="bg-white p-6 rounded-xl shadow-lg border-l-4 border-teal-500 h-full sticky top-24">
+                            <h3 class="text-xl font-bold text-slate-800 mb-2" id="detail-title">Interactive Diagram</h3>
+                            <p class="text-sm text-slate-600 mb-4" id="detail-text">
+                                Click on the components in the diagram to explore how PQC integration works across the full stack.
+                            </p>
+                            <div class="bg-slate-100 p-4 rounded text-xs text-slate-500 font-mono">
+                                Note: Implementation of a Custom CSP requires modifications to Fabric core components.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="references" class="py-16 bg-white border-t border-slate-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <h2 class="text-2xl font-bold text-slate-900 mb-6">Literature Review Database</h2>
+                
+                <div class="mb-4">
+                    <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search papers by title, publisher, or keyword..." class="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm shadow-sm">
+                </div>
+
+                <div class="overflow-x-auto custom-scrollbar bg-white rounded-lg shadow border border-slate-200">
+                    <table class="min-w-full divide-y divide-slate-200" id="refTable">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Paper Title</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Year</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Publisher</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Type</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Key Insights</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-slate-200 text-sm">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="bg-slate-950 text-slate-500 py-10 border-t border-slate-900">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-2">
+                <div class="w-6 h-6 bg-slate-800 rounded flex items-center justify-center text-slate-400 font-bold font-mono text-[10px]">QC</div>
+                <span class="font-mono text-sm tracking-tight">QChain Research</span>
+            </div>
+            <p class="text-sm">&copy; 2026 Team QChain</p>
+        </div>
+    </footer>
+
+    <script>
+        const references = [
+                {
+                    title: "A Survey about Post Quantum Cryptography Methods",
+                    link: "https://publications.eai.eu/index.php/IoT/article/view/5099",
+                    type: "Review Article",
+                    publisher: "EAI Endorsed Transactions on Internet of Things",
+                    year: "2024",
+                    bullets: [
+                        "Identification of severe quantum computing threats to widely used asymmetric encryption standards like RSA and ECC.",
+                        "Categorization of post-quantum cryptography into prominent families: lattice-based, hash-based, code-based, and multivariate encryption methods.",
+                        "Evaluation highlighting lattice-based cryptography as a highly promising, resource-efficient option for constrained microcontroller environments."
+                    ]
+                },
+                {
+                    title: "How to factor 2048 bit RSA integers with less than a million noisy qubits",
+                    link: "https://arxiv.org/abs/2505.15917",
+                    type: "Research Paper",
+                    publisher: "Quantum Journal",
+                    year: "2025",
+                    bullets: [
+                        "Substantial reduction in the estimated number of qubits required to factor 2048-bit RSA integers.",
+                        "Estimation that factoring a 2048-bit RSA integer can be achieved in less than a week by a quantum computer using under one million noisy qubits.",
+                        "Qubit count reductions achieved primarily through approximate residue arithmetic, storing idle logical qubits with yoked surface codes, and using magic state cultivation."
+                    ]
+                },
+                {
+                    title: "A Review on the Advances, Applications, and Future Prospects of Post-Quantum Cryptography in Blockchain and IoT",
+                    link: "https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=11059920",
+                    type: "Topical Review",
+                    publisher: "IEEE Access",
+                    year: "2025",
+                    bullets: [
+                        "Strong advocacy for Hybrid (ECC + PQC) approach.",
+                        "Analysis of NIST vs ETSI standards.",
+                        "Framework for secure transition."
+                    ]
+                },
+                {
+                    title: "Fortifying the Blockchain: A Systematic Review and Classification of Post-Quantum Consensus Solutions for Enhanced Security and Resilience",
+                    link: "https://ieeexplore.ieee.org/document/10185538",
+                    type: "Systematic Review",
+                    publisher: "IEEE Access",
+                    year: "2023",
+                    bullets: [
+                        "Reviews PBFT and Raft in PQC context.",
+                        "Emphasizes 'Quantum-Ready' consensus protocols.",
+                        "Discusses Membership Service Provider (MSP) implications."
+                    ]
+                },
+                {
+                    title: "Status Report on the Fourth Round of the NIST Post-Quantum Cryptography Standardization Process",
+                    link: "https://nvlpubs.nist.gov/nistpubs/ir/2025/NIST.IR.8545.pdf",
+                    type: "Report",
+                    publisher: "NIST",
+                    year: "2025",
+                    bullets: [
+                        "Lattice-based schemes (CRYSTALS-Kyber, CRYSTALS-Dilithium) emerged as leading candidates",
+                        "Strong security guarantees against classical and quantum attacks",
+                        "Practical efficiency compared to other PQC families"
+
+                    ]
+                },
+                {
+                    title: "Hybrid Post-Quantum Signatures for Bitcoin and Ethereum",
+                    link: "https://jbba.scholasticahq.com/article/154321-hybrid-post-quantum-signatures-for-bitcoin-and-ethereum-a-protocol-level-integration-strategy.pdf",
+                    type: "Research Article",
+                    publisher: "The JBBA",
+                    year: "2025",
+                    bullets: [
+                        "Proposes Hybrid Cryptographic Frameworks.",
+                        "Estimates significant throughput loss (50%+) during transition.",
+                        "Advocates for gradual 'Defensive Downgrade'."
+                    ]
+                },
+                {
+                    title: "Breaking Rainbow Takes a Weekend on a Laptop",
+                    link: "https://eprint.iacr.org/2022/214.pdf",
+                    type: "Technical Review",
+                    publisher: "IBM Research",
+                    year: "2022",
+                    bullets: [
+                        "Discovery of new key-recovery attacks against the NIST PQC finalist Rainbow signature scheme.",
+                        "Practical full secret key recovery for SL 1 parameters in approximately 53 hours on a standard laptop.",
+                        "Combination with the rectangular MinRank attack to significantly improve attacks against SL 3 and SL 5 parameters."
+                    ]
+                },
+                {
+                    title: "Performance and Applicability of Post-Quantum Digital Signature Algorithms in Resource-Constrained Environments",
+                    link: "https://www.mdpi.com/1999-4893/16/11/518",
+                    type: "Review",
+                    publisher: "MDPI (Algorithms)",
+                    year: "2023",
+                    bullets: [
+                        "Dilithium: Best balance for low-power devices.",
+                        "SPHINCS+: Too heavy/slow for rapid transactions.",
+                        "Falcon: Excellent verification speed, good for validators."
+                    ]
+                },
+                {
+                    title: "Performance Analysis and Industry Deployment of Post-Quantum Cryptography Algorithms",
+                    link: "https://arxiv.org/abs/2503.12952",
+                    type: "Preprint",
+                    publisher: "arXiv",
+                    year: "2025",
+                    bullets: [
+                        "AVX2 optimization significantly boosts PQC speed.",
+                        "Dilithium2/3/5 benchmarks provided.",
+                        "Discusses industry deployment hurdles."
+                    ]
+                },
+                {
+                    title: "A Blockchain System Based on Quantum-Resistant Digital Signature",
+                    link: "https://www.researchgate.net/publication/349824717_A_Blockchain_System_Based_on_Quantum-Resistant_Digital_Signature",
+                    type: "Research Article",
+                    publisher: "Hindawi (Security and Comm. Networks)",
+                    year: "2021",
+                    bullets: [
+                        "Focuses on Lattice-based signatures.",
+                        "Highlights vulnerability of ECDSA in smart city contexts.",
+                        "Provides security proofs against quantum attacks."
+                    ]
+                },
+                {
+                    title: "A Quantum-Resistant Blockchain System: A Comparative Analysis",
+                    link: "https://www.mdpi.com/2227-7390/11/18/3947",
+                    type: "Review / Comparative Analysis",
+                    publisher: "MDPI (Mathematics)",
+                    year: "2023",
+                    bullets: [
+                        "Proposes IPFS integration to solve PQC key size issues.",
+                        "Analyzes performance of Dilithium and Falcon.",
+                        "Demonstrates reduced blockchain bloat via off-chain storage."
+                    ]
+                },
+                {
+                    title: "A Performance Comparison of Post-Quantum Algorithms in Blockchain",
+                    link: "https://jbba.scholasticahq.com/api/v1/articles/38508-a-performance-comparison-of-post-quantum-algorithms-in-blockchain.pdf",
+                    type: "Peer Reviewed Research",
+                    publisher: "The JBBA",
+                    year: "2022",
+                    bullets: [
+                        "Dilithium identified as a strong 'all-rounder'.",
+                        "Falcon noted for fast verification but complex implementation.",
+                        "Rainbow (multivariate) analyzed but noted for recent vulnerabilities."
+                    ]
+                }
+            ];
+
+        function toggleMobileMenu() {
+            const menu = document.getElementById('mobile-menu');
+            menu.classList.toggle('hidden');
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            
+            // 1. Timeline Chart (Fixed Data & Threshold & Linear Scale)
+            const ctxTimeline = document.getElementById('timelineChart').getContext('2d');
+            new Chart(ctxTimeline, {
+                type: 'line',
+                data: {
+                    labels: ['2023', '2026', '2029', '2033'],
+                    datasets: [{
+                        label: 'Estimated Logical Qubits',
+                        data: [48, 100, 200, 2000],
+                        borderColor: '#0d9488',
+                        backgroundColor: 'rgba(13, 148, 136, 0.1)',
+                        tension: 0.4, fill: true
+                    }, {
+                        label: 'RSA-2048 Security Threshold (~1000 Logical Qubits)',
+                        data: [1000, 1000, 1000, 1000, 1000],
+                        borderColor: '#ef4444', borderDash: [5, 5],
+                        pointRadius: 0, borderWidth: 2, fill: false
+                    }]
+                },
+                options: {
+                    maintainAspectRatio: false, responsive: true,
+                    plugins: { legend: { position: 'bottom' }, title: { display: true, text: 'The Race to Quantum Advantage' } },
+                    scales: { y: { title: { display: true, text: 'Logical Qubits' }, type: 'linear' } }
+                }
+            });
+
+            // 2. Radar Chart
+            const ctxRadar = document.getElementById('radarChart').getContext('2d');
+            new Chart(ctxRadar, {
+                type: 'radar',
+                data: {
+                    labels: [['Verification', 'Speed'], ['Signing', 'Speed'], ['Public Key', 'Size'], ['Signature', 'Size'], ['Implementation', 'Ease']],
+                    datasets: [{
+                        label: 'ML-DSA (Dilithium)',
+                        data: [80, 85, 60, 60, 90],
+                        backgroundColor: 'rgba(20, 184, 166, 0.2)', borderColor: '#14b8a6', pointBackgroundColor: '#14b8a6'
+                    }, {
+                        label: 'FN-DSA (Falcon)',
+                        data: [95, 70, 80, 80, 40],
+                        backgroundColor: 'rgba(168, 85, 247, 0.2)', borderColor: '#a855f7', pointBackgroundColor: '#a855f7'
+                    }, {
+                        label: 'SLH-DSA (SPHINCS+)',
+                        data: [30, 30, 90, 10, 80],
+                        backgroundColor: 'rgba(249, 115, 22, 0.2)', borderColor: '#f97316', pointBackgroundColor: '#f97316'
+                    }]
+                },
+                options: {
+                    maintainAspectRatio: false, responsive: true, elements: { line: { borderWidth: 3 } },
+                    scales: { r: { angleLines: { display: false }, suggestedMin: 0, suggestedMax: 100, ticks: { display: false } } }
+                }
+            });
+
+            // 3. Bar Chart
+            const ctxBar = document.getElementById('barChart').getContext('2d');
+            new Chart(ctxBar, {
+                type: 'bar',
+                data: {
+                    labels: ['ECDSA', 'FN-DSA', 'ML-DSA', 'SLH-DSA'],
+                    datasets: [{
+                        label: 'Signature Size (Bytes)', data: [64, 666, 2420, 17088],
+                        backgroundColor: ['#ef4444', '#a855f7', '#14b8a6', '#f97316']
+                    }]
+                },
+                options: {
+                    maintainAspectRatio: false, responsive: true, indexAxis: 'y',
+                    plugins: { legend: { display: false } },
+                    scales: { x: { type: 'logarithmic', title: { display: true, text: 'Bytes (Log Scale)' } } }
+                }
+            });
+
+            populateTable();
+        });
+
+        function updateAlgoInfo(algo) {
+            const verdictBox = document.getElementById('algo-verdict');
+            if (algo === 'dilithium') {
+                verdictBox.innerHTML = `<strong class="block text-teal-800 mb-1">Verdict: Recommended for MSP</strong>
+                                        <p class="text-slate-700">ML-DSA offers the best balance of security and performance. </p>`;
+            } else if (algo === 'falcon') {
+                verdictBox.innerHTML = `<strong class="block text-purple-800 mb-1">Verdict: High-Performance Specialist</strong>
+                                        <p class="text-slate-700">FN-DSA is ideal for fast validation but risks side-channel attacks on complex implementations.</p>`;
+            } else if (algo === 'sphincs') {
+                verdictBox.innerHTML = `<strong class="block text-orange-800 mb-1">Verdict: Long-Term Backup</strong>
+                                        <p class="text-slate-700">SLH-DSA is too bulky for high-frequency chains, best reserved for Root CA rotation.</p>`;
+            }
+        }
+
+        function showArchDetail(part) {
+            const title = document.getElementById('detail-title');
+            const text = document.getElementById('detail-text');
+            const blocks = document.querySelectorAll('.interactive-block');
+            
+            blocks.forEach(b => b.classList.remove('block-selected'));
+            
+            if (part === 'users') {
+                title.textContent = "Client Applications";
+                title.className = "text-xl font-bold text-slate-800 mb-2";
+                text.innerHTML = "Flutter-based interfaces. <b>Issuers</b> (Organizations) issue degrees, <b>Holders</b> (Users) manage keys in mobile wallets, and <b>Verifiers</b> query the ledger for authenticity.";
+            } else if (part === 'backend') {
+                title.textContent = "Backend Server (Go)";
+                title.className = "text-xl font-bold text-blue-800 mb-2";
+                text.innerHTML = "The core bridge. A Crypto-Agility Controller utilizes <code>liboqs-go</code> to wrap the C-based Open Quantum Safe (OQS) library, executing Dilithium/Falcon operations before interacting with the Fabric SDK.";
+            } else if (part === 'fabric') {
+                title.textContent = "Fabric & Custom CSP";
+                title.className = "text-xl font-bold text-teal-800 mb-2";
+                text.innerHTML = "The research core. We extend Fabric's Crypto Service Provider (CSP) interface to natively support Dilithium and Falcon alongside default ECDSA. Chaincode handles the `IssueCredential` and `VerifyCredential` logic.";
+            } else if (part === 'storage') {
+                title.textContent = "Hybrid Storage";
+                title.className = "text-xl font-bold text-purple-800 mb-2";
+                text.innerHTML = "Mitigates PQC bloat. Heavy degree PDFs and metadata are stored off-chain via <b>IPFS</b>. The immutable Fabric ledger only records the IPFS hashes, student public keys, and the PQC signatures.";
+            }
+        }
+
+        function populateTable() {
+            const tbody = document.querySelector('#refTable tbody');
+            tbody.innerHTML = references.map(ref => `
+                <tr class="hover:bg-slate-50 transition">
+                    <td class="px-6 py-4"><a href="${ref.link}" target="_blank" rel="noopener noreferrer" class="font-semibold text-blue-700 hover:text-blue-900 hover:underline text-sm inline-flex items-center gap-1">${ref.title}</a></td>
+                    <td class="px-6 py-4 text-slate-500">${ref.year}</td>
+                    <td class="px-6 py-4 text-slate-700">${ref.publisher}</td>
+                    <td class="px-6 py-4"><span class="bg-slate-100 text-slate-600 rounded px-0 py-1 text-xs font-medium">${ref.type}</span></td>
+                    <td class="px-4 py-4 align-top">
+                        <div class="space-y-1.5">
+                            ${ref.bullets.map(b => `<div class="flex items-start gap-2"><span class="text-teal-500 mt-0.5 text-xs">●</span><span class="text-xs text-slate-600 leading-relaxed">${b}</span></div>`).join('')}
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function filterTable() {
+            const filter = document.getElementById('searchInput').value.toUpperCase();
+            const tr = document.getElementById('refTable').getElementsByTagName('tr');
+            
+            for (let i = 1; i < tr.length; i++) {
+                let tdTitle = tr[i].getElementsByTagName("td")[0];
+                let tdPublisher = tr[i].getElementsByTagName("td")[2];
+                let tdInsight = tr[i].getElementsByTagName("td")[4];
+                
+                if (tdTitle || tdPublisher || tdInsight) {
+                    let textMatch = (tdTitle.textContent + " " + tdPublisher.textContent + " " + tdInsight.textContent).toUpperCase();
+                    if (textMatch.indexOf(filter) > -1) {
+                        tr[i].style.display = "";
+                    } else {
+                        tr[i].style.display = "none";
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
