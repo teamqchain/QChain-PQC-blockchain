@@ -71,6 +71,7 @@
                     <a href="#performance" class="text-slate-500 hover:text-slate-900 px-3 py-2 text-sm font-medium transition-colors">Performance</a>
                     <a href="#architecture" class="text-slate-500 hover:text-slate-900 px-3 py-2 text-sm font-medium transition-colors">Implementation</a>
                     <a href="#references" class="text-slate-500 hover:text-slate-900 px-3 py-2 text-sm font-medium transition-colors">References</a>
+                    <a href="#about" class="text-slate-500 hover:text-slate-900 px-3 py-2 text-sm font-medium transition-colors">About Us</a>
                 </div>
               
                 <div class="flex items-center md:hidden">
@@ -88,6 +89,7 @@
                 <a href="#performance" onclick="toggleMobileMenu()" class="block text-slate-500 hover:text-slate-900 px-3 py-2 text-base font-medium">Performance</a>
                 <a href="#architecture" onclick="toggleMobileMenu()" class="block text-slate-500 hover:text-slate-900 px-3 py-2 text-base font-medium">Implementation</a>
                 <a href="#references" onclick="toggleMobileMenu()" class="block text-slate-500 hover:text-slate-900 px-3 py-2 text-base font-medium">References</a>
+                <a href="#about" onclick="toggleMobileMenu()" class="block text-slate-500 hover:text-slate-900 px-3 py-2 text-base font-medium">About Us</a>
             </div>
         </div>
     </nav>
@@ -280,7 +282,7 @@
             </div>
         </section>
 
-<section id="architecture" class="py-16 bg-slate-50 border-t border-slate-200">
+        <section id="architecture" class="py-16 bg-slate-50 border-t border-slate-200">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="mb-12 text-center">
                     <h2 class="text-3xl font-bold text-slate-900 mb-4">Proposed System Architecture</h2>
@@ -382,6 +384,20 @@
                             </tbody>
                     </table>
                 </div>
+            </div>
+        </section>
+
+        <section id="about" class="py-16 bg-slate-950 border-t border-slate-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text">
+                <h2 class="text-3xl font-bold text-slate-50 mb-4">About Us</h2>
+                <p class="text-slate-100">
+                    We are a dedicated team of undergraduate students focused on building "Post-Quantum Cryptography in Blockchain Technology: A Quantum-Resistant Credendial Verification System" as part of our senior year project.
+                </p>
+                <br>
+                <p class="text-slate-100">
+                    Get in touch with us at 
+                    <a href="mailto:qchain@gmail.com" class="text-teal-600 hover:text-teal-800 font-medium transition-colors">QChain@gmail.com</a>
+                </p>
             </div>
         </section>
     </main>
@@ -587,20 +603,32 @@
                     datasets: [{
                         label: 'ML-DSA (Dilithium)',
                         data: [80, 85, 60, 60, 90],
+                        realData: ['Fast (~0.1ms)', 'Fast (~0.5ms)', '1312 Bytes', '2420 Bytes', 'Simple'],
                         backgroundColor: 'rgba(20, 184, 166, 0.2)', borderColor: '#14b8a6', pointBackgroundColor: '#14b8a6'
                     }, {
                         label: 'FN-DSA (Falcon)',
                         data: [95, 70, 80, 80, 40],
+                        realData: ['Very Fast (~0.05ms)', 'Moderate (~1ms)', '897 Bytes', '666 Bytes', 'Complex (FPU needed)'],
                         backgroundColor: 'rgba(168, 85, 247, 0.2)', borderColor: '#a855f7', pointBackgroundColor: '#a855f7'
                     }, {
                         label: 'SLH-DSA (SPHINCS+)',
                         data: [30, 30, 90, 10, 80],
+                        realData: ['Slow (~10ms)', 'Very Slow (~200ms)', '32 Bytes', '17088 Bytes', 'Moderate'],
                         backgroundColor: 'rgba(249, 115, 22, 0.2)', borderColor: '#f97316', pointBackgroundColor: '#f97316'
                     }]
                 },
                 options: {
                     maintainAspectRatio: false, responsive: true, elements: { line: { borderWidth: 3 } },
-                    scales: { r: { angleLines: { display: false }, suggestedMin: 0, suggestedMax: 100, ticks: { display: false } } }
+                    scales: { r: { angleLines: { display: false }, suggestedMin: 0, suggestedMax: 100, ticks: { display: false } } },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.dataset.realData[context.dataIndex];
+                                }
+                            }
+                        }
+                    }
                 }
             });
 
@@ -618,7 +646,20 @@
                 options: {
                     maintainAspectRatio: false, responsive: true, indexAxis: 'y',
                     plugins: { legend: { display: false } },
-                    scales: { x: { type: 'logarithmic', title: { display: true, text: 'Bytes (Log Scale)' } } }
+                    scales: { 
+                        x: { 
+                            type: 'logarithmic', 
+                            title: { display: true, text: 'Bytes (Log Scale)' },
+                            ticks: {
+                                callback: function(value, index, values) {
+                                    if (value === 10 || value === 100 || value === 1000 || value === 10000 || value === 100000) {
+                                        return value.toLocaleString();
+                                    }
+                                    return null;
+                                }
+                            }
+                        } 
+                    }
                 }
             });
 
