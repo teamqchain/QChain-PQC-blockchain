@@ -147,7 +147,7 @@
                 <div class="flex items-center">
                     <a href="#home" class="flex items-center hover:opacity-90 transition-opacity" aria-label="Go to top">
                         <img src="assets/qchain_logo.jpeg" alt="QChain Logo" class="w-8 h-8 mr-3 rounded shadow-sm dark:invert transition-all">
-                        <span class="text-2xl font-bold text-slate-800 dark:text-slate-100 tracking-tight font-f1">Q<span class="text-teal-600 dark:text-teal-400">Chain</span></span>
+                        <span class="text-2xl font-normal text-slate-800 dark:text-slate-100 tracking-tight font-f1">Q<span class="text-teal-600 dark:text-teal-400">Chain</span></span>
                     </a>
                 </div>
 
@@ -183,7 +183,7 @@
                         </svg>
                     </button>
                     <button onclick="document.getElementById('mobile-menu').classList.toggle('hidden')" class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white focus:outline-none">
-                        <span class="text-2xl">☰</span>
+                        <span style="position: relative; top: -2px;" class="text-2xl">☰</span>
                     </button>
                 </div>
             </div>
@@ -351,29 +351,29 @@
                                 <span class="text-xl mb-1 block">📱</span><span class="font-bold text-slate-700 dark:text-slate-200 text-sm mb-2 block">Client Applications (Flutter)</span>
                                 <div class="grid grid-cols-3 gap-2 text-xs text-slate-800 dark:text-slate-200">
                                     <div class="bg-white dark:bg-slate-700 p-2 rounded shadow-sm"><strong>Issuer</strong><br>Organization</div>
-                                    <div class="bg-white dark:bg-slate-700 p-2 rounded shadow-sm border border-teal-300 dark:border-teal-600"><strong>Holder</strong><br>User Wallet</div>
+                                    <div class="bg-white dark:bg-slate-700 p-2 rounded shadow-sm"><strong>Holder</strong><br>User Wallet</div>
                                     <div class="bg-white dark:bg-slate-700 p-2 rounded shadow-sm"><strong>Verifier</strong><br>Organization</div>
                                 </div>
                             </div>
                             
-                            <div class="text-slate-300 dark:text-slate-600 text-2xl text-center">⬇</div>
+                            <div class="text-slate-300 dark:text-slate-600 text-2xl text-center">↓</div>
                             
                             <div onclick="showArchDetail('backend')" class="interactive-block bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg p-4 text-center">
                                 <span class="text-xl mb-1 block">⚙️</span><span class="font-bold text-blue-800 dark:text-blue-400 text-sm mb-2 block">Backend Server (Go)</span>
-                                <div class="text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 p-2 rounded shadow-sm inline-block w-full"><span class="font-semibold text-blue-700 dark:text-blue-400">PQC Library Stack:</span><br>Go Code ↔ <code>liboqs-go</code> ↔ Open Quantum Safe (C) ↔ ML-DSA</div>
+                                <div class="text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 p-2 rounded shadow-sm inline-block w-full"><span class="font-semibold text-blue-700 dark:text-blue-400">PQC Library Stack:</span><br>Go Code ⟷ <code>liboqs-go</code> ⟷ Open Quantum Safe (C) ⟷ ML-DSA</div>
                             </div>
                             
-                            <div class="text-slate-300 dark:text-slate-600 text-2xl text-center">⬇</div>
+                            <div class="text-slate-300 dark:text-slate-600 text-2xl text-center">↓</div>
                             
                             <div onclick="showArchDetail('fabric')" class="interactive-block bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800/50 rounded-lg p-4 text-center">
                                 <span class="text-xl mb-1 block">⛓️</span><span class="font-bold text-teal-800 dark:text-teal-400 text-sm mb-2 block">Hyperledger Fabric Network</span>
                                 <div class="grid grid-cols-2 gap-2 text-xs text-slate-800 dark:text-slate-200">
-                                    <div class="bg-white dark:bg-slate-800 p-2 rounded shadow-sm border-2 border-teal-400 dark:border-teal-600"><strong>Custom CSP</strong><br>ML-DSA + ML-KEM</div>
+                                    <div class="bg-white dark:bg-slate-800 p-2 rounded shadow-sm"><strong>Custom CSP</strong><br>ML-DSA + ML-KEM</div>
                                     <div class="bg-white dark:bg-slate-800 p-2 rounded shadow-sm"><strong>Chaincode</strong><br>Issue / Verify / Revoke</div>
                                 </div>
                             </div>
                             
-                            <div class="text-slate-300 dark:text-slate-600 text-2xl text-center">⬇</div>
+                            <div class="text-slate-300 dark:text-slate-600 text-2xl text-center">↓</div>
                             
                             <div onclick="showArchDetail('storage')" class="interactive-block bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 rounded-lg p-4 text-center">
                                 <span class="text-xl mb-1 block">🗄️</span><span class="font-bold text-purple-800 dark:text-purple-400 text-sm mb-2 block">Storage Layer</span>
@@ -434,7 +434,7 @@
     <footer class="bg-slate-950 text-slate-500 py-10 border-t border-slate-900">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4">
             <div class="flex items-center gap-2">
-                <img src="assets/qchain_logo.jpeg" alt="QChain Logo" loading="lazy" class="w-6 h-6 rounded shadow-sm dark:invert">
+                <img src="assets/qchain_logo.jpeg" alt="QChain Logo" loading="lazy" class="w-6 h-6 rounded shadow-sm invert">
                 <span class="font-mono text-sm tracking-tight text-slate-400">QChain Research</span>
             </div>
             <p class="text-sm text-slate-500">&copy; 2026 Team QChain</p>
