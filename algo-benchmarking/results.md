@@ -40,4 +40,9 @@ The following benchmarks compare the speed across all three ML-DSA security leve
 
 *In our benchmarks, CIRCL’s ML-DSA implementation exhibits slower key generation and signing compared to liboqs-go, while outperforming it in verification performance.*
 
-![Graph](../assets/graph_MLDSA_implementations.jpg)
+#
+
+![Graph](../assets/Graph%20-%20Key%20Generation.png)
+![Graph](../assets/Graph%20-%20Signing.png)
+![Graph](../assets/Graph%20-%20Verification.png)
+![Graph](../assets/Graph%20-%20Total%20Workflow.png)
