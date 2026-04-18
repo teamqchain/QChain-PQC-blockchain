@@ -11,39 +11,7 @@ This repository contains the core cryptographic logic for the QChain credentiali
 
 ## 📊 Performance Benchmarks
 
-The following benchmarks compare the speed and memory allocations across all three ML-DSA security levels for both implementations.
-
-### 1. `go-bindings` (liboqs-go)
-*Optimized C-bindings. Requires Docker.*
-
-| Operation | Security Level | Speed (ns/op) | Memory (B/op) |
-| :--- | :--- | :--- | :--- |
-| **Key Generation** | ML-DSA-44 | 41,311 | 4,096 |
-| | ML-DSA-65 | 71,154 | 6,144 |
-| | ML-DSA-87 | 122,651 | 8,064 |
-| **Signing** | ML-DSA-44 | 90,695 | 2,696 |
-| | ML-DSA-65 | 146,539 | 3,464 |
-| | ML-DSA-87 | 211,655 | 4,872 |
-| **Verification** | ML-DSA-44 | 36,832 | N/A |
-| | ML-DSA-65 | 64,047 | N/A |
-| | ML-DSA-87 | 113,143 | N/A |
-
-### 2. `go-native` (Cloudflare CIRCL)
-*Pure Go. Runs natively anywhere.*
-
-| Operation | Security Level | Speed (ns/op) | Memory (B/op) |
-| :--- | :--- | :--- | :--- |
-| **Key Generation** | ML-DSA-44 | 85,017 | 55,328 |
-| | ML-DSA-65 | 153,110 | 81,952 |
-| | ML-DSA-87 | 227,999 | 117,408 |
-| **Signing** | ML-DSA-44 | 373,203 | 450 |
-| | ML-DSA-65 | 196,093 | 450 |
-| | ML-DSA-87 | 520,406 | 450 |
-| **Verification** | ML-DSA-44 | 34,263 | 450 |
-| | ML-DSA-65 | 46,362 | 450 |
-| | ML-DSA-87 | 64,789 | 450 |
-
-*(Note: While `go-native` uses more memory during Key Generation, its verification speed is highly competitive and uses minimal memory allocations).*
+Can be viewed at [results.md](results.md)
 
 ---
 
