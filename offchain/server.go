@@ -42,7 +42,7 @@ var (
 	ipfsHost      = getEnv("IPFS_HOST", "host.docker.internal:5001")
 	serverPort    = getEnv("SERVER_PORT", "3000")
 	channelName   = getEnv("CHANNEL_NAME", "mychannel")
-	chaincodeName = getEnv("CHAINCODE_NAME", "QChaincode")
+	chaincodeName = getEnv("CHAINCODE_NAME", "qchaincode")
 
 	// Org peer/TLS endpoints – keyed by lowercase org name.
 	// MSPDir and WalletDir are constructed from networkRoot at runtime
@@ -332,9 +332,11 @@ func pqcVerify(message, signatureHex, publicKeyHex string) (bool, error) {
 //  IPFS HELPER
 // ─────────────────────────────────────────────
 
-// uploadDocumentAndSign uploads a PDF to IPFS, signs its CID with a fresh
-// ML-DSA-44 key pair, uploads the verification payload, and returns all artifacts.
-func uploadDocumentAndSign(filePath string) (documentCID, finalCID, pubKeyHex, privKeyHex, sigHex string, err error) {
+// uploadDocumentAndSign uploads a PDF to IPFS, signs its CID with the provided
+// ML-DSA-44 private key (from issueCredential), uploads the verification payload,
+// and returns all artifacts.
+// If privateKeyHex is empty, a fresh key pair is generated (fallback only).
+func uploadDocumentAndSign(filePath, privateKeyHex, publicKeyHex string) (documentCID, finalCID, pubKeyHexOut, privKeyHexOut, sigHex string, err error) {
 	pdfFile, err := os.Open(filePath)
 	if err != nil {
 		return "", "", "", "", "", fmt.Errorf("opening document %q: %w", filePath, err)
@@ -348,26 +350,37 @@ func uploadDocumentAndSign(filePath string) (documentCID, finalCID, pubKeyHex, p
 		return "", "", "", "", "", fmt.Errorf("IPFS upload document: %w", err)
 	}
 
-	pubKeyHex, privKeyHex, err = pqcGenKeyPair()
-	if err != nil {
-		return "", "", "", "", "", err
+	if privateKeyHex == "" || publicKeyHex == "" {
+		// Fallback: generate a fresh keypair if none was provided.
+		// Note: the public key will NOT match what is stored on-chain from
+		// issueCredential, so verification will fail. Always pass the
+		// privateKey from the issueCredential response.
+		pubKeyHexOut, privKeyHexOut, err = pqcGenKeyPair()
+		if err != nil {
+			return "", "", "", "", "", err
+		}
+	} else {
+		// Derive the public key from the provided private key so the caller
+		// gets it back without needing to store it separately.
+		privKeyHexOut = privateKeyHex
+		pubKeyHexOut = publicKeyHex
 	}
 
-	sigHex, err = pqcSign(documentCID, privKeyHex)
+	sigHex, err = pqcSign(documentCID, privKeyHexOut)
 	if err != nil {
 		return "", "", "", "", "", err
 	}
 
 	payload := fmt.Sprintf(
 		`{"document_cid":"%s","pqc_signature":"%s","public_key":"%s"}`,
-		documentCID, sigHex, pubKeyHex,
+		documentCID, sigHex, pubKeyHexOut,
 	)
 	finalCID, err = sh.Add(strings.NewReader(payload))
 	if err != nil {
 		return "", "", "", "", "", fmt.Errorf("IPFS upload payload: %w", err)
 	}
 
-	return documentCID, finalCID, pubKeyHex, privKeyHex, sigHex, nil
+	return documentCID, finalCID, pubKeyHexOut, privKeyHexOut, sigHex, nil
 }
 
 // ─────────────────────────────────────────────
@@ -610,13 +623,18 @@ func handleGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /uploadDocument
-// Body: { "filePath": "/path/to/doc.pdf", "credID": "CRED-xxxx", "org": "...", "identity": "..." }
+// Body: { "filePath": "/path/to/doc.pdf", "credID": "CRED-xxxx", "org": "...", "identity": "...", "privateKey": "hex..." }
+// privateKey must be the hex-encoded ML-DSA-44 private key returned by /issueCredential.
+// This ensures the signature over the documentCID is verifiable with the public key
+// already stored on-chain for this credential.
 func handleUploadDocument(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		FilePath string `json:"filePath"`
-		CredID   string `json:"credID"`
-		Org      string `json:"org"`
-		Identity string `json:"identity"`
+		FilePath   string `json:"filePath"`
+		CredID     string `json:"credID"`
+		Org        string `json:"org"`
+		Identity   string `json:"identity"`
+		PrivateKey string `json:"privateKey"` // hex ML-DSA-44 private key from issueCredential
+		PublicKey  string `json:"publicKey"`  // hex ML-DSA-44 public key from issueCredential (optional, can be derived from private key)
 	}
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -627,7 +645,7 @@ func handleUploadDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	documentCID, finalCID, pubKeyHex, privKeyHex, sigHex, err := uploadDocumentAndSign(req.FilePath)
+	documentCID, finalCID, pubKeyHex, privKeyHex, sigHex, err := uploadDocumentAndSign(req.FilePath, req.PrivateKey, req.PublicKey)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
