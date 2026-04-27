@@ -1,0 +1,44 @@
+{
+  "name": "fabric-network-general",
+  "version": "1.0.0",
+  "client": {
+    "organization": "General",
+    "connection": {
+      "timeout": {
+        "peer": { "endorser": "300" },
+        "orderer": "300"
+      }
+    }
+  },
+  "organizations": {
+    "General": {
+      "mspid": "GeneralMSP",
+      "peers": ["peer0.general.uae.com"],
+      "certificateAuthorities": ["ca.general.uae.com"]
+    }
+  },
+  "peers": {
+    "peer0.general.uae.com": {
+      "url": "grpcs://peer0.general.uae.com:9051",
+      "tlsCACerts": {
+        "path": "../qchain-network/crypto-material/peerOrganizations/general.uae.com/peers/peer0.general.uae.com/tls/ca.crt"
+      },
+      "grpcOptions": {
+        "ssl-target-name-override": "peer0.general.uae.com",
+        "hostnameOverride": "peer0.general.uae.com"
+      }
+    }
+  },
+  "certificateAuthorities": {
+    "ca.general.uae.com": {
+      "url": "https://ca.general.uae.com:8054",
+      "caName": "GeneralCA",
+      "tlsCACerts": {
+        "pem": "-----BEGIN CERTIFICATE----- MIICFzCCAb2gAwIBAgIUNKdOI/fi38tDcn1DrXBWWKWw59QwCgYIKoZIzj0EAwIw aDELMAkGA1UEBhMCQUUxEDAOBgNVBAgTB1NoYXJqYWgxEDAOBgNVBAcTB1NoYXJq YWgxGDAWBgNVBAoTD2dlbmVyYWwudWFlLmNvbTEbMBkGA1UEAxMSY2EuZ2VuZXJh bC51YWUuY29tMB4XDTI2MDQwODE5NTUwMFoXDTQxMDQwNDE5NTUwMFowaDELMAkG A1UEBhMCQUUxEDAOBgNVBAgTB1NoYXJqYWgxEDAOBgNVBAcTB1NoYXJqYWgxGDAW BgNVBAoTD2dlbmVyYWwudWFlLmNvbTEbMBkGA1UEAxMSY2EuZ2VuZXJhbC51YWUu Y29tMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAES8hW9w2P+sUZmRdT24/YyUpa Ot085Enw2CrnsGHjB2RH61w6l3FIOgVunHQCFZaLQqAWI+0d4kqb+kSgd7cWSKNF MEMwDgYDVR0PAQH/BAQDAgEGMBIGA1UdEwEB/wQIMAYBAf8CAQEwHQYDVR0OBBYE FEeWIxzLUKxrujm8hlIAT5EOmc/MMAoGCCqGSM49BAMCA0gAMEUCIQD+c6jJC/fA l/c1wFaoLXBQHrWgzpLxXTVtrxwE/r4fawIgOhA5gYNQKIFBZanaTXMDtYRq2eWX /7oAm8t9aplIwMs= -----END CERTIFICATE----- "
+      },
+      "httpOptions": {
+        "verify": false
+      }
+    }
+  }
+}
