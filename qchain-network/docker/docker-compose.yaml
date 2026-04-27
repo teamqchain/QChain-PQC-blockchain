@@ -1,0 +1,183 @@
+networks:
+  fabric_net:
+
+volumes:
+  orderer0.orderer.example.com:
+  peer0.government.uae.com:
+  peer0.general.uae.com:
+  ipfs_staging:
+  ipfs_data:
+
+services:
+
+  orderer0.orderer.example.com:
+    image: hyperledger/fabric-orderer:latest
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_LISTENPORT=7050
+      - ORDERER_GENERAL_LOCALMSPID=OrdererMSP
+      - ORDERER_GENERAL_LOCALMSPDIR=/var/hyperledger/orderer/msp
+      - ORDERER_GENERAL_TLS_ENABLED=true
+      - ORDERER_GENERAL_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_GENERAL_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_GENERAL_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_GENERAL_CLUSTER_CLIENTCERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_GENERAL_CLUSTER_CLIENTPRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_GENERAL_CLUSTER_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_GENERAL_BOOTSTRAPMETHOD=none
+      - ORDERER_CHANNELPARTICIPATION_ENABLED=true
+      - ORDERER_ADMIN_TLS_ENABLED=true
+      - ORDERER_ADMIN_LISTENADDRESS=0.0.0.0:7053
+      - ORDERER_ADMIN_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_ADMIN_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_ADMIN_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_ADMIN_TLS_CLIENTAUTHREQUIRED=true
+      - ORDERER_ADMIN_TLS_CLIENTROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+    volumes:
+      - ../crypto-material/ordererOrganizations/orderer.example.com/orderers/orderer0.orderer.example.com/msp:/var/hyperledger/orderer/msp
+      - ../crypto-material/ordererOrganizations/orderer.example.com/orderers/orderer0.orderer.example.com/tls:/var/hyperledger/orderer/tls
+      - orderer0.orderer.example.com:/var/hyperledger/production/orderer
+    ports:
+      - 7050:7050
+      - 7053:7053
+    networks:
+      - fabric_net
+
+  couchdb0:
+    image: couchdb:3.3.2
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=adminpw
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://admin:adminpw@localhost:5984/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - 5984:5984
+    networks:
+      - fabric_net
+
+  peer0.government.uae.com:
+    image: hyperledger/fabric-peer:latest
+    environment:
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=docker_fabric_net
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_PROFILE_ENABLED=false
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.government.uae.com
+      - CORE_PEER_ADDRESS=peer0.government.uae.com:7051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:7051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.government.uae.com:7052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.government.uae.com:7051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.government.uae.com:7051
+      - CORE_PEER_LOCALMSPID=GovernmentMSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:9444
+      - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb0:5984
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=admin
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=adminpw
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ../crypto-material/peerOrganizations/government.uae.com/peers/peer0.government.uae.com/msp:/etc/hyperledger/fabric/msp
+      - ../crypto-material/peerOrganizations/government.uae.com/peers/peer0.government.uae.com/tls:/etc/hyperledger/fabric/tls
+      - peer0.government.uae.com:/var/hyperledger/production
+    ports:
+      - 7051:7051
+    depends_on:
+      couchdb0:
+        condition: service_healthy
+    networks:
+      - fabric_net
+
+  peer0.general.uae.com:
+    image: hyperledger/fabric-peer:latest
+    environment:
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=docker_fabric_net
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_PROFILE_ENABLED=false
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.general.uae.com
+      - CORE_PEER_ADDRESS=peer0.general.uae.com:9051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:9051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.general.uae.com:9052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:9052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.general.uae.com:9051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.general.uae.com:9051
+      - CORE_PEER_LOCALMSPID=GeneralMSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:9445
+      - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb0:5984
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=admin
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=adminpw
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ../crypto-material/peerOrganizations/general.uae.com/peers/peer0.general.uae.com/msp:/etc/hyperledger/fabric/msp
+      - ../crypto-material/peerOrganizations/general.uae.com/peers/peer0.general.uae.com/tls:/etc/hyperledger/fabric/tls
+      - peer0.general.uae.com:/var/hyperledger/production
+    ports:
+      - 9051:9051
+    depends_on:
+      couchdb0:
+        condition: service_healthy
+    networks:
+      - fabric_net
+  
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: ipfs
+    environment:
+      - IPFS_PROFILE=server
+    volumes:
+      - ipfs_staging:/export
+      - ipfs_data:/data/ipfs
+    ports:
+      - 4001:4001       # swarm (p2p) — can be removed if fully local
+      - 5001:5001       # API  — used by qchain-server
+      - 8080:8080       # gateway — used for browser retrieval
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fabric_net
+  
+  qchain-server:
+    build:
+      context: ../../offchain/go-bindings
+      dockerfile: Dockerfile
+    image: qchain-server:latest
+    container_name: qchain-server
+    ports:
+      - "3000:3000"
+    environment:
+      - NETWORK_ROOT=/qchain-network
+      - SERVER_PORT=3000
+      - CHANNEL_NAME=mychannel
+      - CHAINCODE_NAME=QChaincode
+      - IPFS_HOST=ipfs:5001          # resolves to the ipfs service above
+      - GOV_PEER_ENDPOINT=peer0.government.uae.com:7051
+      - GOV_GATEWAY_PEER=peer0.government.uae.com
+      - GEN_PEER_ENDPOINT=peer0.general.uae.com:9051
+      - GEN_GATEWAY_PEER=peer0.general.uae.com
+    volumes:
+      - ..:/qchain-network           # .. = qchain-network/ (one level up from docker/)
+    networks:
+      - fabric_net
+    depends_on:
+      - orderer0.orderer.example.com
+      - peer0.government.uae.com
+      - peer0.general.uae.com

@@ -1,0 +1,100 @@
+Organizations:
+  - &OrdererOrg
+    Name: OrdererOrg
+    ID: OrdererMSP
+    MSPDir: ../crypto-material/ordererOrganizations/orderer.example.com/msp
+    Policies:
+      Readers: { Type: Signature, Rule: "OR('OrdererMSP.member')" }
+      Writers: { Type: Signature, Rule: "OR('OrdererMSP.member')" }
+      Admins:  { Type: Signature, Rule: "OR('OrdererMSP.admin')"  }
+
+  - &Government
+    Name: GovernmentMSP
+    ID: GovernmentMSP
+    MSPDir: ../crypto-material/peerOrganizations/government.uae.com/msp
+    Policies:
+      Readers: { Type: Signature, Rule: "OR('GovernmentMSP.admin','GovernmentMSP.peer','GovernmentMSP.client')" }
+      Writers: { Type: Signature, Rule: "OR('GovernmentMSP.admin','GovernmentMSP.client')" }
+      Admins:  { Type: Signature, Rule: "OR('GovernmentMSP.admin')" }
+      Endorsement: { Type: Signature, Rule: "OR('GovernmentMSP.peer')" }
+    AnchorPeers:
+      - Host: peer0.government.uae.com
+        Port: 7051
+
+  - &General
+    Name: GeneralMSP
+    ID: GeneralMSP
+    MSPDir: ../crypto-material/peerOrganizations/general.uae.com/msp
+    Policies:
+      Readers: { Type: Signature, Rule: "OR('GeneralMSP.admin','GeneralMSP.peer','GeneralMSP.client')" }
+      Writers: { Type: Signature, Rule: "OR('GeneralMSP.admin','GeneralMSP.client')" }
+      Admins:  { Type: Signature, Rule: "OR('GeneralMSP.admin')" }
+      Endorsement: { Type: Signature, Rule: "OR('GeneralMSP.peer')" }
+    AnchorPeers:
+      - Host: peer0.general.uae.com
+        Port: 9051
+
+Capabilities:
+  Channel: &ChannelCapabilities
+    V2_0: true
+  Orderer: &OrdererCapabilities
+    V2_0: true
+  Application: &ApplicationCapabilities
+    V2_5: true
+
+Application: &ApplicationDefaults
+  Organizations:
+  Policies:
+    Readers: { Type: ImplicitMeta, Rule: "ANY Readers" }
+    Writers: { Type: ImplicitMeta, Rule: "ANY Writers" }
+    Admins:  { Type: ImplicitMeta, Rule: "MAJORITY Admins" }
+    LifecycleEndorsement: { Type: ImplicitMeta, Rule: "MAJORITY Endorsement" }
+    Endorsement:          { Type: ImplicitMeta, Rule: "MAJORITY Endorsement" }
+  Capabilities: *ApplicationCapabilities
+
+Orderer: &OrdererDefaults
+  OrdererType: etcdraft
+  Addresses:
+    - orderer0.orderer.example.com:7050
+  EtcdRaft:
+    Consenters:
+      - Host: orderer0.orderer.example.com
+        Port: 7050
+        ClientTLSCert: ../crypto-material/ordererOrganizations/orderer.example.com/orderers/orderer0.orderer.example.com/tls/server.crt
+        ServerTLSCert: ../crypto-material/ordererOrganizations/orderer.example.com/orderers/orderer0.orderer.example.com/tls/server.crt
+  BatchTimeout: 2s
+  BatchSize:
+    MaxMessageCount: 10
+    AbsoluteMaxBytes: 99 MB
+    PreferredMaxBytes: 512 KB
+  Organizations:
+  Policies:
+    Readers: { Type: ImplicitMeta, Rule: "ANY Readers" }
+    Writers: { Type: ImplicitMeta, Rule: "ANY Writers" }
+    Admins:  { Type: ImplicitMeta, Rule: "MAJORITY Admins" }
+    BlockValidation: { Type: ImplicitMeta, Rule: "ANY Writers" }
+  Capabilities: *OrdererCapabilities
+
+Channel: &ChannelDefaults
+  Policies:
+    Readers: { Type: ImplicitMeta, Rule: "ANY Readers" }
+    Writers: { Type: ImplicitMeta, Rule: "ANY Writers" }
+    Admins:  { Type: ImplicitMeta, Rule: "MAJORITY Admins" }
+  Capabilities: *ChannelCapabilities
+
+Profiles:
+
+  TwoOrgsChannel:
+    Consortium: SampleConsortium
+    <<: *ChannelDefaults
+    Orderer:
+      <<: *OrdererDefaults
+      Organizations:
+        - *OrdererOrg
+      Capabilities: *OrdererCapabilities
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+        - *Government
+        - *General
+      Capabilities: *ApplicationCapabilities
