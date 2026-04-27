@@ -20,7 +20,6 @@ coverage/
 # Hyperledger Fabric crypto material / wallets
 crypto-config/
 organizations/
-channel-artifacts/
 chaincode/chaincode-javascript/node_modules/
 wallet/
 keystore/
@@ -28,6 +27,15 @@ keystore/
 *.key
 *.p12
 *.jks
+
+# Generated channel artifacts (keep folder itself trackable)
+channel-artifacts/*.block
+channel-artifacts/*.tx
+channel-artifacts/*.pb
+channel-artifacts/*.json
+channel-artifacts/*.tar.gz
+channel-artifacts/*.tar
+channel-artifacts/*.zip
 
 # Docker / Compose
 docker-compose.override.yml

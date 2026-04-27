@@ -1,41 +1,68 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test binary, built with `go test -c`
-*.test
-
-# Code coverage profiles and other test artifacts
-*.out
-coverage.*
-*.coverprofile
-profile.cov
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
-go.work
-go.work.sum
-
-# env file
-.env
-
-# Editor/IDE
-# .idea/
-# .vscode/
+# macOS / OS noise
 .DS_Store
 
-# Logs
-*.log
+# Editors and IDEs
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+*~
 
-# Generated network artifacts
-*.tar.gz
-*.tar
-*.zip
+# Logs and runtime dumps
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment and local overrides
+.env
+.env.*
+*.local
+
+# Node / JavaScript
+**/node_modules/
+**/dist/
+**/coverage/
+*.tsbuildinfo
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+.venv/
+venv/
+
+# Go
+*.test
+*.out
+coverage.out
+
+# Dart / Flutter
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/build/
+
+# Project-specific generated artifacts and secrets
+qchain-network/crypto-config/
+qchain-network/organizations/
+qchain-network/crypto-material/
+qchain-network/wallet/
+qchain-network/keystore/
+qchain-network/channel-artifacts/*.block
+qchain-network/channel-artifacts/*.tx
+qchain-network/channel-artifacts/*.pb
+qchain-network/channel-artifacts/*.json
+qchain-network/channel-artifacts/*.tar.gz
+qchain-network/channel-artifacts/*.tar
+qchain-network/channel-artifacts/*.zip
+
+# Docker overrides
+docker-compose.override.yml
+docker-compose.*.override.yml
+docker-compose.*.override.yaml
