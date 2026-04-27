@@ -42,7 +42,4 @@ The following benchmarks compare the speed across all three ML-DSA security leve
 
 #
 
-![Graph](../assets/Graph%20-%20Key%20Generation.png)
-![Graph](../assets/Graph%20-%20Signing.png)
-![Graph](../assets/Graph%20-%20Verification.png)
-![Graph](../assets/Graph%20-%20Total%20Workflow.png)
+![Graph](../assets/benchmark_graph.png)
