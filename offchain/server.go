@@ -104,10 +104,13 @@ type RegisterHolderRequest struct {
 }
 
 type IssueCredentialRequest struct {
-	Org      string `json:"org"`
-	Identity string `json:"identity"`
-	HolderID string `json:"holderID"`
-	Info     string `json:"info"`
+	Org        string `json:"org"`
+	Identity   string `json:"identity"`
+	HolderID   string `json:"holderID"`
+	Info       string `json:"info"`
+	FilePath   string `json:"filePath"`
+	PrivateKey string `json:"privateKey"` // optional
+	PublicKey  string `json:"publicKey"`  // optional
 }
 
 type VerifyCredentialRequest struct {
@@ -332,14 +335,12 @@ func pqcVerify(message, signatureHex, publicKeyHex string) (bool, error) {
 //  IPFS HELPER
 // ─────────────────────────────────────────────
 
-// uploadDocumentAndSign uploads a PDF to IPFS, signs its CID with the provided
-// ML-DSA-44 private key (from issueCredential), uploads the verification payload,
-// and returns all artifacts.
-// If privateKeyHex is empty, a fresh key pair is generated (fallback only).
-func uploadDocumentAndSign(filePath, privateKeyHex, publicKeyHex string) (documentCID, finalCID, pubKeyHexOut, privKeyHexOut, sigHex string, err error) {
+// uploadDocumentAndSign uploads a PDF to IPFS, and signs its CID with the provided
+// ML-DSA-44 private key. If keys are omitted, a new key pair is generated.
+func uploadDocumentAndSign(filePath, privateKeyHex, publicKeyHex string) (documentCID, pubKeyHexOut, privKeyHexOut, sigHex string, err error) {
 	pdfFile, err := os.Open(filePath)
 	if err != nil {
-		return "", "", "", "", "", fmt.Errorf("opening document %q: %w", filePath, err)
+		return "", "", "", "", fmt.Errorf("opening document %q: %w", filePath, err)
 	}
 	defer pdfFile.Close()
 
@@ -347,40 +348,25 @@ func uploadDocumentAndSign(filePath, privateKeyHex, publicKeyHex string) (docume
 
 	documentCID, err = sh.Add(pdfFile)
 	if err != nil {
-		return "", "", "", "", "", fmt.Errorf("IPFS upload document: %w", err)
+		return "", "", "", "", fmt.Errorf("IPFS upload document: %w", err)
 	}
 
 	if privateKeyHex == "" || publicKeyHex == "" {
-		// Fallback: generate a fresh keypair if none was provided.
-		// Note: the public key will NOT match what is stored on-chain from
-		// issueCredential, so verification will fail. Always pass the
-		// privateKey from the issueCredential response.
 		pubKeyHexOut, privKeyHexOut, err = pqcGenKeyPair()
 		if err != nil {
-			return "", "", "", "", "", err
+			return "", "", "", "", err
 		}
 	} else {
-		// Derive the public key from the provided private key so the caller
-		// gets it back without needing to store it separately.
 		privKeyHexOut = privateKeyHex
 		pubKeyHexOut = publicKeyHex
 	}
 
-	sigHex, err = pqcSign(documentCID, privKeyHexOut)
+	sigHex, err = pqcSign(documentCID, privKeyHexOut) // Signs documentCID instead of info
 	if err != nil {
-		return "", "", "", "", "", err
+		return "", "", "", "", err
 	}
 
-	payload := fmt.Sprintf(
-		`{"document_cid":"%s","pqc_signature":"%s","public_key":"%s"}`,
-		documentCID, sigHex, pubKeyHexOut,
-	)
-	finalCID, err = sh.Add(strings.NewReader(payload))
-	if err != nil {
-		return "", "", "", "", "", fmt.Errorf("IPFS upload payload: %w", err)
-	}
-
-	return documentCID, finalCID, pubKeyHexOut, privKeyHexOut, sigHex, nil
+	return documentCID, pubKeyHexOut, privKeyHexOut, sigHex, nil
 }
 
 // ─────────────────────────────────────────────
@@ -437,29 +423,26 @@ func handleRegisterHolder(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /issueCredential
+// Handles both issuing the credential and uploading/signing the document.
 func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 	var req IssueCredentialRequest
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	if req.Org == "" || req.Identity == "" || req.HolderID == "" || req.Info == "" {
-		writeError(w, http.StatusBadRequest, "missing parameters: org, identity, holderID, info")
+	if req.Org == "" || req.Identity == "" || req.HolderID == "" || req.Info == "" || req.FilePath == "" {
+		writeError(w, http.StatusBadRequest, "missing parameters: org, identity, holderID, info, filePath")
 		return
 	}
 
-	pubKeyHex, privKeyHex, err := pqcGenKeyPair()
+	// 1. Upload to IPFS, get documentCID, generate keys (if not provided), and sign the documentCID
+	documentCID, pubKeyHex, privKeyHex, sigHex, err := uploadDocumentAndSign(req.FilePath, req.PrivateKey, req.PublicKey)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "PQC key generation failed: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "Document upload/sign failed: "+err.Error())
 		return
 	}
 
-	sigHex, err := pqcSign(req.Info, privKeyHex)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "PQC signing failed: "+err.Error())
-		return
-	}
-
+	// 2. Connect to the fabric gateway
 	contract, gw, conn, err := getContract(req.Org, req.Identity)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -468,17 +451,39 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 	defer gw.Close()
 	defer conn.Close()
 
+	// 3. Issue the credential on-chain
 	result, err := contract.SubmitTransaction("issueCredential", req.HolderID, req.Info, pubKeyHex)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	// 4. Parse the chaincode response to retrieve the credID and submit the setCID transaction
 	var chainParsed map[string]any
 	_ = json.Unmarshal(result, &chainParsed)
+
+	// Extract the credential ID to associate the documentCID
+	var credID string
+	if idVal, ok := chainParsed["id"].(string); ok {
+		credID = idVal
+	} else if idVal, ok := chainParsed["credID"].(string); ok {
+		credID = idVal
+	}
+
+	if credID != "" {
+		_, err = contract.SubmitTransaction("setCID", credID, documentCID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "setCID on-chain failed: "+err.Error())
+			return
+		}
+	}
+
+	// 5. Build combined response payload
 	chainParsed["publicKey"] = pubKeyHex
 	chainParsed["privateKey"] = privKeyHex // ⚠ transmit over TLS only
 	chainParsed["signature"] = sigHex
+	chainParsed["documentCID"] = documentCID
+	chainParsed["message"] = "Credential issued, document uploaded, signed, and documentCID anchored on-chain"
 
 	writeJSON(w, http.StatusOK, chainParsed)
 }
@@ -622,60 +627,6 @@ func handleGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, parsed)
 }
 
-// POST /uploadDocument
-// Body: { "filePath": "/path/to/doc.pdf", "credID": "CRED-xxxx", "org": "...", "identity": "...", "privateKey": "hex..." }
-// privateKey must be the hex-encoded ML-DSA-44 private key returned by /issueCredential.
-// This ensures the signature over the documentCID is verifiable with the public key
-// already stored on-chain for this credential.
-func handleUploadDocument(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		FilePath   string `json:"filePath"`
-		CredID     string `json:"credID"`
-		Org        string `json:"org"`
-		Identity   string `json:"identity"`
-		PrivateKey string `json:"privateKey"` // hex ML-DSA-44 private key from issueCredential
-		PublicKey  string `json:"publicKey"`  // hex ML-DSA-44 public key from issueCredential (optional, can be derived from private key)
-	}
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
-		return
-	}
-	if req.FilePath == "" || req.CredID == "" || req.Org == "" || req.Identity == "" {
-		writeError(w, http.StatusBadRequest, "missing parameters: filePath, credID, org, identity")
-		return
-	}
-
-	documentCID, finalCID, pubKeyHex, privKeyHex, sigHex, err := uploadDocumentAndSign(req.FilePath, req.PrivateKey, req.PublicKey)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	// Comment out below to test IPFS + PQC independently without on-chain
-	contract, gw, conn, err := getContract(req.Org, req.Identity)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	defer gw.Close()
-	defer conn.Close()
-
-	_, err = contract.SubmitTransaction("setCID", req.CredID, finalCID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "setCID on-chain failed: "+err.Error())
-		return
-	}
-	//
-	writeJSON(w, http.StatusOK, map[string]any{
-		"documentCID": documentCID,
-		"finalCID":    finalCID,
-		"publicKey":   pubKeyHex,
-		"privateKey":  privKeyHex, // ⚠ transmit over TLS only
-		"signature":   sigHex,
-		"credID":      req.CredID,
-		"message":     "Document uploaded, signed, and CID anchored on-chain",
-	})
-}
-
 // ─────────────────────────────────────────────
 //  MAIN — router + server
 // ─────────────────────────────────────────────
@@ -689,7 +640,6 @@ func main() {
 	mux.HandleFunc("POST /revokeCredential", handleRevokeCredential)
 	mux.HandleFunc("POST /setCID", handleSetCID)
 	mux.HandleFunc("GET /getCredentialsByHolder", handleGetCredentialsByHolder)
-	mux.HandleFunc("POST /uploadDocument", handleUploadDocument)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
