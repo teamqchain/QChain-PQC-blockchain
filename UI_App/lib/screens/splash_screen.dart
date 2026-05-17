@@ -113,7 +113,7 @@ class _SplashScreenState extends State<SplashScreen>
             ),
             const SizedBox(height: 8),
             const Text(
-              'SECURITY REDIFINED',
+              'SECURITY REDEFINED',
               style: TextStyle(fontSize: 12, color: qText, letterSpacing: 2, fontFamily: 'formula'),
             ),
 

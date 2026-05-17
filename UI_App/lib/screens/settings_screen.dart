@@ -12,8 +12,8 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   static const _teamMembers = [
     ('Mohammed Bin Ali Maqqavi', 'Project Manager'),
-    ('Mohammed Abdul Haris', 'Software Engineer'),
-    ('Mohammed Nihal', 'Quality Assurance Officer'),
+    ('Mohammed Abdul Haris', 'UI/UX Engineer '),
+    ('Mohammed Nihal', 'Technical Lead'),
     ('Mohammed Obied', 'Blockchain Specialist'),
   ];
 
