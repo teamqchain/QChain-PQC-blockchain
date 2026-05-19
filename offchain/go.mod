@@ -3,9 +3,11 @@ module github.com/qchain/go-bindings
 go 1.23
 
 require (
+	github.com/go-sql-driver/mysql v1.8.1
 	github.com/hyperledger/fabric-gateway v1.7.0
 	github.com/ipfs/go-ipfs-api v0.7.0
 	// github.com/open-quantum-safe/liboqs-go v0.0.0-20241017102956-59ba9a67c24a (This version is not available, so I'm using the root version below. Please update it to the correct version when it's available.)
+	golang.org/x/crypto v0.28.0
 	google.golang.org/grpc v1.68.0
 )
 
@@ -35,7 +37,7 @@ require (
 	github.com/multiformats/go-varint v0.0.7 // indirect
 	github.com/open-quantum-safe/liboqs-go v0.0.0-20260310140033-75451133b94a
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	golang.org/x/crypto v0.28.0 // indirect
+	golang.org/x/crypto v0.28.0
 	golang.org/x/net v0.29.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/text v0.19.0 // indirect
