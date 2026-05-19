@@ -100,7 +100,7 @@ echo ""
 # ── 3. Fabric peers (informational) ─────────────────────────────────────────
 echo "── Fabric Peers ──"
 
-for PEER_CONTAINER in peer0.general.uae.com peer0.government.uae.com orderer.uae.com; do
+for PEER_CONTAINER in peer0.general.uae.com peer0.government.uae.com orderer0.orderer.example.com; do
     if docker ps --format '{{.Names}}' | grep -q "$PEER_CONTAINER" 2>/dev/null; then
         ok "$PEER_CONTAINER"
     else
