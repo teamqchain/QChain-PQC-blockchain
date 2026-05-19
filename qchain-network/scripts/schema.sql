@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS verifiers (
 -- ─── SCHEMA MANAGEMENT ────────────────────────────────────────────────────────
 -- [LATER] Credential type schemas managed via the IT Admin section of QPortal.
 
-CREATE TABLE IF NOT EXISTS schemas (
+CREATE TABLE IF NOT EXISTS `schemas` (
     schema_id          VARCHAR(20)  PRIMARY KEY,                                    -- SCH-001
     org_id             VARCHAR(20)  NOT NULL DEFAULT 'ORG-UOS-001',
     name               VARCHAR(100) NOT NULL,                                       -- 'BSc Degree'
@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS schema_fields (
     dropdown_options    JSON,                                                        -- option strings (dropdown only)
     sort_order          TINYINT UNSIGNED DEFAULT 0,
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (schema_id) REFERENCES schemas(schema_id)
+    FOREIGN KEY (schema_id) REFERENCES `schemas`(schema_id)
 );
 
 -- ─── CREDENTIALS ──────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS credentials (
     updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (holder_id)  REFERENCES holders(holder_id),
     FOREIGN KEY (issuer_id)  REFERENCES issuers(issuer_id),
-    FOREIGN KEY (schema_id)  REFERENCES schemas(schema_id)
+    FOREIGN KEY (schema_id)  REFERENCES `schemas`(schema_id)
 );
 
 -- ─── VERIFICATION LOGS ────────────────────────────────────────────────────────
@@ -253,13 +253,13 @@ CREATE TABLE IF NOT EXISTS batch_jobs (
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (issuer_id) REFERENCES issuers(issuer_id),
-    FOREIGN KEY (schema_id) REFERENCES schemas(schema_id)
+    FOREIGN KEY (schema_id) REFERENCES `schemas`(schema_id)
 );
 
 CREATE TABLE IF NOT EXISTS batch_job_rows (
     row_id        VARCHAR(30) PRIMARY KEY,
     batch_job_id  VARCHAR(20) NOT NULL,
-    row_number    INT UNSIGNED NOT NULL,
+    `row_number`    INT UNSIGNED NOT NULL,
     holder_id     VARCHAR(10),
     holder_name   VARCHAR(200),
     fields        JSON NOT NULL,
