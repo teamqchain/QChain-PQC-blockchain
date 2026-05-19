@@ -53,7 +53,7 @@
 
 # Start with official Go image based on Debian Bookworm
 # "AS builder" names this stage so we can reference it later
-FROM golang:1.23-bookworm AS builder
+FROM golang:1.24-bookworm AS builder
 
 # Install build tools needed to compile the liboqs C library
 # --no-install-recommends = don't install optional packages (smaller image)
@@ -97,15 +97,17 @@ WORKDIR /app
 # Copy go.mod first (dependency caching optimization)
 # If go.mod hasn't changed, Docker reuses cached layer = faster builds
 COPY go.mod go.sum ./
+# Download declared deps; go.sum may be incomplete (e.g. mysql driver added on VM).
+# go mod tidy below will fetch any missing checksums.
 RUN go mod download || true
 
-# Copy our Go source code
+# Copy our Go source code (server.go + db.go; cmd/ is excluded)
 COPY *.go ./
 
-# Download any missing dependencies and compile
-# CGO_ENABLED=1 means "use C libraries" (required for liboqs-go)
+# tidy adds any missing go.sum entries, then compile.
+# CGO_ENABLED=1 is required for liboqs-go (C bindings).
 RUN go mod tidy
-RUN CGO_ENABLED=1 go build -o /qchain-bindings .
+RUN CGO_ENABLED=1 go build -o /qchain-server .
 
 # =============================================================================
 # STAGE 2: RUNTIME (Final Image)
@@ -127,18 +129,12 @@ COPY --from=builder /usr/local/lib/liboqs* /usr/local/lib/
 COPY --from=builder /usr/local/include/oqs /usr/local/include/oqs
 
 # Copy our compiled Go binary from the builder stage
-COPY --from=builder /qchain-bindings /app/qchain-bindings
+COPY --from=builder /qchain-server /app/qchain-server
 
 WORKDIR /app
 
-# Tell the system where to find liboqs at runtime
 ENV LD_LIBRARY_PATH="/usr/local/lib"
-
-# Default IPFS connection settings (overridden by docker-compose.yml)
-ENV IPFS_API_HOST="localhost"
-ENV IPFS_API_PORT="5001"
 ENV SERVER_PORT="3000"
 
 EXPOSE 3000
-# When the container starts, run our application
-CMD ["/app/qchain-bindings"]
+CMD ["/app/qchain-server"]
