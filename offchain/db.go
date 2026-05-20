@@ -660,10 +660,10 @@ func dashboardCounters() (DashboardCounters, error) {
 	err := db.QueryRow(`
 		SELECT
 		  COUNT(*),
-		  SUM(CASE WHEN status = 'revoked'   THEN 1 ELSE 0 END),
-		  SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END),
-		  SUM(CASE WHEN status = 'expired'   THEN 1 ELSE 0 END),
-		  SUM(CASE WHEN DATE(issued_at) = CURDATE() THEN 1 ELSE 0 END)
+		  COALESCE(SUM(CASE WHEN status = 'revoked'   THEN 1 ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN status = 'expired'   THEN 1 ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN DATE(issued_at) = CURDATE() THEN 1 ELSE 0 END), 0)
 		FROM credentials`).Scan(
 		&d.TotalIssued, &d.TotalRevoked, &d.TotalSuspended, &d.TotalExpired, &d.IssuedToday,
 	)
@@ -675,7 +675,7 @@ func dashboardCounters() (DashboardCounters, error) {
 	err = db.QueryRow(`
 		SELECT
 		  COUNT(*),
-		  SUM(CASE WHEN DATE(verified_at) = CURDATE() THEN 1 ELSE 0 END)
+		  COALESCE(SUM(CASE WHEN DATE(verified_at) = CURDATE() THEN 1 ELSE 0 END), 0)
 		FROM verification_logs`).Scan(&d.TotalVerified, &d.VerifiedToday)
 	if err != nil {
 		return d, err
