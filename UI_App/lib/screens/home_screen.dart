@@ -286,36 +286,54 @@ class _HeroBoxState extends State<_HeroBox>
           // const SizedBox(height: 16),
 
           // ── Stats 2×2 Grid ──
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
+          // ── Stats 2×2 Layout (Replaces GridView) ──
+          Padding(
             padding: const EdgeInsets.only(top: 12),
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            childAspectRatio: 2.8,
-            children: [
-              _StatTile(
-                label: 'Valid',
-                count: widget.validCount,
-                color: Colors.green
-              ),
-              _StatTile(
-                label: 'Suspended',
-                count: widget.suspendedCount,
-                color: Colors.orange,
-              ),
-              _StatTile(
-                label: 'Revoked',
-                count: widget.revokedCount,
-                color: Colors.red,
-              ),
-              _StatTile(
-                label: 'Expired',
-                count: widget.revokedCount,
-                color: Colors.grey,
-              ),
-            ],
+            child: Column(
+              children: [
+                // Top Row
+                Row(
+                  children: [
+                    Expanded(
+                      child: _StatTile(
+                        label: 'Valid',
+                        count: widget.validCount,
+                        color: Colors.green,
+                      ),
+                    ),
+                    const SizedBox(width: 10), // Horizontal spacing
+                    Expanded(
+                      child: _StatTile(
+                        label: 'Suspended',
+                        count: widget.suspendedCount,
+                        color: Colors.orange,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10), // Vertical spacing
+                // Bottom Row
+                Row(
+                  children: [
+                    Expanded(
+                      child: _StatTile(
+                        label: 'Revoked',
+                        count: widget.revokedCount,
+                        color: Colors.red,
+                      ),
+                    ),
+                    const SizedBox(width: 10), // Horizontal spacing
+                    Expanded(
+                      child: _StatTile(
+                        label: 'Expired',
+                        count: widget.expiryCount,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -347,45 +365,41 @@ class _StatTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Container(
-          //   width: 8,
-          //   height: 8,
-          //   decoration: BoxDecoration(
-          //     shape: BoxShape.circle,
-          //     color: color,
-          //     boxShadow: [
-          //       BoxShadow(
-          //         color: color.withOpacity(0.5),
-          //         blurRadius: 5,
-          //         spreadRadius: 1,
-          //       ),
-          //     ],
-          //   ),
-          // ),
-
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                '$count',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '$count',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
                 ),
-              ),
-              Text(
-                label,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.2,
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -466,7 +480,7 @@ class _FavouriteCard extends StatelessWidget {
               border: Border.all(color: const Color(0xFFE8E8E8)),
             ),
             alignment: Alignment.center,
-            child: Text(cred.icon, style: const TextStyle(fontSize: 20)),
+            child: Icon(cred.icon, size: 22, color: Colors.black,),
           ),
           const SizedBox(width: 14),
           Expanded(

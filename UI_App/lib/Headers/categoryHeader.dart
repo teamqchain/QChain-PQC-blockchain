@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get/get_core/src/get_main.dart';
+import 'package:qwallet_mobileapp/constants/colors.dart';
 import 'package:qwallet_mobileapp/model/wallet_category.dart';
 
 class Header extends StatelessWidget {
@@ -104,9 +105,10 @@ class Header extends StatelessWidget {
                   border: Border.all(color: const Color(0xFF2A2A2A)),
                 ),
                 alignment: Alignment.center,
-                child: Text(
+                child: Icon(
                   category.icon,
-                  style: const TextStyle(fontSize: 24),
+                  color: qSecondary,
+                  size: 22,
                 ),
               ),
               const SizedBox(width: 14),

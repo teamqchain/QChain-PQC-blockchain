@@ -23,13 +23,13 @@ class _Service {
 
 class _Issuer {
   final String name;
-  final String emoji;
+  final IconData icon;
   final Color color;
   final List<_Service> services;
 
   const _Issuer({
     required this.name,
-    required this.emoji,
+    required this.icon,
     required this.color,
     required this.services,
   });
@@ -54,11 +54,11 @@ class _Category {
 final _dummyCategories = [
   _Category(
     name: 'Government',
-    icon: Icons.account_balance,
+    icon: Icons.gavel,
     issuers: [
       _Issuer(
         name: 'Ministry of Interior',
-        emoji: '🇦🇪',
+        icon: Icons.person,
         color: const Color(0xFF1D4ED8),
         services: [
           _Service(
@@ -75,7 +75,7 @@ final _dummyCategories = [
       ),
       _Issuer(
         name: 'Road & Transport Authority',
-        emoji: '🚗',
+        icon: Icons.directions_car,
         color: const Color(0xFF0F766E),
         services: [
           _Service(
@@ -98,7 +98,7 @@ final _dummyCategories = [
     issuers: [
       _Issuer(
         name: 'University of Sharjah',
-        emoji: '🎓',
+        icon: Icons.school,
         color: const Color(0xFF7C3AED),
         services: [
           _Service(
@@ -120,7 +120,7 @@ final _dummyCategories = [
       ),
       _Issuer(
         name: 'American University of Sharjah',
-        emoji: '🏛️',
+        icon: Icons.school,
         color: const Color(0xFFB45309),
         services: [
           _Service(
@@ -143,7 +143,7 @@ final _dummyCategories = [
     issuers: [
       _Issuer(
         name: 'HSBC UAE',
-        emoji: '🏦',
+        icon: Icons.account_balance,
         color: const Color(0xFFDC2626),
         services: [
           _Service(
@@ -165,7 +165,7 @@ final _dummyCategories = [
       ),
       _Issuer(
         name: 'Emirates NBD',
-        emoji: '💳',
+        icon: Icons.account_balance,
         color: const Color(0xFFD97706),
         services: [
           _Service(
@@ -188,7 +188,7 @@ final _dummyCategories = [
     issuers: [
       _Issuer(
         name: 'Cleveland Clinic Abu Dhabi',
-        emoji: '🏥',
+        icon: Icons.local_hospital,
         color: const Color(0xFF0891B2),
         services: [
           _Service(
@@ -205,7 +205,7 @@ final _dummyCategories = [
       ),
       _Issuer(
         name: 'Ministry of Health UAE',
-        emoji: '⚕️',
+        icon: Icons.local_hospital,
         color: const Color(0xFF16A34A),
         services: [
           _Service(
@@ -223,7 +223,7 @@ final _dummyCategories = [
     issuers: [
       _Issuer(
         name: 'Ministry of Human Resources',
-        emoji: '💼',
+        icon: Icons.work,
         color: const Color(0xFF4F46E5),
         services: [
           _Service(
@@ -292,7 +292,7 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
                     matchedServices.isNotEmpty) {
                   return _Issuer(
                     name: issuer.name,
-                    emoji: issuer.emoji,
+                    icon: issuer.icon,
                     color: issuer.color,
                     services: issuer.name.toLowerCase().contains(_query)
                         ? issuer.services
@@ -747,7 +747,7 @@ class _IssuerTile extends StatelessWidget {
             ),
             child: Row(
               children: [
-                // Coloured emoji avatar
+                // Coloured Icons avatar
                 Container(
                   width: 38,
                   height: 38,
@@ -757,9 +757,10 @@ class _IssuerTile extends StatelessWidget {
                     border: Border.all(color: issuer.color.withOpacity(0.2)),
                   ),
                   alignment: Alignment.center,
-                  child: Text(
-                    issuer.emoji,
-                    style: const TextStyle(fontSize: 18),
+                  child: Icon(
+                    issuer.icon,
+                    size: 18,
+                    color: qPrimary,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -891,16 +892,16 @@ class _ServiceRow extends StatelessWidget {
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    const Icon(
+                    const Icon( // icon of clock in request dropdown
                       Icons.schedule,
-                      color: Color(0xFFCCCCCC),
+                      color: qMuted,
                       size: 11,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       service.estimatedTime,
                       style: const TextStyle(
-                        color: Color(0xFFCCCCCC),
+                        color: qMuted,
                         fontSize: 10,
                       ),
                     ),
@@ -1051,7 +1052,7 @@ class _RequestConfirmSheet extends StatelessWidget {
                   border: Border.all(color: issuer.color.withOpacity(0.2)),
                 ),
                 alignment: Alignment.center,
-                child: Text(issuer.emoji, style: const TextStyle(fontSize: 22)),
+                child: Icon(issuer.icon, size: 22,color: qPrimary,),
               ),
               const SizedBox(width: 14),
               Column(

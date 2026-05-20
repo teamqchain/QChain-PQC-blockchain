@@ -13,6 +13,7 @@ const Color qDivider = Color(0xFFEAEAEA); // Divider lines
 
 // ── Brand — Monochrome ────────────────────────────────────────────────────────
 const Color qPrimary = Color(0xFF000000); // Pure black — primary action
+const Color qSecondary = Color(0xFFFFFFFF); // Pure white — secondary action
 const Color qAccent = Color(0xFF333333); // Dark gray accent
 const Color qGlow = Color(0xFF000000); // Black glow
 const Color qHighlight = Color(0xFFDDDDDD); // Pressed state
@@ -43,3 +44,15 @@ const LinearGradient qCardGradient = LinearGradient(
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
 );
+
+// ── Card Colors ─────────────────────────────────────────────────────
+  const Color qAzureBlue    = Color(0xFF1976D2);
+  const Color qOceanTeal    = Color(0xFF00796B);
+  const Color qLeafGreen    = Color(0xFF2E7D32);
+  const Color qBurntOrange  = Color(0xFFBF360C);
+  const Color qCherryRed    = Color(0xFFD32F2F);
+  const Color qMagentaPink  = Color(0xFFC2185B);
+  const Color qAmethyst     = Color(0xFF7B1FA2);
+  const Color qDeepViolet   = Color(0xFF512DA8);
+  const Color qVibrantIndigo = Color(0xFF303F9F);
+  const Color qSlateBlue    = Color(0xFF546E7A);
