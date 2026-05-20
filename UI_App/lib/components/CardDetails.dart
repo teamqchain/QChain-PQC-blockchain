@@ -97,9 +97,9 @@ class _CardDetailOverlayState extends State<CardDetailOverlay>
                           bottom: -20,
                           child: Opacity(
                             opacity: 0.06,
-                            child: Text(
-                              doc.emoji,
-                              style: const TextStyle(fontSize: 180),
+                            child: Icon(
+                              doc.icon,
+                              size: 180,
                             ),
                           ),
                         ),
@@ -143,10 +143,9 @@ class _CardDetailOverlayState extends State<CardDetailOverlay>
                                       ),
                                     ),
                                     alignment: Alignment.center,
-                                    child: Text(
-                                      doc.emoji,
-                                      style:
-                                          const TextStyle(fontSize: 30),
+                                    child: Icon(
+                                      doc.icon,
+                                      size: 30,
                                     ),
                                   ),
                                   GestureDetector(

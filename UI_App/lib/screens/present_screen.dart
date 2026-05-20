@@ -202,7 +202,7 @@ class _PresentHeroBox extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: const Color(0xFF333333)),
                 ),
-                child: Text(doc.emoji, style: const TextStyle(fontSize: 18)),
+                child: Icon(doc.icon, size: 18),
               ),
             ],
           ),

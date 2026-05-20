@@ -1,5 +1,7 @@
+import 'package:flutter/widgets.dart';
+
 class WalletCategory {
-  final String icon;
+  final IconData icon;
   final String title;
   final String subtitle;
   final int count;

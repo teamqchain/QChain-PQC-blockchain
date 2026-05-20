@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -11,56 +12,56 @@ import 'package:qwallet_mobileapp/widgets/QBottomNav.dart';
 const List<WalletCategory> _categories = [
   WalletCategory(
     id: 'identity',
-    icon: '🪪',
+    icon: Icons.badge,
     title: 'Identity',
     subtitle: 'IDs & Passports',
     count: 3,
   ),
   WalletCategory(
     id: 'medical',
-    icon: '🏥',
+    icon: Icons.local_hospital,
     title: 'Medical',
     subtitle: 'Health Records',
     count: 2,
   ),
   WalletCategory(
     id: 'banking',
-    icon: '🏦',
+    icon: Icons.account_balance,
     title: 'Banking',
     subtitle: 'Finance & Cards',
     count: 1,
   ),
   WalletCategory(
     id: 'education',
-    icon: '🎓',
+    icon: Icons.school,
     title: 'Education',
     subtitle: 'Degrees & Certs',
     count: 4,
   ),
   WalletCategory(
     id: 'government',
-    icon: '🏛️',
+    icon: Icons.gavel,
     title: 'Government',
     subtitle: 'Official Docs',
     count: 2,
   ),
   WalletCategory(
     id: 'professional',
-    icon: '💼',
+    icon: Icons.work,
     title: 'Professional',
     subtitle: 'Work & Licenses',
     count: 3,
   ),
   WalletCategory(
     id: 'travel',
-    icon: '✈️',
+    icon: Icons.flight,
     title: 'Travel',
     subtitle: 'Visas & Permits',
     count: 1,
   ),
   WalletCategory(
     id: 'memberships',
-    icon: '🔐',
+    icon: Icons.card_membership,
     title: 'Memberships',
     subtitle: 'Clubs & Access',
     count: 2,
@@ -132,7 +133,7 @@ class _WalletScreenState extends State<WalletScreen> {
                             crossAxisCount: 2,
                             crossAxisSpacing: 14,
                             mainAxisSpacing: 14,
-                            childAspectRatio: 1.05,
+                            mainAxisExtent: 160,
                           ),
                       itemCount: _filtered.length,
                       itemBuilder: (_, i) =>

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:qwallet_mobileapp/constants/colors.dart';
 import 'package:qwallet_mobileapp/model/wallet_category.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
 
@@ -45,9 +46,10 @@ class CategoryTile extends StatelessWidget {
                     border: Border.all(color: const Color(0xFFE8E8E8)),
                   ),
                   alignment: Alignment.center,
-                  child: Text(
+                  child: Icon(
                     category.icon,
-                    style: const TextStyle(fontSize: 22),
+                    color: qPrimary,
+                    size: 22,
                   ),
                 ),
                 Container(

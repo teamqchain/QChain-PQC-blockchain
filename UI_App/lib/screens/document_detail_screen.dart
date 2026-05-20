@@ -143,7 +143,7 @@ class _DocHeroBox extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: const Color(0xFF333333)),
                 ),
-                child: Text(doc.emoji, style: const TextStyle(fontSize: 18)),
+                child: Icon(doc.icon, size: 18),
               ),
             ],
           ),
@@ -202,9 +202,9 @@ class _DocHeroBox extends StatelessWidget {
                   bottom: -15,
                   child: Opacity(
                     opacity: 0.07,
-                    child: Text(
-                      doc.emoji,
-                      style: const TextStyle(fontSize: 120),
+                    child: Icon(
+                      doc.icon,
+                      size: 120,
                     ),
                   ),
                 ),
@@ -252,9 +252,9 @@ class _DocHeroBox extends StatelessWidget {
                                 color: Colors.white.withOpacity(0.18),
                               ),
                             ),
-                            child: Text(
-                              doc.emoji,
-                              style: const TextStyle(fontSize: 22),
+                            child: Icon(
+                              doc.icon,
+                              size: 22,
                             ),
                           ),
                         ],

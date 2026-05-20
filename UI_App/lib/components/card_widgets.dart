@@ -24,15 +24,15 @@ const _kWhite18 = 0.18; // fav border default / bottom strip fill opacity
 
 // ─── Private sub-widgets ─────────────────────────────────────────────────────
 
-/// Emoji icon box — top-left of every card.
+/// Icon box — top-left of every card.
 class _DocIcon extends StatelessWidget {
-  final String emoji;
+  final IconData icon;
   final double size;
   final double fontSize;
   final double radius;
 
   const _DocIcon({
-    required this.emoji,
+    required this.icon,
     required this.size,
     required this.fontSize,
     required this.radius,
@@ -49,7 +49,7 @@ class _DocIcon extends StatelessWidget {
         border: Border.all(color: Colors.white.withOpacity(_kWhite20)),
       ),
       alignment: Alignment.center,
-      child: Text(emoji, style: TextStyle(fontSize: fontSize)),
+      child: Icon(icon, size: fontSize),
     );
   }
 }
@@ -160,14 +160,14 @@ class _InfoStrip extends StatelessWidget {
 class _CardDecorations extends StatelessWidget {
   final Color color;
   final double borderRadius;
-  final String emoji;
+  final IconData icon;
   final double watermarkSize;
   final Widget child;
 
   const _CardDecorations({
     required this.color,
     required this.borderRadius,
-    required this.emoji,
+    required this.icon,
     required this.watermarkSize,
     required this.child,
   });
@@ -218,7 +218,7 @@ class _CardDecorations extends StatelessWidget {
             bottom: -18,
             child: Opacity(
               opacity: 0.07,
-              child: Text(emoji, style: TextStyle(fontSize: watermarkSize)),
+              child: Icon(icon, size: watermarkSize),
             ),
           ),
           // Shine orb
@@ -267,7 +267,7 @@ class WalletCard extends StatelessWidget {
       child: _CardDecorations(
         color: doc.cardColor,
         borderRadius: 28,
-        emoji: doc.emoji,
+        icon: doc.icon,
         watermarkSize: 140,
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -278,7 +278,7 @@ class WalletCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   _DocIcon(
-                    emoji: doc.emoji,
+                    icon: doc.icon,
                     size: 48,
                     fontSize: 24,
                     radius: 14,
@@ -343,7 +343,7 @@ class ListCard extends StatelessWidget {
       child: _CardDecorations(
         color: doc.cardColor,
         borderRadius: 20,
-        emoji: doc.emoji,
+        icon: doc.icon,
         watermarkSize: 100,
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -354,7 +354,7 @@ class ListCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   _DocIcon(
-                    emoji: doc.emoji,
+                    icon: doc.icon,
                     size: 44,
                     fontSize: 22,
                     radius: 12,

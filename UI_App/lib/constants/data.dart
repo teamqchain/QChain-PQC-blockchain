@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 
 class Credential {
   final int id;
-  final String type, name, issuer, issued, expiry,status, icon;
+  final String type, name, issuer, issued, expiry,status;
+  final IconData icon;
   final Color color;
 
   const Credential({
@@ -44,7 +45,7 @@ const List<Credential> dummyCredentials = [
     issued: 'Jan 2023',
     expiry: 'Jan 2026',
     status: 'Valid',
-    icon: '🪪',
+    icon: Icons.badge,
     color: Color(0xFF1A4A3A),
   ),
   Credential(
@@ -55,7 +56,7 @@ const List<Credential> dummyCredentials = [
     issued: 'Feb 2022',
     expiry: 'Jan 2024',
     status: 'Suspended',
-    icon: '🏥',
+    icon: Icons.local_hospital,
     color: Color(0xFF1A2A4A),
   ),
   Credential(
@@ -66,7 +67,7 @@ const List<Credential> dummyCredentials = [
     issued: 'Jun 2024',
     expiry: 'Jan 2026',
     status: 'Valid',
-    icon: '🎓',
+    icon: Icons.school,
     color: Color(0xFF3A1A4A),
   ),
   Credential(
@@ -77,7 +78,7 @@ const List<Credential> dummyCredentials = [
     issued: 'Mar 2024',
     expiry: 'Jan 2026',
     status: 'Revoked',
-    icon: '💼',
+    icon: Icons.work,
     color: Color(0xFF1A3A5C),
   ),
   Credential(
@@ -88,7 +89,7 @@ const List<Credential> dummyCredentials = [
     issued: 'Mar 2024',
     expiry: 'Jan 2026',
     status: 'Expired',
-    icon: '💼',
+    icon: Icons.drive_eta,
     color: Color(0xFF1A3A5C),
   ),
 ];
