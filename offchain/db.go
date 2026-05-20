@@ -30,6 +30,14 @@ func initDB() {
 		log.Println("MYSQL_DSN not set — database features disabled (holder/credential lookups will fail)")
 		return
 	}
+	// Ensure parseTime=true so MySQL DATETIME columns scan into time.Time.
+	if !strings.Contains(dsn, "parseTime") {
+		if strings.Contains(dsn, "?") {
+			dsn += "&parseTime=true"
+		} else {
+			dsn += "?parseTime=true"
+		}
+	}
 
 	var err error
 	db, err = sql.Open("mysql", dsn)
