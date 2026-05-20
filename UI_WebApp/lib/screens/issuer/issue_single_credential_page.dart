@@ -15,7 +15,6 @@
 //       onIssueAnother: () => onNavigate(RouteName.issueSingle),
 //     );
 
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/components/issuer/holderList.dart';
 import 'package:qportal_webapp/components/issuer/previewCard.dart';
@@ -27,6 +26,8 @@ import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/view/responsive_layout.dart';
 import 'package:qportal_webapp/widgets/datePicker.dart';
 import 'package:qportal_webapp/widgets/app_button.dart';
+import 'dart:convert';
+import 'package:qportal_webapp/services/api_service.dart';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -119,6 +120,10 @@ class IssueSingleCredentialPage extends StatefulWidget {
 }
 
 class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
+
+  List<HolderRecord> _holders = [];
+  bool _holdersLoading = false;
+
   // ── navigation ─────────────────────────────────────────────────────────────
   int _step = 1;
 
@@ -145,6 +150,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
   bool _issued = false;
   String _issuingStatus = '';
   String _issuedId = '';
+  String _issueError = '';
 
   @override
   void initState() {
@@ -168,13 +174,15 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
         );
 
     // 2 — Match holder by ID (fallback to name)
-    _selectedHolder = IssuingMockData.holders.cast<HolderRecord?>().firstWhere(
-          (h) => h!.id == cred.holderId,
-          orElse: () => IssuingMockData.holders.cast<HolderRecord?>().firstWhere(
-                (h) => h!.fullName == cred.holderName,
-                orElse: () => null,
-              ),
-        );
+    // In _bootstrapReissue, replace the IssuingMockData.holders lookup with:
+    _selectedHolder = HolderRecord(
+      id: cred.holderId,
+      fullName: cred.holderName,
+      email: cred.holderEmail,
+      emiratesID: cred.holderEmiratesID,
+      type: HolderType.bachelorStudent, // fallback
+      college: '',
+    );
 
     // 3 — Init field controllers from schema + credential attributes
     if (_selectedSchema != null) {
@@ -208,14 +216,15 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
 
   List<HolderRecord> get _filteredHolders {
     final q = _holderSearch.toLowerCase().trim();
-    if (q.isEmpty) return IssuingMockData.holders;
-    return IssuingMockData.holders
+    if (q.isEmpty) return _holders;
+    return _holders
         .where(
           (h) =>
               h.fullName.toLowerCase().contains(q) ||
               h.id.toLowerCase().contains(q) ||
               h.email.toLowerCase().contains(q) ||
-              h.college.toLowerCase().contains(q),
+              h.college.toLowerCase().contains(q) ||
+              h.emiratesID.toLowerCase().contains(q),
         )
         .toList();
   }
@@ -254,18 +263,48 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
   }
 
   Future<void> _startIssuing() async {
+    final holder = _selectedHolder!;
+    final emiratesID = holder.emiratesID;
+    if (emiratesID.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _issuingStatus = 'Error: holder has no registered Emirates ID.';
+      });
+      return;
+    }
+
     setState(() {
       _isIssuing = true;
       _issuingStatus = 'Signing credential with Dilithium...';
     });
-    await Future.delayed(const Duration(milliseconds: 1500));
+
+    final infoMap = <String, String>{};
+    for (final f in _selectedSchema!.fields) {
+      infoMap[f.label] = _fieldValues[f.id] ?? '';
+    }
+    if (!_noExpiry && _expiryDate != null) {
+      infoMap['expiryDate'] = _fmt(_expiryDate!);
+    }
+
     setState(() => _issuingStatus = 'Submitting to blockchain...');
-    await Future.delayed(const Duration(milliseconds: 1200));
-    final id = 'QC-${DateTime.now().year}-${100000 + Random().nextInt(899999)}';
+
+    final result = await ApiService.issueCredential(
+      holderEmiratesID: emiratesID,
+      credentialType: _selectedSchema!.name,
+      info: jsonEncode(infoMap),
+    );
+
+    if (!mounted) return;
+
     setState(() {
       _isIssuing = false;
-      _issued = true;
-      _issuedId = id;
+      if (result.success) {
+        _issued = true;
+        _issuedId = result.credentialID;
+        _issueError = '';
+      } else {
+        _issueError = result.error ?? 'Unknown error';
+      }
     });
   }
 
@@ -281,8 +320,11 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
           _step1Error = false;
           _step = 2;
         });
+        _loadHolders(); // ← ADD HERE, so holders load the moment Step 2 is shown
         break;
+
       case 2:
+        // if (_step == 2) _loadHolders();
         if (_selectedHolder == null) {
           setState(() => _step2Error = true);
           return;
@@ -306,13 +348,27 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
         setState(() => _step = 5);
         break;
       case 5:
-        if (_confirmed) _startIssuing();
+        if (_confirmed) {
+          setState(() => _issueError = ''); // ADD
+          _startIssuing();
+        }
         break;
     }
   }
 
   void _goBack() {
     if (_step > 1) setState(() => _step--);
+  }
+
+  Future<void> _loadHolders() async {
+    if (!mounted) return;
+    setState(() => _holdersLoading = true);
+    final data = await ApiService.getHolders();
+    if (!mounted) return;
+    setState(() {
+      _holders = data;
+      _holdersLoading = false;
+    });
   }
 
   // ─── ROOT BUILD ───────────────────────────────────────────────────────────
@@ -397,6 +453,12 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
 
   Widget _buildStep1() {
     final schemas = _activeSchemas;
+
+    if (_holdersLoading && _holders.isEmpty) {
+      return _card(
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
 
     if (schemas.isEmpty) {
       return _card(
@@ -754,7 +816,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                 _colHeader('NAME', flex: 3),
                 _colHeader('TYPE', flex: 2),
                 _colHeader('COLLEGE', flex: 3),
-                _colHeader('ID', flex: 2),
+                _colHeader('EID', flex: 2),
                 const SizedBox(width: 80),
               ],
             ),
@@ -776,10 +838,10 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                         Container(height: 1, color: AppColors.border),
                     itemBuilder: (_, i) => HolderRow(
                       holder: holders[i],
-                      isSelected: _selectedHolder?.id == holders[i].id,
+                      isSelected: _selectedHolder?.emiratesID == holders[i].emiratesID,
                       onToggle: () => setState(() {
                         _step2Error = false;
-                        if (_selectedHolder?.id == holders[i].id) {
+                        if (_selectedHolder?.emiratesID == holders[i].emiratesID) {
                           _selectedHolder = null; // toggle off
                         } else {
                           _selectedHolder = holders[i];
@@ -808,7 +870,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    '${_selectedHolder!.fullName} selected — ${_selectedHolder!.id}',
+                    '${_selectedHolder!.fullName} selected — ${_selectedHolder!.emiratesID}',
                     style: const TextStyle(
                       fontSize: 11,
                       color: Color(0xFF4CAF50),
@@ -888,7 +950,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                   style: AppTextStyles.navLabelActive.copyWith(fontSize: 12),
                 ),
                 Text(
-                  '${_selectedHolder!.id}  ·  ${_selectedHolder!.type.label}',
+                  '${_selectedHolder!.emiratesID}  ·  ${_selectedHolder!.type.label}',
                   style: AppTextStyles.bodyTiny.copyWith(
                     fontSize: 10,
                     color: AppColors.textDim,
@@ -1294,6 +1356,9 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
       errorMsg = 'Please select a holder to continue.';
     } else if (_step == 3 && _step3Error) {
       errorMsg = 'Please complete all required fields.';
+    } else if (_step == 5 && _issueError.isNotEmpty) {
+      // ADD THIS CASE
+      errorMsg = _issueError;
     }
 
     return Row(

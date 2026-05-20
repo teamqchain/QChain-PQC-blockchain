@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
 import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/services/api_service.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 
@@ -29,8 +30,9 @@ class AllCredentialsPage extends StatefulWidget {
 
 class _AllCredentialsPageState extends State<AllCredentialsPage> {
   // ── data ───────────────────────────────────────────────────────────────────
-  late List<CredentialRecord> _allRows;
-  late List<CredentialRecord> _filtered;
+  List<CredentialRecord> _allRows = [];
+  List<CredentialRecord> _filtered = [];
+  bool _isLoading = true;
 
   // ── selection ──────────────────────────────────────────────────────────────
   final Set<String> _selected = {}; // credential IDs
@@ -46,11 +48,27 @@ class _AllCredentialsPageState extends State<AllCredentialsPage> {
 
   // ─── helpers ──────────────────────────────────────────────────────────────
 
+  // @override
+  // void initState() {
+  //   super.initState();
+    // _allRows = List<CredentialRecord>.from(IssuingMockData.credentials);
+  //   _applyFilter();
+  // }
+
   @override
   void initState() {
     super.initState();
-    _allRows = List<CredentialRecord>.from(IssuingMockData.credentials);
-    _applyFilter();
+    _loadCredentials();
+  }
+
+  Future<void> _loadCredentials() async {
+    final data = await ApiService.getAllCredentials();
+    if (!mounted) return;
+    setState(() {
+      _allRows = data;
+      _applyFilter();
+      _isLoading = false;
+    });
   }
 
   void _applyFilter() {
@@ -145,6 +163,7 @@ class _AllCredentialsPageState extends State<AllCredentialsPage> {
           // ── Table container ─────────────────────────────────────────────────
           Expanded(
             child: _CredentialTable(
+              isLoading: _isLoading,
               rows: _pageRows,
               selected: _selected,
               selectAll: _selectAll,
@@ -208,6 +227,7 @@ class _AllCredentialsPageState extends State<AllCredentialsPage> {
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _CredentialTable extends StatelessWidget {
+  final bool isLoading;
   final List<CredentialRecord> rows;
   final Set<String> selected;
   final bool selectAll;
@@ -220,6 +240,7 @@ class _CredentialTable extends StatelessWidget {
   final VoidCallback onClearSearch;
 
   const _CredentialTable({
+    required this.isLoading,
     required this.rows,
     required this.selected,
     required this.selectAll,
@@ -253,23 +274,26 @@ class _CredentialTable extends StatelessWidget {
 
           // ── Data rows ────────────────────────────────────────────────────
           Expanded(
-            child: rows.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No credentials match your search.',
-                      style: TextStyle(color: AppColors.textDim, fontSize: 12),
-                    ),
-                  )
-                : ListView.separated(
-                    itemCount: rows.length,
-                    separatorBuilder: (_, __) =>
-                        Container(height: 1, color: AppColors.border),
-                    itemBuilder: (_, i) => _CredentialRow(
-                      record: rows[i],
-                      isSelected: selected.contains(rows[i].id),
-                      onToggle: () => onToggleRow(rows[i].id),
-                    ),
-                  ),
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : rows.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'No credentials match your search.',
+                          style:
+                              TextStyle(color: AppColors.textDim, fontSize: 12),
+                        ),
+                      )
+                    : ListView.separated(
+                        itemCount: rows.length,
+                        separatorBuilder: (_, __) =>
+                            Container(height: 1, color: AppColors.border),
+                        itemBuilder: (_, i) => _CredentialRow(
+                          record: rows[i],
+                          isSelected: selected.contains(rows[i].id),
+                          onToggle: () => onToggleRow(rows[i].id),
+                        ),
+                      ),
           ),
         ],
       ),

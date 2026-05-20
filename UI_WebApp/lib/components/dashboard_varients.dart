@@ -85,13 +85,254 @@ import 'package:qportal_webapp/widgets/dashboard_widgets.dart';
 //   }
 // }
 
+// // ─── VARIANT B: ISSUER ONLY ───────────────────────────────────────────────────
+
+// class VariantIssuerContent extends StatelessWidget {
+//   const VariantIssuerContent({super.key, required Map<String, dynamic> stats});
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return Column(
+//       crossAxisAlignment: CrossAxisAlignment.start,
+//       children: [
+//         DashCard(
+//           backgroundColor: AppColors.issuingAccent.withOpacity(0.06),
+//           borderColor: AppColors.issuingAccent.withOpacity(0.3),
+//           child: Column(
+//             crossAxisAlignment: CrossAxisAlignment.start,
+//             children: [
+//               Text(
+//                 'QUICK ACTIONS',
+//                 style: AppTextStyles.bodyTiny.copyWith(letterSpacing: 0.8),
+//               ),
+//               const SizedBox(height: 14),
+//               Wrap(
+//                 spacing: 12,
+//                 runSpacing: 12,
+//                 children: [
+//                   DashActionButton(
+//                     label: 'Issue Single Credential',
+//                     icon: Icons.person,
+//                     accent: AppColors.issuingAccent,
+//                     onTap: () => ShellNav.push(RouteName.issueSingle),
+//                   ),
+//                   DashActionButton(
+//                     label: 'Issue Batch',
+//                     icon: Icons.group,
+//                     accent: AppColors.issuingAccent,
+//                     onTap: () => ShellNav.push(RouteName.issueBatch),
+//                   ),
+//                   DashActionButton(
+//                     label: 'Manage Schemas',
+//                     icon: Icons.schema,
+//                     accent: AppColors.issuingAccent,
+//                     onTap: () => ShellNav.push(RouteName.schemas),
+//                   ),
+//                 ],
+//               ),
+//             ],
+//           ),
+//         ),
+//         const SizedBox(height: 16),
+//         ResponsiveColumns(
+//           left: DashCard(
+//             child: Column(
+//               crossAxisAlignment: CrossAxisAlignment.start,
+//               children: [
+//                 SectionHeader(
+//                   title: 'Recent Issuing Activity',
+//                   accent: AppColors.issuingAccent,
+//                   linkText: 'View All',
+//                 ),
+//                 ...MockData.recentIssued.map(
+//                   (item) =>
+//                       ActivityRow(item: item, accent: AppColors.issuingAccent),
+//                 ),
+//               ],
+//             ),
+//           ),
+//           right: Column(
+//             children: [
+//               DashCard(
+//                 child: Column(
+//                   crossAxisAlignment: CrossAxisAlignment.start,
+//                   children: [
+//                     SectionHeader(
+//                       title: 'Expiry Warnings',
+//                       accent: AppColors.issuingAccent,
+//                       linkText: 'View All',
+//                     ),
+//                     ...MockData.expiryWarnings.map(
+//                       (item) => ExpiryRow(item: item),
+//                     ),
+//                   ],
+//                 ),
+//               ),
+//               const SizedBox(height: 14),
+//               DashCard(
+//                 child: Column(
+//                   crossAxisAlignment: CrossAxisAlignment.start,
+//                   children: [
+//                     const SectionHeader(
+//                       title: 'Credentials Issued — Last 4 Weeks',
+//                       accent: AppColors.issuingAccent,
+//                     ),
+//                     const SizedBox(height: 10),
+//                     MiniBarChart(
+//                       data: MockData.weeklyIssuedData,
+//                       accent: AppColors.issuingAccent,
+//                     ),
+//                   ],
+//                 ),
+//               ),
+//             ],
+//           ),
+//         ),
+//       ],
+//     );
+//   }
+// }
+
+// // ─── VARIANT C: VERIFIER ONLY ─────────────────────────────────────────────────
+
+// class VariantVerifierContent extends StatelessWidget {
+//   const VariantVerifierContent({super.key, required Map<String, dynamic> stats});
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return Column(
+//       crossAxisAlignment: CrossAxisAlignment.start,
+//       children: [
+//         DashCard(
+//           backgroundColor: AppColors.verifyingAccent.withOpacity(0.06),
+//           borderColor: AppColors.verifyingAccent.withOpacity(0.3),
+//           child: Column(
+//             crossAxisAlignment: CrossAxisAlignment.start,
+//             children: [
+//               Text(
+//                 'QUICK ACTIONS',
+//                 style: AppTextStyles.bodyTiny.copyWith(letterSpacing: 0.8),
+//               ),
+//               const SizedBox(height: 14),
+//               Wrap(
+//                 spacing: 12,
+//                 runSpacing: 12,
+//                 children: [
+//                   DashActionButton(
+//                     label: 'Scan QR Code',
+//                     icon: Icons.qr_code_scanner_rounded,
+//                     accent: AppColors.verifyingAccent,
+//                     large: false,
+//                     onTap: () => ShellNav.push(
+//                       RouteName.scanQR,
+//                     ), // TODO: add verifier route
+//                   ),
+//                   DashActionButton(
+//                     label: 'Manual Verify',
+//                     icon: Icons.keyboard,
+//                     accent: AppColors.verifyingAccent,
+//                     onTap: () => ShellNav.push(
+//                       RouteName.manualVerify,
+//                     ), // TODO: add verifier route
+//                   ),
+//                   // DashActionButton(
+//                   //   label: 'Upload File',
+//                   //   icon: Icons.upload,
+//                   //   accent: AppColors.verifyingAccent,
+//                   //   onTap: () => ShellNav.push(RouteName.uploadFile), // TODO: add verifier route
+//                   // ),
+//                   DashActionButton(
+//                     label: 'Batch Verify',
+//                     icon: Icons.group,
+//                     accent: AppColors.verifyingAccent,
+//                     onTap: () => ShellNav.push(
+//                       RouteName.batchVerify,
+//                     ), // TODO: add verifier route
+//                   ),
+//                 ],
+//               ),
+//             ],
+//           ),
+//         ),
+//         const SizedBox(height: 16),
+//         ResponsiveColumns(
+//           left: DashCard(
+//             child: Column(
+//               crossAxisAlignment: CrossAxisAlignment.start,
+//               children: [
+//                 SectionHeader(
+//                   title: 'Recent Verifications',
+//                   accent: AppColors.verifyingAccent,
+//                   linkText: 'View Full History',
+//                 ),
+//                 ...MockData.recentVerifications.map(
+//                   (item) => VerificationRow(item: item),
+//                 ),
+//               ],
+//             ),
+//           ),
+//           right: Column(
+//             children: [
+//               DashCard(
+//                 child: Column(
+//                   crossAxisAlignment: CrossAxisAlignment.start,
+//                   children: [
+//                     SectionHeader(
+//                       title: 'Status Alerts',
+//                       accent: AppColors.verifyingAccent,
+//                       linkText: 'Manage Subscriptions',
+//                     ),
+//                     ...MockData.statusAlerts.map(
+//                       (item) => AlertRow(item: item),
+//                     ),
+//                   ],
+//                 ),
+//               ),
+//               const SizedBox(height: 14),
+//               DashCard(
+//                 child: Column(
+//                   crossAxisAlignment: CrossAxisAlignment.start,
+//                   children: [
+//                     const SectionHeader(
+//                       title: 'Verifications — Last 7 Days',
+//                       accent: AppColors.verifyingAccent,
+//                     ),
+//                     const SizedBox(height: 10),
+//                     MiniBarChart(
+//                       data: MockData.dailyVerifiedData,
+//                       accent: AppColors.verifyingAccent,
+//                     ),
+//                   ],
+//                 ),
+//               ),
+//             ],
+//           ),
+//         ),
+//       ],
+//     );
+//   }
+// }
+
+
 // ─── VARIANT B: ISSUER ONLY ───────────────────────────────────────────────────
 
 class VariantIssuerContent extends StatelessWidget {
-  const VariantIssuerContent({super.key});
+  final Map<String, dynamic> stats;
+  const VariantIssuerContent({super.key, required this.stats});
 
   @override
   Widget build(BuildContext context) {
+    // Parse JSON lists to Typed objects
+    final recentIssuedList = (stats['recentActivity'] as List? ?? [])
+        .map((e) => ActivityItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+    final expiryWarningsList = (stats['expiryWarnings'] as List? ?? [])
+        .map((e) => ExpiryItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+    final weeklyIssuedList = (stats['weeklyIssued'] as List? ?? [])
+        .map((e) => BarDataPoint.fromJson(e as Map<String, dynamic>))
+        .toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -144,7 +385,7 @@ class VariantIssuerContent extends StatelessWidget {
                   accent: AppColors.issuingAccent,
                   linkText: 'View All',
                 ),
-                ...MockData.recentIssued.map(
+                ...recentIssuedList.map(
                   (item) =>
                       ActivityRow(item: item, accent: AppColors.issuingAccent),
                 ),
@@ -162,9 +403,7 @@ class VariantIssuerContent extends StatelessWidget {
                       accent: AppColors.issuingAccent,
                       linkText: 'View All',
                     ),
-                    ...MockData.expiryWarnings.map(
-                      (item) => ExpiryRow(item: item),
-                    ),
+                    ...expiryWarningsList.map((item) => ExpiryRow(item: item)),
                   ],
                 ),
               ),
@@ -179,7 +418,7 @@ class VariantIssuerContent extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     MiniBarChart(
-                      data: MockData.weeklyIssuedData,
+                      data: weeklyIssuedList,
                       accent: AppColors.issuingAccent,
                     ),
                   ],
@@ -196,10 +435,22 @@ class VariantIssuerContent extends StatelessWidget {
 // ─── VARIANT C: VERIFIER ONLY ─────────────────────────────────────────────────
 
 class VariantVerifierContent extends StatelessWidget {
-  const VariantVerifierContent({super.key});
+  final Map<String, dynamic> stats;
+  const VariantVerifierContent({super.key, required this.stats});
 
   @override
   Widget build(BuildContext context) {
+    // Parse JSON lists to Typed objects
+    final recentVerificationsList = (stats['recentVerifications'] as List? ?? [])
+        .map((e) => VerificationItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+    final statusAlertsList = (stats['statusAlerts'] as List? ?? [])
+        .map((e) => AlertItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+    final dailyVerifiedList = (stats['dailyVerified'] as List? ?? [])
+        .map((e) => BarDataPoint.fromJson(e as Map<String, dynamic>))
+        .toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -223,31 +474,19 @@ class VariantVerifierContent extends StatelessWidget {
                     icon: Icons.qr_code_scanner_rounded,
                     accent: AppColors.verifyingAccent,
                     large: false,
-                    onTap: () => ShellNav.push(
-                      RouteName.scanQR,
-                    ), // TODO: add verifier route
+                    onTap: () => ShellNav.push(RouteName.scanQR),
                   ),
                   DashActionButton(
                     label: 'Manual Verify',
                     icon: Icons.keyboard,
                     accent: AppColors.verifyingAccent,
-                    onTap: () => ShellNav.push(
-                      RouteName.manualVerify,
-                    ), // TODO: add verifier route
+                    onTap: () => ShellNav.push(RouteName.manualVerify),
                   ),
-                  // DashActionButton(
-                  //   label: 'Upload File',
-                  //   icon: Icons.upload,
-                  //   accent: AppColors.verifyingAccent,
-                  //   onTap: () => ShellNav.push(RouteName.uploadFile), // TODO: add verifier route
-                  // ),
                   DashActionButton(
                     label: 'Batch Verify',
                     icon: Icons.group,
                     accent: AppColors.verifyingAccent,
-                    onTap: () => ShellNav.push(
-                      RouteName.batchVerify,
-                    ), // TODO: add verifier route
+                    onTap: () => ShellNav.push(RouteName.batchVerify),
                   ),
                 ],
               ),
@@ -265,7 +504,7 @@ class VariantVerifierContent extends StatelessWidget {
                   accent: AppColors.verifyingAccent,
                   linkText: 'View Full History',
                 ),
-                ...MockData.recentVerifications.map(
+                ...recentVerificationsList.map(
                   (item) => VerificationRow(item: item),
                 ),
               ],
@@ -282,9 +521,7 @@ class VariantVerifierContent extends StatelessWidget {
                       accent: AppColors.verifyingAccent,
                       linkText: 'Manage Subscriptions',
                     ),
-                    ...MockData.statusAlerts.map(
-                      (item) => AlertRow(item: item),
-                    ),
+                    ...statusAlertsList.map((item) => AlertRow(item: item)),
                   ],
                 ),
               ),
@@ -299,7 +536,7 @@ class VariantVerifierContent extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     MiniBarChart(
-                      data: MockData.dailyVerifiedData,
+                      data: dailyVerifiedList,
                       accent: AppColors.verifyingAccent,
                     ),
                   ],
@@ -307,6 +544,34 @@ class VariantVerifierContent extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── VARIANT D: IT ADMIN ──────────────────────────────────────────────────────
+
+class VariantITAdminContent extends StatelessWidget {
+  final Map<String, dynamic> stats;
+  const VariantITAdminContent({super.key, required this.stats});
+
+  static const Color _accent = AppColors.adminAccent;
+  static const Color _light = AppColors.adminLight;
+
+  @override
+  Widget build(BuildContext context) {
+    // Retains existing structure; receives 'stats' to satisfy DashboardScreen widget build map
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _StatTileRow(),
+        const SizedBox(height: 16),
+        ResponsiveColumns(left: _OrgProfileCard(), right: _RecentAuditCard()),
+        const SizedBox(height: 14),
+        ResponsiveColumns(
+          left: _StaffBreakdownCard(),
+          right: _CapabilityRequestsCard(),
         ),
       ],
     );
@@ -470,35 +735,35 @@ class _RoleSplit {
 //  VARIANT D WIDGET
 // ═════════════════════════════════════════════════════════════════════════════
 
-class VariantITAdminContent extends StatelessWidget {
-  const VariantITAdminContent({super.key});
+// class VariantITAdminContent extends StatelessWidget {
+//   const VariantITAdminContent({super.key, required Map<String, dynamic> stats});
 
-  // Convenience getter — the accent used everywhere in IT Admin pages
-  static const Color _accent = AppColors.adminAccent;
-  static const Color _light = AppColors.adminLight;
+//   // Convenience getter — the accent used everywhere in IT Admin pages
+//   static const Color _accent = AppColors.adminAccent;
+//   static const Color _light = AppColors.adminLight;
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // ── Row 1: Stat tiles ─────────────────────────────────────────────
-        _StatTileRow(),
-        const SizedBox(height: 16),
+//   @override
+//   Widget build(BuildContext context) {
+//     return Column(
+//       crossAxisAlignment: CrossAxisAlignment.start,
+//       children: [
+//         // ── Row 1: Stat tiles ─────────────────────────────────────────────
+//         _StatTileRow(),
+//         const SizedBox(height: 16),
 
-        // ── Row 2: Org profile  +  Recent audit ───────────────────────────
-        ResponsiveColumns(left: _OrgProfileCard(), right: _RecentAuditCard()),
-        const SizedBox(height: 14),
+//         // ── Row 2: Org profile  +  Recent audit ───────────────────────────
+//         ResponsiveColumns(left: _OrgProfileCard(), right: _RecentAuditCard()),
+//         const SizedBox(height: 14),
 
-        // ── Row 3: Staff breakdown  +  Capability requests ────────────────
-        ResponsiveColumns(
-          left: _StaffBreakdownCard(),
-          right: _CapabilityRequestsCard(),
-        ),
-      ],
-    );
-  }
-}
+//         // ── Row 3: Staff breakdown  +  Capability requests ────────────────
+//         ResponsiveColumns(
+//           left: _StaffBreakdownCard(),
+//           right: _CapabilityRequestsCard(),
+//         ),
+//       ],
+//     );
+//   }
+// }
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  STAT TILE ROW

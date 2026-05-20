@@ -26,6 +26,7 @@ import 'package:qportal_webapp/models/verifiying_models.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/services/api_service.dart';
 
 // ─── VERIFICATION MODE ────────────────────────────────────────────────────────
 
@@ -84,6 +85,7 @@ class ManualVerifyPage extends StatefulWidget {
 
 class _ManualVerifyPageState extends State<ManualVerifyPage> {
   _VerifyMode _mode = _VerifyMode.credentialId;
+  bool _verifying = false;
 
   // ── Mode 1 ────────────────────────────────────────────────────────────────
   final _credIdCtrl = TextEditingController();
@@ -105,7 +107,6 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
   // ── Verify ────────────────────────────────────────────────────────────────
 
   void _verify() {
-    // Document mode handles its own flow via _startDocumentProcessing.
     if (_mode == _VerifyMode.document) {
       if (!_fileUploaded) {
         setState(() => _fileError = true);
@@ -115,14 +116,21 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
       return;
     }
 
-    // Validate inputs for the active mode.
     switch (_mode) {
       case _VerifyMode.credentialId:
-        if (_credIdCtrl.text.trim().isEmpty) {
+        final credID = _credIdCtrl.text.trim();
+        if (credID.isEmpty) {
           setState(() => _credIdError = true);
           return;
         }
-        break;
+        setState(() => _verifying = true);
+        ApiService.verifyCredential(credID).then((result) {
+          if (!mounted) return;
+          setState(() => _verifying = false);
+          widget.onVerify(result);
+        });
+        return; // ← was: break. return exits _verify() entirely.
+
       case _VerifyMode.otp:
         if (_otpCtrl.text.trim().isEmpty) {
           setState(() => _otpError = true);
@@ -133,9 +141,8 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
         break;
     }
 
-    // Simulate a lookup — return a mock result.
-    // In production this calls the blockchain / API layer.
-    widget.onVerify(VerifyingMockData.tampered());
+    // Only OTP and document modes reach here (mock path)
+    widget.onVerify(VerifyingMockData.suspended());
   }
 
   /// Starts the document verification processing sequence (success path).
@@ -275,10 +282,11 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
                       onTap: _docTryAgain,
                     )
                   : AppButton(
-                      label: 'Verify',
+                      label: _verifying ? 'Verifying…' : 'Verify',
                       icon: Icons.verified_outlined,
                       backgroundColor: AppColors.verifyingAccent,
                       hoverColor: AppColors.verifyingAccent.withOpacity(0.82),
+                      enabled: !_verifying, // ADD
                       onTap: _verify,
                     ),
             ],

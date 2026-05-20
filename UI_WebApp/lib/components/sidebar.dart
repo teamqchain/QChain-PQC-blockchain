@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/models/dashboard_Model.dart';
+import 'package:qportal_webapp/services/api_service.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/utils/app_shell.dart';
+// TODO: Adjust this import path to match where your ApiService is located
 
 // ─── NAV ITEM MODEL ───────────────────────────────────────────────────────────
 
@@ -19,35 +22,42 @@ final _navIssuing = [
   _NavItem(Icons.schema, 'All Credentials', RouteName.allCredentials),
   _NavItem(Icons.cancel, 'Revoke / Suspend', RouteName.revokeSuspend),
   _NavItem(Icons.schema, 'Schemas', RouteName.schemas),
-  // _NavItem(Icons.settings, 'Issuing Settings', RouteName.issuingSettings),
 ];
 
 final _navVerifying = [
   _NavItem(Icons.qr_code_scanner, 'Scan QR Code', RouteName.scanQR),
   _NavItem(Icons.keyboard, 'Manual Verify', RouteName.manualVerify),
-  // _NavItem(Icons.upload, 'Upload File', RouteName.uploadFile),
   _NavItem(Icons.group, 'Batch Verify', RouteName.batchVerify),
-  _NavItem(Icons.history, 'Verification History', RouteName.verificationHistory),
+  _NavItem(
+    Icons.history,
+    'Verification History',
+    RouteName.verificationHistory,
+  ),
   _NavItem(Icons.payment, 'Subscriptions', RouteName.subscription),
-  _NavItem(Icons.notifications_active, 'Subscription Alerts', RouteName.alertHistory),
+  _NavItem(
+    Icons.notifications_active,
+    'Subscription Alerts',
+    RouteName.alertHistory,
+  ),
   _NavItem(Icons.policy, 'Policies', RouteName.policies),
-  
 ];
-
-// const _navOrg = ['Staff & Permissions', 'Audit Log', 'Help & Support'];
 
 final _navITAdmin = [
   _NavItem(Icons.person, 'Manage Profile', RouteName.manageProfile),
   _NavItem(Icons.group, 'Staff & Permissions', RouteName.staffAndPermissions),
   _NavItem(Icons.assignment_turned_in, 'Audit Log', RouteName.auditLog),
   _NavItem(Icons.security, 'Crypto Settings', RouteName.cryptoSettings),
-  _NavItem(Icons.add_circle_outline, 'Request Capabilities', RouteName.requestCapabilities),
-
+  _NavItem(
+    Icons.add_circle_outline,
+    'Request Capabilities',
+    RouteName.requestCapabilities,
+  ),
 ];
 
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+enum ConnectionStatus { connecting, connected, disconnected }
+
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
-// Now receives activeRoute + onNavigate from AppShell instead of reading
-// from GetX — this is what keeps the sidebar always on screen.
 
 class AppSidebar extends StatefulWidget {
   final DashboardVariant variant;
@@ -67,19 +77,13 @@ class AppSidebar extends StatefulWidget {
 
 class _AppSidebarState extends State<AppSidebar> {
   bool get _showIssuing => widget.variant.canIssue;
-
   bool get _showVerifying => widget.variant.canVerify;
-
   bool get _showingITAdmin => widget.variant.canManage;
 
-  bool get _isIssuingActive =>
-      _navIssuing.any((n) => n.route == widget.activeRoute);
-
-  bool get _isVerifyingActive =>
-      _navVerifying.any((n) => n.route == widget.activeRoute);
-
-  // Color get _sidebarBg {
   bool _hovered = false;
+
+  ConnectionStatus _connStatus = ConnectionStatus.connecting;
+  Timer? _healthTimer;
 
   String get _greeting {
     final hour = DateTime.now().hour;
@@ -90,10 +94,58 @@ class _AppSidebarState extends State<AppSidebar> {
 
   String get _date {
     final now = DateTime.now();
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    const days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
     final dow = days[now.weekday - 1];
     return '$dow, ${now.day} ${months[now.month - 1]} ${now.year}';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _checkHealth(); // Initial check
+    // Poll every 15 seconds
+    _healthTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      _checkHealth();
+    });
+  }
+
+  @override
+  void dispose() {
+    _healthTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkHealth() async {
+    final isHealthy = await ApiService.checkHealth();
+    if (mounted) {
+      setState(() {
+        _connStatus = isHealthy
+            ? ConnectionStatus.connected
+            : ConnectionStatus.disconnected;
+      });
+    }
   }
 
   @override
@@ -141,9 +193,8 @@ class _AppSidebarState extends State<AppSidebar> {
             ),
           ),
           _buildDivider(),
-          // _buildOrgSection(),
+          _buildConnectionStatus(),
           _buildUserTile(),
-          // if (!_showIssuing || !_showVerifying) _buildRequestCapabilityLink(),
         ],
       ),
     );
@@ -228,17 +279,13 @@ class _AppSidebarState extends State<AppSidebar> {
                   ? AppColors.surfaceHover
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(7),
-              // border: Border()
             ),
             child: Row(
               children: [
                 Icon(
                   Icons.dashboard,
-                  // style: TextStyle(fontSize: 13, color: AppColors.white),
                   size: 20,
-                  color: isActive
-                      ? AppColors.white
-                      : AppColors.textMuted,
+                  color: isActive ? AppColors.white : AppColors.textMuted,
                 ),
                 const SizedBox(width: 10),
                 Flexible(
@@ -307,35 +354,44 @@ class _AppSidebarState extends State<AppSidebar> {
     );
   }
 
-  // Widget _buildOrgSection() {
-  //   return Padding(
-  //     padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-  //     child: Column(
-  //       crossAxisAlignment: CrossAxisAlignment.start,
-  //       children: [
-  //         Text(
-  //           'ORGANISATION',
-  //           style: AppTextStyles.bodyTiny.copyWith(
-  //             fontSize: 9,
-  //             fontWeight: FontWeight.w800,
-  //             letterSpacing: 1.2,
-  //             color: AppColors.textDim,
-  //           ),
-  //         ),
-  //         const SizedBox(height: 6),
-  //         ..._navOrg.map(
-  //           (label) => Padding(
-  //             padding: const EdgeInsets.symmetric(vertical: 4),
-  //             child: Text(
-  //               label,
-  //               style: AppTextStyles.bodyTiny.copyWith(fontSize: 11),
-  //             ),
-  //           ),
-  //         ),
-  //       ],
-  //     ),
-  //   );
-  // }
+  Widget _buildConnectionStatus() {
+    Color dotColor;
+    String label;
+
+    switch (_connStatus) {
+      case ConnectionStatus.connecting:
+        dotColor = Colors.amber;
+        label = 'Connecting...';
+        break;
+      case ConnectionStatus.connected:
+        dotColor = Colors.green;
+        label = 'Connected';
+        break;
+      case ConnectionStatus.disconnected:
+        dotColor = Colors.red;
+        label = 'Disconnected';
+        break;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          PulsingDot(color: dotColor),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: AppTextStyles.bodyTiny.copyWith(
+              fontSize: 10,
+              color: AppColors.textDim,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildUserTile() {
     return Container(
@@ -369,7 +425,11 @@ class _AppSidebarState extends State<AppSidebar> {
                   style: AppTextStyles.navLabelActive.copyWith(fontSize: 11),
                 ),
                 Text(
-                  (_showIssuing? "Issuer":(_showVerifying)? "Verifier" : "IT Admin"),
+                  (_showIssuing
+                      ? "Issuer"
+                      : (_showVerifying)
+                      ? "Verifier"
+                      : "IT Admin"),
                   style: AppTextStyles.bodyTiny.copyWith(
                     fontSize: 9,
                     color: AppColors.textDim,
@@ -383,19 +443,6 @@ class _AppSidebarState extends State<AppSidebar> {
             style: TextStyle(color: AppColors.textDim, fontSize: 14),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildRequestCapabilityLink() {
-    final missingLabel = !_showIssuing
-        ? 'Need issuing access?'
-        : 'Need verifying access?';
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Text(
-        '$missingLabel \nRequest it here',
-        style: const TextStyle(fontSize: 10, color: AppColors.textDim),
       ),
     );
   }
@@ -476,6 +523,66 @@ class _SidebarNavItemState extends State<_SidebarNavItem> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── PULSING DOT WIDGET ───────────────────────────────────────────────────────
+
+class PulsingDot extends StatefulWidget {
+  final Color color;
+
+  const PulsingDot({super.key, required this.color});
+
+  @override
+  State<PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<PulsingDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+
+    // Animate opacity between 40% and 100% for a smooth breathing effect
+    _animation = Tween<double>(
+      begin: 0.4,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _animation,
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(
+          color: widget.color,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: widget.color,
+              blurRadius: 4,
+              spreadRadius: 1,
+            ),
+          ],
         ),
       ),
     );

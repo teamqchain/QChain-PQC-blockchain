@@ -3,52 +3,62 @@ import 'package:qportal_webapp/models/dashboard_Model.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/widgets/dashboard_widgets.dart';
 
-
 class StatChipsRow extends StatelessWidget {
   final DashboardVariant variant;
-  const StatChipsRow({super.key, required this.variant});
+  final Map<String, dynamic> stats; // Added
+
+  const StatChipsRow({super.key, required this.variant, required this.stats});
 
   @override
   Widget build(BuildContext context) {
-    // Wrap handles both large (single row) and small (wraps to 2x2 grid)
     return Wrap(
       spacing: 12,
       runSpacing: 12,
       children: [
-        if (variant.canIssue)...[
+        if (variant.canIssue) ...[
           StatChip(
             label: 'Issued Today',
-            value: 12,
+            value: stats['totalIssued'] ?? 0,
             accent: AppColors.issuingAccent,
           ),
-          StatChip(label: 'Alerts Unread', value: 3, accent: AppColors.suspended),
-          StatChip(label: 'Expiring Soon', value: 5, accent: AppColors.revoked),
-        ]else if (variant.canVerify)...[
+          StatChip(
+            label: 'Alerts Unread',
+            value: stats['totalSuspended'] ?? 0,
+            accent: AppColors.suspended,
+          ),
+          StatChip(
+            label: 'Expiring Soon',
+            value: stats['totalExpired'] ?? 0,
+            accent: AppColors.revoked,
+          ),
+        ] else if (variant.canVerify) ...[
           StatChip(
             label: 'Verified Today',
-            value: 47,
+            value: stats['totalVerified'] ?? 0,
             accent: AppColors.verifyingAccent,
           ),
           StatChip(
             label: 'Alerts Unread',
-            value: 3,
+            value: stats['totalSuspended'] ?? 0,
             accent: AppColors.suspended,
           ),
-          StatChip(label: 'Expiring Soon', value: 5, accent: AppColors.revoked),
-        ]else ...[
+          StatChip(
+            label: 'Expiring Soon',
+            value: stats['totalExpired'] ?? 0,
+            accent: AppColors.revoked,
+          ),
+        ] else ...[
           StatChip(
             label: 'Issuing Staffs',
-            value: 3,
+            value: stats['issuerStaffCount'] ?? 6,
             accent: AppColors.adminAccent,
           ),
           StatChip(
             label: 'Verifying Staffs',
-            value: 5,
+            value: stats['verifierStaffCount'] ?? 6,
             accent: AppColors.verifyingAccent,
-          )
-        ]
-        
-        
+          ),
+        ],
       ],
     );
   }
