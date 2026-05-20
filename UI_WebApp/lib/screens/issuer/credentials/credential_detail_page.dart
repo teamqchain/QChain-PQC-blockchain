@@ -692,6 +692,7 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
           onTap: () {
             if (widget.onReissue == null) return;
             final updated = CredentialRecord(
+              holderEmiratesID: c.holderEmiratesID,
               id: c.id,
               holderName: c.holderName,
               holderEmail: _emailCtrl.text.trim(),

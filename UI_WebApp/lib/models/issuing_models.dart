@@ -131,6 +131,7 @@ class HolderRecord {
   final HolderType type;
   final String college;
   final String? walletAddress;
+  final String emiratesID;
 
   const HolderRecord({
     required this.id,
@@ -139,6 +140,7 @@ class HolderRecord {
     required this.type,
     required this.college,
     this.walletAddress,
+    required this.emiratesID,
   });
 
   String get initials {
@@ -153,6 +155,7 @@ class HolderRecord {
 // ─── CREDENTIAL MODEL ─────────────────────────────────────────────────────────
 
 class CredentialRecord {
+  final String holderEmiratesID;
   final String id;
   final String holderName;
   final String holderEmail;
@@ -175,6 +178,7 @@ class CredentialRecord {
   final String ipfsReference;
 
   const CredentialRecord({
+    required this.holderEmiratesID,
     required this.id,
     required this.holderName,
     required this.holderEmail,
@@ -203,10 +207,12 @@ class CredentialRecord {
     if (t.contains('bsc') ||
         t.contains('msc') ||
         t.contains('phd') ||
-        t.contains('diploma')) return 'Academic';
+        t.contains('diploma'))
+      return 'Academic';
     if (t.contains('medical') ||
         t.contains('nursing') ||
-        t.contains('pharmaceutical')) return 'Medical';
+        t.contains('pharmaceutical'))
+      return 'Medical';
     if (t.contains('training') || t.contains('certificate')) {
       return 'Professional';
     }
@@ -220,7 +226,8 @@ class CredentialRecord {
     final t = credentialType.toLowerCase();
     if (t.contains('medical') ||
         t.contains('nursing') ||
-        t.contains('pharmaceutical')) return 'Ministry of Health';
+        t.contains('pharmaceutical'))
+      return 'Ministry of Health';
     if (t.contains('employee')) return 'Human Resources Dept.';
     if (t.contains('fellowship') || t.contains('research')) {
       return 'Research & Innovation Office';
@@ -392,101 +399,133 @@ abstract class IssuingMockData {
   // ── Holders ────────────────────────────────────────────────────────────────
   static const holders = [
     HolderRecord(
-      id: 'HC-00101',
-      fullName: 'Ahmed Al Rashidi',
-      email: 'a.rashidi@student.uos.ae',
-      type: HolderType.bachelorStudent,
-      college: 'College of Engineering',
-      walletAddress: 'QW-1A2B3C4D',
-    ),
-    HolderRecord(
-      id: 'HC-00184',
-      fullName: 'Dr. Sara Al Mansoori',
-      email: 's.mansoori@uos.ae',
-      type: HolderType.medical,
-      college: 'College of Medicine',
-      walletAddress: 'QW-9F8E7D6C',
-    ),
-    HolderRecord(
-      id: 'HC-00291',
-      fullName: 'Mohammed Ali',
-      email: 'm.ali@student.uos.ae',
+      id: 'H-0001',
+      fullName: 'Ahmed Al Mansouri',
+      email: 'ahmed.mansouri@student.uos.ae',
       type: HolderType.bachelorStudent,
       college: 'College of Computing & Informatics',
-      walletAddress: 'QW-2C3D4E5F',
+      walletAddress: 'QW-A1B2C3D4',
+      emiratesID: '784-1990-1234567-1',
     ),
     HolderRecord(
-      id: 'HC-00312',
-      fullName: 'Fatima Al Hashimi',
-      email: 'f.hashimi@student.uos.ae',
-      type: HolderType.masterStudent,
+      id: 'H-0002',
+      fullName: 'Sara Al Hashimi',
+      email: 'sara.hashimi@student.uos.ae',
+      type: HolderType.bachelorStudent,
       college: 'College of Business Administration',
-      walletAddress: 'QW-3E4F5A6B',
+      walletAddress: 'QW-E5F6A7B8',
+      emiratesID: '784-1995-7654321-2',
     ),
-    HolderRecord(
-      id: 'HC-00392',
-      fullName: 'Khalid Hassan',
-      email: 'k.hassan@uos.ae',
-      type: HolderType.employee,
-      college: 'N/A',
-      walletAddress: 'QW-5B6C7D8E',
-    ),
-    HolderRecord(
-      id: 'HC-00445',
-      fullName: 'Mariam Yusuf',
-      email: 'm.yusuf@student.uos.ae',
-      type: HolderType.phdStudent,
-      college: 'College of Science',
-      walletAddress: 'QW-6C7D8E9F',
-    ),
-    HolderRecord(
-      id: 'HC-00547',
-      fullName: 'Layla Khalid',
-      email: 'l.khalid@student.uos.ae',
-      type: HolderType.bachelorStudent,
-      college: 'College of Arts & Humanities',
-      walletAddress: 'QW-7D8E9F0A',
-    ),
-    HolderRecord(
-      id: 'HC-00601',
-      fullName: 'Nour Ibrahim',
-      email: 'n.ibrahim@student.uos.ae',
-      type: HolderType.masterStudent,
-      college: 'College of Engineering',
-      walletAddress: 'QW-8E9F0A1B',
-    ),
-    HolderRecord(
-      id: 'HC-00618',
-      fullName: 'Omar Saeed',
-      email: 'o.saeed@uos.ae',
-      type: HolderType.employee,
-      college: 'N/A',
-      walletAddress: 'QW-9F0A1B2C',
-    ),
-    HolderRecord(
-      id: 'HC-00724',
-      fullName: 'Reem Al Zaabi',
-      email: 'r.zaabi@student.uos.ae',
-      type: HolderType.phdStudent,
-      college: 'College of Law',
-      walletAddress: 'QW-0A1B2C3D',
-    ),
-    HolderRecord(
-      id: 'HC-00801',
-      fullName: 'Tariq Al Nasser',
-      email: 't.nasser@student.uos.ae',
-      type: HolderType.masterStudent,
-      college: 'College of Computing & Informatics',
-      walletAddress: 'QW-1B2C3D4E',
-    ),
-    HolderRecord(
-      id: 'HC-00852',
-      fullName: 'Hessa Al Mazrouei',
-      email: 'h.mazrouei@student.uos.ae',
-      type: HolderType.bachelorStudent,
-      college: 'College of Pharmacy',
-      walletAddress: 'QW-2C3D4E5F',
-    ),
+
+    // HolderRecord(
+    //   id: 'HC-00101',
+    //   fullName: 'Ahmed Al Rashidi',
+    //   email: 'a.rashidi@student.uos.ae',
+    //   type: HolderType.bachelorStudent,
+    //   college: 'College of Engineering',
+    //   walletAddress: 'QW-1A2B3C4D',
+    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+    // ),
+    // HolderRecord(
+    //   id: 'HC-00184',
+    //   fullName: 'Dr. Sara Al Mansoori',
+    //   email: 's.mansoori@uos.ae',
+    //   type: HolderType.medical,
+    //   college: 'College of Medicine',
+    //   walletAddress: 'QW-9F8E7D6C',
+    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+    // ),
+    // HolderRecord(
+    //   id: 'HC-00291',
+    //   fullName: 'Mohammed Ali',
+    //   email: 'm.ali@student.uos.ae',
+    //   type: HolderType.bachelorStudent,
+    //   college: 'College of Computing & Informatics',
+    //   walletAddress: 'QW-2C3D4E5F',
+    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+    // ),
+    // HolderRecord(
+    //   id: 'HC-00312',
+    //   fullName: 'Fatima Al Hashimi',
+    //   email: 'f.hashimi@student.uos.ae',
+    //   type: HolderType.masterStudent,
+    //   college: 'College of Business Administration',
+    //   walletAddress: 'QW-3E4F5A6B',
+    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+    // ),
+    // HolderRecord(
+    //   id: 'HC-00392',
+    //   fullName: 'Khalid Hassan',
+    //   email: 'k.hassan@uos.ae',
+    //   type: HolderType.employee,
+    //   college: 'N/A',
+    //   walletAddress: 'QW-5B6C7D8E',
+    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+    // ),
+    // HolderRecord(
+    //   id: 'HC-00445',
+    //   fullName: 'Mariam Yusuf',
+    //   email: 'm.yusuf@student.uos.ae',
+    //   type: HolderType.phdStudent,
+    //   college: 'College of Science',
+    //   walletAddress: 'QW-6C7D8E9F',
+    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+    // ),
+    // HolderRecord(
+    //   id: 'HC-00547',
+    //   fullName: 'Layla Khalid',
+    //   email: 'l.khalid@student.uos.ae',
+    //   type: HolderType.bachelorStudent,
+    //   college: 'College of Arts & Humanities',
+    //   walletAddress: 'QW-7D8E9F0A',
+    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+
+    // ),
+    // HolderRecord(
+    //   id: 'HC-00601',
+    //   fullName: 'Nour Ibrahim',
+    //   email: 'n.ibrahim@student.uos.ae',
+    //   type: HolderType.masterStudent,
+    //   college: 'College of Engineering',
+    //   walletAddress: 'QW-8E9F0A1B',
+    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+    // ),
+    // HolderRecord(
+    //   id: 'HC-00618',
+    //   fullName: 'Omar Saeed',
+    //   email: 'o.saeed@uos.ae',
+    //   type: HolderType.employee,
+    //   college: 'N/A',
+    //   walletAddress: 'QW-9F0A1B2C',
+    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+    // ),
+    // HolderRecord(
+    //   id: 'HC-00724',
+    //   fullName: 'Reem Al Zaabi',
+    //   email: 'r.zaabi@student.uos.ae',
+    //   type: HolderType.phdStudent,
+    //   college: 'College of Law',
+    //   walletAddress: 'QW-0A1B2C3D',
+    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+    // ),
+    // HolderRecord(
+    //   id: 'HC-00801',
+    //   fullName: 'Tariq Al Nasser',
+    //   email: 't.nasser@student.uos.ae',
+    //   type: HolderType.masterStudent,
+    //   college: 'College of Computing & Informatics',
+    //   walletAddress: 'QW-1B2C3D4E',
+    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+    // ),
+    // HolderRecord(
+    //   id: 'HC-00852',
+    //   fullName: 'Hessa Al Mazrouei',
+    //   email: 'h.mazrouei@student.uos.ae',
+    //   type: HolderType.bachelorStudent,
+    //   college: 'College of Pharmacy',
+    //   walletAddress: 'QW-2C3D4E5F',
+    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+    // ),
   ];
 
   // ── Schemas ────────────────────────────────────────────────────────────────
@@ -846,6 +885,7 @@ abstract class IssuingMockData {
   // ── Credentials ────────────────────────────────────────────────────────────
   static final credentials = [
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2025-009182',
       holderName: 'Mohammed Ali',
       holderEmail: 'm.ali@student.uos.ae',
@@ -869,6 +909,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2025-008741',
       holderName: 'Dr. Sara Al Mansoori',
       holderEmail: 's.mansoori@uos.ae',
@@ -892,6 +933,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2025-007192',
       holderName: 'Khalid Hassan',
       holderEmail: 'k.hassan@uos.ae',
@@ -922,6 +964,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2025-006831',
       holderName: 'Layla Khalid',
       holderEmail: 'l.khalid@student.uos.ae',
@@ -951,6 +994,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2024-005210',
       holderName: 'Omar Saeed',
       holderEmail: 'o.saeed@uos.ae',
@@ -973,6 +1017,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2025-004817',
       holderName: 'Ahmed Al Rashidi',
       holderEmail: 'a.rashidi@student.uos.ae',
@@ -996,6 +1041,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2025-004312',
       holderName: 'Fatima Al Hashimi',
       holderEmail: 'f.hashimi@student.uos.ae',
@@ -1019,6 +1065,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2025-003991',
       holderName: 'Mariam Yusuf',
       holderEmail: 'm.yusuf@student.uos.ae',
@@ -1041,6 +1088,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2025-003654',
       holderName: 'Nour Ibrahim',
       holderEmail: 'n.ibrahim@student.uos.ae',
@@ -1064,6 +1112,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2025-003208',
       holderName: 'Reem Al Zaabi',
       holderEmail: 'r.zaabi@student.uos.ae',
@@ -1085,6 +1134,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2025-002971',
       holderName: 'Tariq Al Nasser',
       holderEmail: 't.nasser@student.uos.ae',
@@ -1108,6 +1158,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2025-002640',
       holderName: 'Hessa Al Mazrouei',
       holderEmail: 'h.mazrouei@student.uos.ae',
@@ -1131,6 +1182,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2024-002301',
       holderName: 'Saeed Al Hamdan',
       holderEmail: 's.hamdan@student.uos.ae',
@@ -1153,6 +1205,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2024-002088',
       holderName: 'Mona Al Suwaidi',
       holderEmail: 'm.suwaidi@uos.ae',
@@ -1175,6 +1228,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2024-001876',
       holderName: 'Faisal Al Blooshi',
       holderEmail: 'f.blooshi@student.uos.ae',
@@ -1203,6 +1257,7 @@ abstract class IssuingMockData {
       attributes: {'Degree Title': 'BSc Civil Engineering', 'Grade': 'Pass'},
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2024-001543',
       holderName: 'Aisha Bin Laden',
       holderEmail: 'a.binladen@student.uos.ae',
@@ -1225,6 +1280,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2024-001290',
       holderName: 'Yousef Al Marzouqi',
       holderEmail: 'y.marzouqi@student.uos.ae',
@@ -1244,6 +1300,7 @@ abstract class IssuingMockData {
       attributes: {'Degree Title': 'BSc Mathematics', 'Grade': 'Distinction'},
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2024-001102',
       holderName: 'Shahd Al Owais',
       holderEmail: 's.owais@student.uos.ae',
@@ -1266,6 +1323,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2024-000891',
       holderName: 'Hamad Al Ketbi',
       holderEmail: 'h.ketbi@uos.ae',
@@ -1288,6 +1346,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2024-000712',
       holderName: 'Lujain Al Dhaheri',
       holderEmail: 'l.dhaheri@student.uos.ae',
@@ -1310,6 +1369,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2023-000598',
       holderName: 'Khamis Al Muhairi',
       holderEmail: 'k.muhairi@student.uos.ae',
@@ -1332,6 +1392,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2023-000487',
       holderName: 'Noura Al Shamsi',
       holderEmail: 'n.shamsi@student.uos.ae',
@@ -1351,6 +1412,7 @@ abstract class IssuingMockData {
       attributes: {'Degree Title': 'BSc Architecture', 'Grade': 'Distinction'},
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2023-000374',
       holderName: 'Abdullah Al Kaabi',
       holderEmail: 'a.kaabi@uos.ae',
@@ -1377,6 +1439,7 @@ abstract class IssuingMockData {
       attributes: {'License Type': 'Full Practicing', 'Specialty': 'Surgery'},
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2023-000261',
       holderName: 'Maryam Al Falasi',
       holderEmail: 'm.falasi@student.uos.ae',
@@ -1399,6 +1462,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2023-000189',
       holderName: 'Sultan Al Qubaisi',
       holderEmail: 's.qubaisi@student.uos.ae',
@@ -1421,6 +1485,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2022-000147',
       holderName: 'Wafa Al Nuaimi',
       holderEmail: 'w.nuaimi@student.uos.ae',
@@ -1440,6 +1505,7 @@ abstract class IssuingMockData {
       attributes: {'Degree Title': 'MSc Finance', 'Grade': 'Merit'},
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2022-000098',
       holderName: 'Jasim Al Hammadi',
       holderEmail: 'j.hammadi@uos.ae',
@@ -1471,6 +1537,7 @@ abstract class IssuingMockData {
       },
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2022-000051',
       holderName: 'Amna Al Hajri',
       holderEmail: 'a.hajri@student.uos.ae',
@@ -1490,6 +1557,7 @@ abstract class IssuingMockData {
       attributes: {'Degree Title': 'BSc Nursing', 'Grade': 'Distinction'},
     ),
     CredentialRecord(
+      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
       id: 'QC-2022-000019',
       holderName: 'Rashid Al Mansoori',
       holderEmail: 'r.mansoori@student.uos.ae',
@@ -1662,10 +1730,7 @@ abstract class IssuingMockData {
         'Graduation Year': '2025',
         'Expiry Date': '30 Jun 2030',
       },
-      fieldErrors: {
-        'Student ID': 'Holder not found',
-        'Grade': 'required',
-      },
+      fieldErrors: {'Student ID': 'Holder not found', 'Grade': 'required'},
       state: BatchRowState.error,
     ),
     BatchRow(
@@ -1694,10 +1759,7 @@ abstract class IssuingMockData {
         'Graduation Year': '',
         'Expiry Date': '30 Jun 2030',
       },
-      fieldErrors: {
-        'Grade': 'required',
-        'Graduation Year': 'required',
-      },
+      fieldErrors: {'Grade': 'required', 'Graduation Year': 'required'},
       state: BatchRowState.error,
     ),
     BatchRow(
@@ -1717,4 +1779,3 @@ abstract class IssuingMockData {
     ),
   ];
 }
-

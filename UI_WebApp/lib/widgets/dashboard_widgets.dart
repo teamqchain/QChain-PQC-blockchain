@@ -87,16 +87,16 @@ class _StatChipState extends State<StatChip> {
                 '${widget.value}',
                 style: AppTextStyles.statValue.copyWith(color: Colors.white),
               ),
-              const SizedBox(height: 4),  // stat label
+              const SizedBox(height: 4), // stat label
               Text(
                 widget.label,
                 style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w500,
                   letterSpacing: -0.1,
-                  fontSize: 12
+                  fontSize: 12,
                 ),
-              ), 
+              ),
             ],
           ),
         ),
@@ -128,7 +128,8 @@ class SectionHeader extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.start,
         children: [
           if (!isSmallScreen(context)) ...[
-            Container(      //small line in the heading
+            Container(
+              //small line in the heading
               width: 3,
               height: 16,
               decoration: BoxDecoration(
@@ -474,13 +475,23 @@ class MiniBarChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (data.isEmpty) {
+      return SizedBox(
+        height: 90,
+        child: Center(
+          child: Text('No chart data available', style: AppTextStyles.bodyTiny),
+        ),
+      );
+    }
+
     final maxVal = data.map((d) => d.value).reduce((a, b) => a > b ? a : b);
+    final safeMaxVal = maxVal <= 0 ? 1 : maxVal;
     return SizedBox(
       height: 90,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: data.map((d) {
-          final heightFraction = d.value / maxVal;
+          final heightFraction = d.value / safeMaxVal;
           return Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 3),
@@ -489,9 +500,7 @@ class MiniBarChart extends StatelessWidget {
                 children: [
                   Text(
                     '${d.value.toInt()}',
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 9,
-                    ),
+                    style: AppTextStyles.bodyTiny.copyWith(fontSize: 9),
                   ),
                   const SizedBox(height: 3),
                   AnimatedContainer(

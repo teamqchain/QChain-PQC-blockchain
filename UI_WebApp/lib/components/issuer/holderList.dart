@@ -78,7 +78,7 @@ class HolderRowState extends State<HolderRow> {
             Expanded(
               flex: 2,
               child: Text(
-                widget.holder.id,
+                widget.holder.emiratesID,
                 style: AppTextStyles.bodyTiny.copyWith(
                   fontSize: 10,
                   color: AppColors.textDim,

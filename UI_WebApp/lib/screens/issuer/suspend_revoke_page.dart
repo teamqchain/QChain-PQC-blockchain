@@ -18,10 +18,10 @@ import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/components/label.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
 import 'package:qportal_webapp/models/issuing_models.dart';
-import 'package:qportal_webapp/screens/issuer/schemas_page.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/services/api_service.dart';
 
 // ─── MOCK CURRENT USER ────────────────────────────────────────────────────────
 
@@ -65,8 +65,9 @@ class RevokeSuspendPage extends StatefulWidget {
 
 class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
   // ── local mutable list so status mutations reflect in the table ────────────
-  late List<CredentialRecord> _rows;
-  late List<CredentialRecord> _filtered;
+  List<CredentialRecord> _rows = [];
+  List<CredentialRecord> _filtered = [];
+  bool _isLoading = true;
 
   String _query = '';
   final _searchCtrl = TextEditingController();
@@ -74,11 +75,27 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
 
   // ── helpers ────────────────────────────────────────────────────────────────
 
+  // @override
+  // void initState() {
+  //   super.initState();
+  //   _rows = List<CredentialRecord>.from(IssuingMockData.credentials);
+  //   _applyFilter();
+  // }
+
   @override
   void initState() {
     super.initState();
-    _rows = List<CredentialRecord>.from(IssuingMockData.credentials);
-    _applyFilter();
+    _loadCredentials();
+  }
+
+  Future<void> _loadCredentials() async {
+    final data = await ApiService.getAllCredentials();
+    if (!mounted) return;
+    setState(() {
+      _rows = data;
+      _applyFilter();
+      _isLoading = false;
+    });
   }
 
   void _applyFilter() {
@@ -106,8 +123,7 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
   bool get _canRevoke =>
       _hasSelection && _selStatus != CredentialStatus.revoked;
 
-  bool get _canSuspend =>
-      _hasSelection && _selStatus == CredentialStatus.valid;
+  bool get _canSuspend => _hasSelection && _selStatus == CredentialStatus.valid;
 
   bool get _canRestore =>
       _hasSelection &&
@@ -138,6 +154,7 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
         if (i < 0) continue;
         final old = _rows[i];
         _rows[i] = CredentialRecord(
+          holderEmiratesID: old.holderEmiratesID,
           id: old.id,
           holderName: old.holderName,
           holderEmail: old.holderEmail,
@@ -147,8 +164,12 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
           issueDate: old.issueDate,
           expiryDate: old.expiryDate,
           status: newStatus,
-          revokedBy: newStatus == CredentialStatus.revoked ? _kCurrentUser : null,
-          revokedDate: newStatus == CredentialStatus.revoked ? _todayStr() : null,
+          revokedBy: newStatus == CredentialStatus.revoked
+              ? _kCurrentUser
+              : null,
+          revokedDate: newStatus == CredentialStatus.revoked
+              ? _todayStr()
+              : null,
           auditTrail: old.auditTrail,
           attributes: old.attributes,
           signingAlgorithm: old.signingAlgorithm,
@@ -192,21 +213,83 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
       barrierDismissible: false,
       builder: (_) => _RevokeDialog(
         credentials: recs,
-        onConfirmed: () => _mutateAll(ids, CredentialStatus.revoked),
+        onConfirmed: () {
+          _mutateAll(ids, CredentialStatus.revoked);
+          // Fire-and-forget: only real CRED- IDs hit the API (mock QC- IDs are skipped).
+          for (final id in ids) {
+            if (id.startsWith('CRED-')) ApiService.revokeCredential(id);
+          }
+        },
       ),
     );
   }
 
+  // Future<void> _openSuspend() async {
+  //   final recs = _selRecords;
+  //   if (recs.isEmpty) return;
+  //   final ids = recs.map((r) => r.id).toList();
+  //   await showDialog(
+  //     context: context,
+  //     barrierDismissible: false,
+  //     builder: (_) => _SuspendDialog(
+  //       credentials: recs,
+  //       onConfirmed: (String reason) {
+  //         _mutateAll(ids, CredentialStatus.suspended);
+  //         for (final id in ids) {
+  //           if (id.startsWith('CRED-')) {
+  //             ApiService.suspendCredential(id, reason: reason);
+  //           }
+  //         }
+  //       },
+  //     ),
+  //   );
+  // }
   Future<void> _openSuspend() async {
     final recs = _selRecords;
     if (recs.isEmpty) return;
     final ids = recs.map((r) => r.id).toList();
+
     await showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => _SuspendDialog(
         credentials: recs,
-        onConfirmed: () => _mutateAll(ids, CredentialStatus.suspended),
+        onConfirmed: (String reason) async {
+          // 1. Call API first, THEN mutate local state only on success
+          bool allSucceeded = true;
+          for (final id in ids) {
+            if (id.startsWith('CRED-')) {
+              try {
+                final success = await ApiService.suspendCredential(
+                  id,
+                  reason: reason,
+                );
+                if (!success) allSucceeded = false;
+              } catch (e) {
+                allSucceeded = false;
+                debugPrint('Suspend failed for $id: $e');
+              }
+            }
+          }
+
+          if (allSucceeded) {
+            _mutateAll(
+              ids,
+              CredentialStatus.suspended,
+            ); // only update UI after confirmed
+          } else {
+            // Show error to user
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Suspend failed — please try again.'),
+                ),
+              );
+            }
+            // Re-fetch real state from API
+            _loadCredentials();
+          }
+        },
       ),
     );
   }
@@ -220,7 +303,15 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
       barrierDismissible: false,
       builder: (_) => _RestoreDialog(
         credentials: recs,
-        onConfirmed: () => _mutateAll(ids, CredentialStatus.valid),
+        // onConfirmed: () => _mutateAll(ids, CredentialStatus.valid),
+        onConfirmed: () {
+          _mutateAll(ids, CredentialStatus.valid);
+          for (final id in ids) {
+            if (id.startsWith('CRED-')) {
+              ApiService.restoreCredential(id);
+            }
+          }
+        },
       ),
     );
   }
@@ -309,7 +400,6 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
           const SizedBox(width: 8),
 
           // Filter icon
-          
         ],
       ),
     );
@@ -319,7 +409,7 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
 
   Widget _buildColumnHeader() {
     return Container(
-      decoration:  BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.issuingAccent.withOpacity(0.16),
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
@@ -342,6 +432,10 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
   // ─── DATA ROWS ─────────────────────────────────────────────────────────────
 
   Widget _buildRows() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     if (_filtered.isEmpty) {
       return Center(
         child: Column(
@@ -374,8 +468,7 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
       itemBuilder: (_, i) {
         final rec = _filtered[i];
         // Dim rows whose status differs from the current selection
-        final canSelect = _selectedIds.isEmpty ||
-            rec.status == _selStatus;
+        final canSelect = _selectedIds.isEmpty || rec.status == _selStatus;
         return _CredRow(
           record: rec,
           selected: _selectedIds.contains(rec.id),
@@ -397,13 +490,15 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         // ── Selection count chip ─────────────────────────────────────────
-        if (count > 0) ...[       
+        if (count > 0) ...[
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: AppColors.issuingAccent.withOpacity(0.12),
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: AppColors.issuingAccent.withOpacity(0.35)),
+              border: Border.all(
+                color: AppColors.issuingAccent.withOpacity(0.35),
+              ),
             ),
             child: Text(
               '$count selected',
@@ -488,7 +583,7 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
         ),
 
         // ── Selection indicator ─────────────────────────────────────────────
-        // if (count > 0) ...[  
+        // if (count > 0) ...[
         //   const SizedBox(width: 16),
         //   Container(width: 1, height: 18, color: AppColors.border),
         //   const SizedBox(width: 14),
@@ -551,127 +646,129 @@ class _CredRowState extends State<_CredRow> {
     return Opacity(
       opacity: widget.dimmed ? 0.35 : 1.0,
       child: MouseRegion(
-      cursor: widget.dimmed ? SystemMouseCursors.basic : SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.dimmed ? null : widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          color: widget.selected
-              ? AppColors.issuingAccent.withOpacity(0.08)
-              : _hovered && !widget.dimmed
-              ? AppColors.surfaceHover
-              : Colors.transparent,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              // Checkbox
-              SizedBox(
-                width: 36,
-                child: Checkbox(
-                  value: widget.selected,
-                  onChanged: (_) => widget.onTap(),
-                  activeColor: AppColors.issuingAccent,
-                  checkColor: Colors.white,
-                  side: const BorderSide(color: AppColors.border, width: 1.5),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-
-              // Credential ID
-              Expanded(
-                flex: 3,
-                child: Text(
-                  r.id,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.issuingLight,
-                    fontFamily: 'monospace',
+        cursor: widget.dimmed
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: widget.dimmed ? null : widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            color: widget.selected
+                ? AppColors.issuingAccent.withOpacity(0.08)
+                : _hovered && !widget.dimmed
+                ? AppColors.surfaceHover
+                : Colors.transparent,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                // Checkbox
+                SizedBox(
+                  width: 36,
+                  child: Checkbox(
+                    value: widget.selected,
+                    onChanged: (_) => widget.onTap(),
+                    activeColor: AppColors.issuingAccent,
+                    checkColor: Colors.white,
+                    side: const BorderSide(color: AppColors.border, width: 1.5),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
 
-              // Holder Name
-              Expanded(
-                flex: 3,
-                child: Text(
-                  r.holderName,
-                  style: AppTextStyles.bodyTiny.copyWith(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textMuted,
+                // Credential ID
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    r.id,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.issuingLight,
+                      fontFamily: 'monospace',
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
 
-              // Credential Type
-              Expanded(
-                flex: 4,
-                child: Text(
-                  r.credentialType,
-                  style: AppTextStyles.bodyTiny.copyWith(
-                    fontSize: 11,
-                    color: AppColors.textMuted,
+                // Holder Name
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    r.holderName,
+                    style: AppTextStyles.bodyTiny.copyWith(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textMuted,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
 
-              // Issued By
-              Expanded(
-                flex: 2,
-                child: Text(
-                  r.issuedBy,
-                  style: AppTextStyles.bodyTiny.copyWith(
-                    fontSize: 11,
-                    color: AppColors.textDim,
+                // Credential Type
+                Expanded(
+                  flex: 4,
+                  child: Text(
+                    r.credentialType,
+                    style: AppTextStyles.bodyTiny.copyWith(
+                      fontSize: 11,
+                      color: AppColors.textMuted,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
 
-              // Issue Date
-              Expanded(
-                flex: 2,
-                child: Text(
-                  r.issueDate,
-                  style: AppTextStyles.bodyTiny.copyWith(
-                    fontSize: 11,
-                    color: AppColors.textDim,
+                // Issued By
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    r.issuedBy,
+                    style: AppTextStyles.bodyTiny.copyWith(
+                      fontSize: 11,
+                      color: AppColors.textDim,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
 
-              // Expiry Date
-              Expanded(
-                flex: 2,
-                child: Text(
-                  r.expiryDate ?? '—',
-                  style: AppTextStyles.bodyTiny.copyWith(
-                    fontSize: 11,
-                    color: r.expiryDate != null
-                        ? AppColors.textDim
-                        : AppColors.textDim.withOpacity(0.4),
-                    fontStyle: r.expiryDate == null
-                        ? FontStyle.italic
-                        : FontStyle.normal,
+                // Issue Date
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    r.issueDate,
+                    style: AppTextStyles.bodyTiny.copyWith(
+                      fontSize: 11,
+                      color: AppColors.textDim,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
 
-              // Status badge
-              Expanded(flex: 2, child: _StatusBadge(status: r.status)),
-            ],
+                // Expiry Date
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    r.expiryDate ?? '—',
+                    style: AppTextStyles.bodyTiny.copyWith(
+                      fontSize: 11,
+                      color: r.expiryDate != null
+                          ? AppColors.textDim
+                          : AppColors.textDim.withOpacity(0.4),
+                      fontStyle: r.expiryDate == null
+                          ? FontStyle.italic
+                          : FontStyle.normal,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+
+                // Status badge
+                Expanded(flex: 2, child: _StatusBadge(status: r.status)),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -780,7 +877,7 @@ enum _SuspendMode { furtherNotice, specificDate }
 
 class _SuspendDialog extends StatefulWidget {
   final List<CredentialRecord> credentials;
-  final VoidCallback onConfirmed;
+  final void Function(String reason) onConfirmed;
 
   const _SuspendDialog({required this.credentials, required this.onConfirmed});
 
@@ -850,7 +947,7 @@ class _SuspendDialogState extends State<_SuspendDialog> {
       setState(() => _pwErr = true);
       return;
     }
-    widget.onConfirmed();
+    widget.onConfirmed(_reason!);
     setState(() {
       _pwErr = false;
       _step = 3;
@@ -1046,7 +1143,7 @@ class _Step1Revoke extends StatelessWidget {
       _CredSummary(credentials: credentials),
       const SizedBox(height: 20),
 
-      Label(text: 'Reason for $proceedLabel', required: true,),
+      Label(text: 'Reason for $proceedLabel', required: true),
       const SizedBox(height: 6),
       _Dropdown(
         value: reason,
@@ -1209,7 +1306,7 @@ class _Step1Suspend extends StatelessWidget {
 
       const SizedBox(height: 14),
 
-      const Label(text: 'Reason for Suspension ', required: true,),
+      const Label(text: 'Reason for Suspension ', required: true),
       const SizedBox(height: 6),
       _Dropdown(
         value: reason,
@@ -1474,107 +1571,110 @@ class _Step3Done extends StatelessWidget {
     final holderName = credentials.first.holderName;
 
     return Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      const SizedBox(height: 12),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 12),
 
-      // Large icon badge
-      Center(
-        child: Container(
-          width: 72,
-          height: 72,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: accentColor.withOpacity(0.12),
-            border: Border.all(color: accentColor.withOpacity(0.4), width: 1.5),
-          ),
-          child: Icon(_icon, size: 34, color: accentColor),
-        ),
-      ),
-      const SizedBox(height: 20),
-
-      // Title
-      Center(
-        child: Text(
-          'Action Complete',
-          style: AppTextStyles.navLabelActive.copyWith(
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ),
-      const SizedBox(height: 10),
-
-      // Message
-      Center(
-        child: RichText(
-          textAlign: TextAlign.center,
-          text: TextSpan(
-            style: AppTextStyles.bodyTiny.copyWith(
-              fontSize: 12,
-              color: AppColors.textMuted,
-              height: 1.7,
-              letterSpacing: 0.5
+        // Large icon badge
+        Center(
+          child: Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: accentColor.withOpacity(0.12),
+              border: Border.all(
+                color: accentColor.withOpacity(0.4),
+                width: 1.5,
+              ),
             ),
-            children: single
-                ? [
-                    const TextSpan(text: 'The credential for '),
-                    TextSpan(
-                      text: holderName,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.text,
-                        letterSpacing: 0.5
-                      ),
-                    ),
-                    TextSpan(text: ' has been $actionPast by '),
-                    TextSpan(
-                      text: performedBy,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.text,
-                        letterSpacing: 0.5
-                      ),
-                    ),
-                    const TextSpan(text: '.'),
-                  ]
-                : [
-                    TextSpan(
-                      text: '$count credentials',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.text,
-                        letterSpacing: 0.5
-                      ),
-                    ),
-                    TextSpan(text: ' have been $actionPast by '),
-                    TextSpan(
-                      text: performedBy,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.text,
-                        letterSpacing: 0.5
-                      ),
-                    ),
-                    const TextSpan(text: '.'),
-                  ],
+            child: Icon(_icon, size: 34, color: accentColor),
           ),
         ),
-      ),
-      const SizedBox(height: 28),
+        const SizedBox(height: 20),
 
-      // Return button
-      Center(
-        child: AppButton(
-          label: 'Return to Management',
-          backgroundColor: accentColor,
-          hoverColor: accentColor.withOpacity(0.82),
-          onTap: onReturn,
+        // Title
+        Center(
+          child: Text(
+            'Action Complete',
+            style: AppTextStyles.navLabelActive.copyWith(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ),
-      ),
-      const SizedBox(height: 12),
-    ],
-  );
+        const SizedBox(height: 10),
+
+        // Message
+        Center(
+          child: RichText(
+            textAlign: TextAlign.center,
+            text: TextSpan(
+              style: AppTextStyles.bodyTiny.copyWith(
+                fontSize: 12,
+                color: AppColors.textMuted,
+                height: 1.7,
+                letterSpacing: 0.5,
+              ),
+              children: single
+                  ? [
+                      const TextSpan(text: 'The credential for '),
+                      TextSpan(
+                        text: holderName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.text,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      TextSpan(text: ' has been $actionPast by '),
+                      TextSpan(
+                        text: performedBy,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.text,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const TextSpan(text: '.'),
+                    ]
+                  : [
+                      TextSpan(
+                        text: '$count credentials',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.text,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      TextSpan(text: ' have been $actionPast by '),
+                      TextSpan(
+                        text: performedBy,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.text,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const TextSpan(text: '.'),
+                    ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 28),
+
+        // Return button
+        Center(
+          child: AppButton(
+            label: 'Return to Management',
+            backgroundColor: accentColor,
+            hoverColor: accentColor.withOpacity(0.82),
+            onTap: onReturn,
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
+    );
   }
 }
 
@@ -1729,47 +1829,53 @@ class _CredSummary extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          ...credentials.map((c) => Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              children: [
-                const Icon(Icons.fiber_manual_record, size: 5, color: AppColors.textDim),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 3,
-                  child: Text(
-                    c.holderName,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.text,
-                    ),
-                    overflow: TextOverflow.ellipsis,
+          ...credentials.map(
+            (c) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.fiber_manual_record,
+                    size: 5,
+                    color: AppColors.textDim,
                   ),
-                ),
-                Expanded(
-                  flex: 4,
-                  child: Text(
-                    c.credentialType,
-                    style: AppTextStyles.bodyTiny.copyWith(
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      c.holderName,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.text,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 4,
+                    child: Text(
+                      c.credentialType,
+                      style: AppTextStyles.bodyTiny.copyWith(
+                        fontSize: 10,
+                        color: AppColors.textMuted,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Text(
+                    c.id.length > 12 ? '${c.id.substring(0, 12)}…' : c.id,
+                    style: TextStyle(
                       fontSize: 10,
-                      color: AppColors.textMuted,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.issuingLight.withOpacity(0.7),
+                      fontFamily: 'monospace',
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                Text(
-                  c.id.length > 12 ? '${c.id.substring(0, 12)}…' : c.id,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.issuingLight.withOpacity(0.7),
-                    fontFamily: 'monospace',
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          )),
+          ),
         ],
       ),
     );
@@ -2110,11 +2216,20 @@ class _DlgFooter extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     mainAxisAlignment: MainAxisAlignment.end,
     children: [
-      AppButton(label: cancelLabel, onTap: onCancel, textColor: AppColors.textMuted, showBorder: true, borderColor: AppColors.border, hoverColor: AppColors.surfaceHover),
+      AppButton(
+        label: cancelLabel,
+        onTap: onCancel,
+        textColor: AppColors.textMuted,
+        showBorder: true,
+        borderColor: AppColors.border,
+        hoverColor: AppColors.surfaceHover,
+      ),
       const SizedBox(width: 10),
       AppButton(
         label: proceedLabel,
-        backgroundColor: canProceed ? proceedColor : proceedColor.withOpacity(0.28),
+        backgroundColor: canProceed
+            ? proceedColor
+            : proceedColor.withOpacity(0.28),
         hoverColor: proceedColor.withOpacity(0.82),
         onTap: canProceed ? onProceed : () {},
       ),

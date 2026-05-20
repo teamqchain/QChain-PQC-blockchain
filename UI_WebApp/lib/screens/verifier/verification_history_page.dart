@@ -27,6 +27,7 @@ import 'package:flutter/material.dart';
 import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
 import 'package:qportal_webapp/models/verifiying_models.dart';
+import 'package:qportal_webapp/services/api_service.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/widgets/app_button.dart';
@@ -49,6 +50,7 @@ class _VerificationHistoryPageState extends State<VerificationHistoryPage> {
   // ── data ──────────────────────────────────────────────────────────────────
   late List<VerificationHistoryRecord> _allRows;
   late List<VerificationHistoryRecord> _filtered;
+  bool _isLoading = true;
 
   // ── selection ─────────────────────────────────────────────────────────────
   final Set<String> _selected = {};
@@ -64,11 +66,29 @@ class _VerificationHistoryPageState extends State<VerificationHistoryPage> {
 
   // ─── helpers ──────────────────────────────────────────────────────────────
 
+  // @override
+  // void initState() {
+  //   super.initState();
+  //   _allRows = List.from(kMockVerificationHistory);
+  //   _applyFilter();
+  // }
+
   @override
   void initState() {
     super.initState();
-    _allRows = List.from(kMockVerificationHistory);
-    _applyFilter();
+    _allRows = [];
+    _filtered = [];
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    final data = await ApiService.getVerificationHistory();
+    if (!mounted) return;
+    setState(() {
+      _allRows = data;
+      _applyFilter();
+      _isLoading = false;
+    });
   }
 
   void _applyFilter() {
@@ -171,6 +191,7 @@ class _VerificationHistoryPageState extends State<VerificationHistoryPage> {
           // ── Table container ──────────────────────────────────────────────
           Expanded(
             child: _HistoryTable(
+              isLoading: _isLoading,
               rows: _pageRows,
               selected: _selected,
               selectAll: _selectAll,
@@ -281,6 +302,7 @@ class _VerificationHistoryPageState extends State<VerificationHistoryPage> {
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _HistoryTable extends StatelessWidget {
+  final bool isLoading;
   final List<VerificationHistoryRecord> rows;
   final Set<String> selected;
   final bool selectAll;
@@ -293,6 +315,7 @@ class _HistoryTable extends StatelessWidget {
   final VoidCallback onClearSearch;
 
   const _HistoryTable({
+    required this.isLoading,
     required this.rows,
     required this.selected,
     required this.selectAll,
@@ -321,23 +344,30 @@ class _HistoryTable extends StatelessWidget {
           _buildHeader(),
           Container(height: 1, color: AppColors.border),
           Expanded(
-            child: rows.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No records match your search.',
-                      style: TextStyle(color: AppColors.textDim, fontSize: 12),
+            child: isLoading
+                ? Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.verifyingAccent,
                     ),
                   )
-                : ListView.separated(
-                    itemCount: rows.length,
-                    separatorBuilder: (_, __) =>
-                        Container(height: 1, color: AppColors.border),
-                    itemBuilder: (_, i) => _HistoryRow(
-                      record: rows[i],
-                      isSelected: selected.contains(rows[i].id),
-                      onToggle: () => onToggleRow(rows[i].id),
-                    ),
-                  ),
+                : rows.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'No records match your search.',
+                          style:
+                              TextStyle(color: AppColors.textDim, fontSize: 12),
+                        ),
+                      )
+                    : ListView.separated(
+                        itemCount: rows.length,
+                        separatorBuilder: (_, __) =>
+                            Container(height: 1, color: AppColors.border),
+                        itemBuilder: (_, i) => _HistoryRow(
+                          record: rows[i],
+                          isSelected: selected.contains(rows[i].id),
+                          onToggle: () => onToggleRow(rows[i].id),
+                        ),
+                      ),
           ),
         ],
       ),
