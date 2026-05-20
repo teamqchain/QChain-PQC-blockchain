@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/x509"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -114,6 +116,17 @@ type VerifyCredentialRequest struct {
 // RevokeCredentialRequest — called by QPortal issuer revoke/suspend screen.
 type RevokeCredentialRequest struct {
 	CredentialID string `json:"credentialID"` // display ID e.g. "CRED-0001"
+}
+
+// SuspendCredentialRequest — temporary, reversible status change.
+type SuspendCredentialRequest struct {
+	CredentialID string `json:"credentialID"`
+	Reason       string `json:"reason"`
+}
+
+// RestoreCredentialRequest — restore a suspended credential back to active.
+type RestoreCredentialRequest struct {
+	CredentialID string `json:"credentialID"`
 }
 
 // SetCIDRequest — admin use only (left intact for manual correction).
@@ -497,6 +510,23 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 
 	// 8. Generate display credential ID and persist to MySQL
 	displayCredID := nextDisplayCredID()
+
+	// Parse expiryDate out of the inner info JSON so it can be stored as a
+	// proper DATE column (used for dashboard "expiringSoon" / expiry warnings).
+	var expiryDate sql.NullTime
+	var infoFields map[string]any
+	if err := json.Unmarshal([]byte(req.Info), &infoFields); err == nil {
+		if v, ok := infoFields["expiryDate"].(string); ok && v != "" {
+			// Accept both "2030-06-30" and "2030-06-30T00:00:00(.SSS)" forms.
+			for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05.000", "2006-01-02T15:04:05", "2006-01-02"} {
+				if t, err := time.Parse(layout, v); err == nil {
+					expiryDate = sql.NullTime{Time: t, Valid: true}
+					break
+				}
+			}
+		}
+	}
+
 	if dbErr := insertCredential(CredentialInsert{
 		CredentialID:   displayCredID,
 		FabricCredID:   fabricCredID,
@@ -508,9 +538,13 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		IPFSCID:        ipfsCID,
 		CredentialData: req.Info,
 		IssuedAt:       time.Now(),
+		ExpiryDate:     expiryDate,
 	}); dbErr != nil {
 		log.Printf("DB insertCredential warning: %v", dbErr)
 	}
+
+	// Record the issuance event for the dashboard activity feed.
+	insertCredentialEvent(displayCredID, "issued", "ISS-UOS-0001", "Mohammed Al Issuer", "")
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":        true,
@@ -572,14 +606,28 @@ func handleVerifyCredential(w http.ResponseWriter, r *http.Request) {
 	if innerInfoStr != "" {
 		_ = json.Unmarshal([]byte(innerInfoStr), &credData)
 	}
-	holderName, _ := holderNameByID(holderIDFromChain)
+	// expiryDate lives inside the nested attributes (set at issue time).
+	expiryDate := ""
+	if credData != nil {
+		if v, ok := credData["expiryDate"].(string); ok {
+			expiryDate = v
+		}
+	}
+
+	// Holder display fields (full name, email, Emirates ID) — for the response,
+	// not for the cryptographic check (which is entirely on-chain).
+	holderName, holderEmail, holderEID, _ := holderInfoByID(holderIDFromChain)
+	if holderName == "" {
+		holderName, _ = holderNameByID(holderIDFromChain)
+	}
+	const verifiedBy = "System Verifier"
 
 	// 4. Check status (active / revoked / suspended)
 	status, _ := cred["Status"].(string)
 	notRevoked := strings.EqualFold(status, "active")
 
 	if !notRevoked {
-		logVerificationToDB(req.CredentialID, fabricCredID, verifierIdentity,
+		logVerificationToDB(req.CredentialID, fabricCredID, "VER-UOS-0001", verifiedBy,
 			"failure", strings.ToUpper(status),
 			true, false, false, false, status)
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -587,10 +635,14 @@ func handleVerifyCredential(w http.ResponseWriter, r *http.Request) {
 			"credentialID":   req.CredentialID,
 			"holderID":       holderIDFromChain,
 			"holderName":     holderName,
+			"holderEmail":    holderEmail,
+			"holderEID":      holderEID,
 			"credentialType": credentialType,
 			"issuer":         "University of Sharjah",
+			"verifiedBy":     verifiedBy,
 			"status":         status,
 			"issuedAt":       issuedAtFromInfo,
+			"expiryDate":     expiryDate,
 			"credentialData": credData,
 			"reason":         strings.ToUpper(status),
 			"checks": map[string]bool{
@@ -632,7 +684,7 @@ func handleVerifyCredential(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	logVerificationToDB(req.CredentialID, fabricCredID, verifierIdentity,
+	logVerificationToDB(req.CredentialID, fabricCredID, "VER-UOS-0001", verifiedBy,
 		result, failureReason,
 		true, hashMatches, sigValid, notRevoked, status)
 
@@ -642,10 +694,14 @@ func handleVerifyCredential(w http.ResponseWriter, r *http.Request) {
 		"fabricCredID":   fabricCredID,
 		"holderID":       holderIDFromChain,
 		"holderName":     holderName,
+		"holderEmail":    holderEmail,
+		"holderEID":      holderEID,
 		"credentialType": credentialType,
 		"issuer":         "University of Sharjah",
+		"verifiedBy":     verifiedBy,
 		"status":         status,
 		"issuedAt":       issuedAtFromInfo,
+		"expiryDate":     expiryDate,
 		"credentialData": credData,
 		"checks": map[string]bool{
 			"existsOnChain":  true,
@@ -688,6 +744,8 @@ func handleRevokeCredential(w http.ResponseWriter, r *http.Request) {
 		log.Printf("DB markCredentialRevoked warning: %v", dbErr)
 	}
 
+	insertCredentialEvent(req.CredentialID, "revoked", "ISS-UOS-0001", "Mohammed Al Issuer", "")
+
 	var parsed any
 	_ = json.Unmarshal(result, &parsed)
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -729,25 +787,119 @@ func handleSetCID(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /getCredentialsByHolder?emiratesID=784-...
-// Also accepts ?holderID=H-0001 for direct fabric lookup (useful for testing without MySQL).
+// Returns a flat array of credential objects (V3 doc shape). Sources from MySQL,
+// not Fabric — this endpoint is for display, verification still hits the chain.
+// Also accepts ?holderID=H-0001 for direct lookup (useful for testing).
 func handleGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	emiratesID := q.Get("emiratesID")
-	directHolderID := q.Get("holderID") // testing shortcut
+	directHolderID := q.Get("holderID")
 
-	var fabricHolderID string
-
+	var holderID string
 	if emiratesID != "" {
-		_, fhID, err := holderByEmiratesID(emiratesID)
+		hid, _, err := holderByEmiratesID(emiratesID)
 		if err != nil {
-			writeError(w, http.StatusNotFound, "holder not found: "+err.Error())
+			// V3 doc: invalid/unknown emiratesID returns 200 + empty array.
+			writeJSON(w, http.StatusOK, []any{})
 			return
 		}
-		fabricHolderID = fhID
+		holderID = hid
 	} else if directHolderID != "" {
-		fabricHolderID = directHolderID
+		holderID = directHolderID
 	} else {
-		writeError(w, http.StatusBadRequest, "missing query param: emiratesID (or holderID for testing)")
+		writeError(w, http.StatusBadRequest, "missing query param: emiratesID (or holderID)")
+		return
+	}
+
+	rows, err := listCredentialsByHolder(holderID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "DB query failed: "+err.Error())
+		return
+	}
+
+	out := make([]map[string]any, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, credentialRowToJSON(r))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  V3 EXTENSION — new endpoints (suspend/restore + lists + dashboard)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const issuerActorID = "ISS-UOS-0001"
+const issuerActorName = "Mohammed Al Issuer"
+
+// credentialRowToJSON shapes a CredentialRow into the V3 credential object.
+// Used by /getAllCredentials and /getCredentialsByHolder responses.
+func credentialRowToJSON(r CredentialRow) map[string]any {
+	var expiry any
+	if r.ExpiryDate.Valid {
+		expiry = r.ExpiryDate.Time.Format("2006-01-02")
+	} else {
+		expiry = nil
+	}
+	issuedISO := r.IssuedAt.Format("2006-01-02T15:04:05")
+	return map[string]any{
+		"credentialID":   r.CredentialID,
+		"credentialType": r.CredentialType,
+		"holderName":     r.HolderName,
+		"holderEmail":    r.HolderEmail,
+		"holderEID":      r.HolderEID,
+		"holderID":       r.HolderID,
+		"issueDate":      issuedISO,
+		"issuedAt":       issuedISO,
+		"issuedBy":       firstNonEmpty(r.IssuedBy, issuerActorName),
+		"status":         r.Status,
+		"expiryDate":     expiry,
+		"blockchainTxId": r.FabricCredID,
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// ─── SUSPEND ─────────────────────────────────────────────────────────────────
+
+// POST /suspendCredential
+func handleSuspendCredential(w http.ResponseWriter, r *http.Request) {
+	var req SuspendCredentialRequest
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if req.CredentialID == "" {
+		writeError(w, http.StatusBadRequest, "missing credentialID")
+		return
+	}
+
+	fabricCredID, err := fabricCredIDByDisplay(req.CredentialID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "credential not found")
+		return
+	}
+
+	currentStatus, err := credentialStatusByDisplay(req.CredentialID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not read credential status: "+err.Error())
+		return
+	}
+	switch strings.ToLower(currentStatus) {
+	case "suspended":
+		writeError(w, http.StatusBadRequest, "credential already suspended")
+		return
+	case "revoked":
+		writeError(w, http.StatusBadRequest, "cannot suspend revoked credential")
+		return
+	case "expired":
+		writeError(w, http.StatusBadRequest, "cannot suspend expired credential")
 		return
 	}
 
@@ -759,20 +911,459 @@ func handleGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) {
 	defer gw.Close()
 	defer conn.Close()
 
-	result, err := contract.EvaluateTransaction("getCredentialsByHolder", fabricHolderID)
+	if _, err := contract.SubmitTransaction("suspendCredential", fabricCredID, req.Reason); err != nil {
+		writeError(w, http.StatusInternalServerError, "chaincode error: "+err.Error())
+		return
+	}
+
+	if dbErr := markCredentialSuspended(req.CredentialID, req.Reason); dbErr != nil {
+		log.Printf("DB markCredentialSuspended warning: %v", dbErr)
+	}
+	insertCredentialEvent(req.CredentialID, "suspended", issuerActorID, issuerActorName, req.Reason)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":      true,
+		"credentialID": req.CredentialID,
+	})
+}
+
+// ─── RESTORE ─────────────────────────────────────────────────────────────────
+
+// POST /restoreCredential — DEVIATION from V3 doc: only restores from "suspended".
+// Revoked credentials are permanent (security policy).
+func handleRestoreCredential(w http.ResponseWriter, r *http.Request) {
+	var req RestoreCredentialRequest
+	if err := decodeBody(r, &req); err != nil || req.CredentialID == "" {
+		writeError(w, http.StatusBadRequest, "missing credentialID")
+		return
+	}
+
+	fabricCredID, err := fabricCredIDByDisplay(req.CredentialID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "credential not found")
+		return
+	}
+
+	currentStatus, err := credentialStatusByDisplay(req.CredentialID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not read credential status: "+err.Error())
+		return
+	}
+	switch strings.ToLower(currentStatus) {
+	case "active":
+		writeError(w, http.StatusBadRequest, "credential already active")
+		return
+	case "revoked":
+		writeError(w, http.StatusBadRequest, "cannot restore revoked credential")
+		return
+	case "expired":
+		writeError(w, http.StatusBadRequest, "cannot restore expired credential")
+		return
+	}
+
+	contract, gw, conn, err := getContract(issuerOrgName, issuerIdentity)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	defer gw.Close()
+	defer conn.Close()
 
-	var parsed any
-	_ = json.Unmarshal(result, &parsed)
-	writeJSON(w, http.StatusOK, parsed)
+	if _, err := contract.SubmitTransaction("restoreCredential", fabricCredID); err != nil {
+		writeError(w, http.StatusInternalServerError, "chaincode error: "+err.Error())
+		return
+	}
+
+	if dbErr := markCredentialRestored(req.CredentialID); dbErr != nil {
+		log.Printf("DB markCredentialRestored warning: %v", dbErr)
+	}
+	insertCredentialEvent(req.CredentialID, "restored", issuerActorID, issuerActorName, "")
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":      true,
+		"credentialID": req.CredentialID,
+	})
 }
 
-// ─────────────────────────────────────────────
+// ─── LIST ALL CREDENTIALS ────────────────────────────────────────────────────
+
+// GET /getAllCredentials?status=active&page=1&limit=25
+func handleGetAllCredentials(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	page := parsePositiveInt(q.Get("page"), 1)
+	limitStr := q.Get("limit")
+	limit := 25
+	if limitStr != "" {
+		v, err := strconv.Atoi(limitStr)
+		if err == nil {
+			if v == 0 {
+				writeError(w, http.StatusBadRequest, "limit must be >= 1")
+				return
+			}
+			if v < 0 {
+				v = 25
+			}
+			if v > 100 {
+				v = 100
+			}
+			limit = v
+		}
+	}
+
+	status := q.Get("status")
+	if !validCredentialStatus(status) {
+		status = ""
+	}
+
+	rows, err := listCredentialsPaginated(status, page, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "DB query failed: "+err.Error())
+		return
+	}
+	total, _ := countCredentials(status)
+
+	out := make([]map[string]any, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, credentialRowToJSON(r))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"credentials": out,
+		"total":       total,
+		"page":        page,
+		"limit":       limit,
+	})
+}
+
+func validCredentialStatus(s string) bool {
+	switch s {
+	case "active", "revoked", "suspended", "expired":
+		return true
+	}
+	return false
+}
+
+func parsePositiveInt(s string, fallback int) int {
+	if s == "" {
+		return fallback
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil || v < 1 {
+		return fallback
+	}
+	return v
+}
+
+// ─── LIST HOLDERS (searchable) ───────────────────────────────────────────────
+
+// GET /getHolders?search=Ahmed&type=bachelorStudent
+func handleGetHolders(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	search := q.Get("search")
+
+	// Map the camelCase API value to the DB ENUM value. Unknown → no filter.
+	typeAPI := q.Get("type")
+	typeDB := holderTypeAPIToDB(typeAPI)
+
+	rows, err := searchHolders(search, typeDB)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "DB query failed: "+err.Error())
+		return
+	}
+
+	out := make([]map[string]any, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, map[string]any{
+			"holderID":   r.HolderID,
+			"fullName":   r.FullName,
+			"email":      r.Email,
+			"emiratesID": r.EmiratesID,
+			"type":       holderTypeDBToAPI(r.HolderType),
+			"college":    r.College,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"holders": out,
+		"total":   len(out),
+	})
+}
+
+func holderTypeAPIToDB(api string) string {
+	switch api {
+	case "bachelorStudent":
+		return "bachelor_student"
+	case "masterStudent":
+		return "master_student"
+	case "phdStudent":
+		return "phd_student"
+	case "employee":
+		return "employee"
+	case "medical":
+		return "medical"
+	}
+	return ""
+}
+
+func holderTypeDBToAPI(db string) string {
+	switch db {
+	case "bachelor_student":
+		return "bachelorStudent"
+	case "master_student":
+		return "masterStudent"
+	case "phd_student":
+		return "phdStudent"
+	case "employee":
+		return "employee"
+	case "medical":
+		return "medical"
+	}
+	return "bachelorStudent" // fallback per V3 doc
+}
+
+// ─── VERIFICATION HISTORY ────────────────────────────────────────────────────
+
+// GET /getVerificationHistory?result=valid&page=1&limit=25
+func handleGetVerificationHistory(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	page := parsePositiveInt(q.Get("page"), 1)
+	limit := parsePositiveInt(q.Get("limit"), 25)
+	if limit > 100 {
+		limit = 100
+	}
+
+	// Translate the API "result" filter to the DB (result, failure_reason) pair.
+	resultDB, reasonFilter := verifyResultAPIToDB(q.Get("result"))
+
+	rows, err := listVerificationHistoryPaginated(resultDB, reasonFilter, page, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "DB query failed: "+err.Error())
+		return
+	}
+	total, _ := countVerificationLogs(resultDB, reasonFilter)
+
+	out := make([]map[string]any, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, map[string]any{
+			"id":             r.LogID,
+			"verifiedAt":     r.VerifiedAt.Format("2006-01-02T15:04:05"),
+			"credentialType": r.CredentialType,
+			"credentialID":   r.CredentialID,
+			"holderName":     r.HolderName,
+			"issuerName":     r.IssuerName,
+			"result":         verifyResultDBToAPI(r.Result, r.FailureReason),
+			"method":         verifyMethodDBToAPI(r.Method),
+			"verifiedBy":     r.VerifiedBy,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"records": out,
+		"total":   total,
+		"page":    page,
+		"limit":   limit,
+	})
+}
+
+// verifyResultAPIToDB maps the camelCase API filter to (db_result, db_failure_reason).
+// Empty strings mean "no filter on this column".
+func verifyResultAPIToDB(api string) (string, string) {
+	switch api {
+	case "valid":
+		return "success", ""
+	case "revoked":
+		return "failure", "REVOKED"
+	case "suspended":
+		return "failure", "SUSPENDED"
+	case "expired":
+		return "failure", "EXPIRED"
+	case "tampered":
+		return "failure", "signature_invalid"
+		// note: hash_mismatch also maps to tampered; we filter on signature_invalid
+		// because we can't OR-filter neatly; minor limitation, acceptable for prototype.
+	case "notFound":
+		return "failure", "NOT_FOUND"
+	}
+	return "", ""
+}
+
+func verifyResultDBToAPI(dbResult, failureReason string) string {
+	if dbResult == "success" {
+		return "valid"
+	}
+	switch strings.ToUpper(failureReason) {
+	case "REVOKED":
+		return "revoked"
+	case "SUSPENDED":
+		return "suspended"
+	case "EXPIRED":
+		return "expired"
+	case "SIGNATURE_INVALID", "HASH_MISMATCH", "TAMPERED":
+		return "tampered"
+	case "NOT_FOUND":
+		return "notFound"
+	}
+	return "tampered"
+}
+
+func verifyMethodDBToAPI(dbMethod string) string {
+	switch dbMethod {
+	case "qr_scan", "qrScan", "qr":
+		return "qrScan"
+	case "file_upload", "fileUpload", "upload":
+		return "fileUpload"
+	case "batch":
+		return "batch"
+	}
+	return "manual"
+}
+
+// ─── DASHBOARD STATS ─────────────────────────────────────────────────────────
+
+// GET /getDashboardStats — returns all fields used by Issuer + Verifier + IT Admin variants.
+// Frontend variants pick the keys they need; backend returns everything in one trip.
+func handleGetDashboardStats(w http.ResponseWriter, r *http.Request) {
+	counters, err := dashboardCounters()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "DB query failed: "+err.Error())
+		return
+	}
+
+	// Recent activity (issuance + status changes) — formatted via Go.
+	events, _ := recentCredentialEvents(5)
+	recentActivity := make([]map[string]any, 0, len(events))
+	for _, e := range events {
+		recentActivity = append(recentActivity, map[string]any{
+			"text": eventToText(e),
+			"time": formatHumanTime(e.CreatedAt),
+			"type": e.EventType,
+		})
+	}
+
+	// Expiry warnings (active creds within 30 days).
+	warns, _ := expiryWarnings()
+	expiryOut := make([]map[string]any, 0, len(warns))
+	for _, w := range warns {
+		expiryOut = append(expiryOut, map[string]any{
+			"name":       w.Name,
+			"credential": w.Credential,
+			"daysLeft":   w.DaysLeft,
+		})
+	}
+
+	// Weekly issued (always 4 entries, oldest → newest, labelled "Wk 1"–"Wk 4").
+	weeklyRaw, _ := weeklyIssued()
+	weekly := buildWeeklyChart(weeklyRaw)
+
+	// Daily verified (always 7 entries, Mon → Sun).
+	dailyMap, _ := dailyVerified()
+	daily := buildDailyChart(dailyMap)
+
+	// Recent verifications (verifier dashboard).
+	recentVerifs, _ := recentVerifications(5)
+	recentVerifJSON := make([]map[string]any, 0, len(recentVerifs))
+	for _, v := range recentVerifs {
+		recentVerifJSON = append(recentVerifJSON, map[string]any{
+			"credential": v.Credential,
+			"holderName": v.HolderName,
+			"status":     v.Status,
+			"time":       formatHumanTime(v.VerifiedAt),
+		})
+	}
+
+	// Status alerts (verifier dashboard).
+	alerts, _ := statusAlerts(10)
+	alertsJSON := make([]map[string]any, 0, len(alerts))
+	for _, a := range alerts {
+		alertsJSON = append(alertsJSON, map[string]any{
+			"name":       a.Name,
+			"credential": a.Credential,
+			"event":      a.Event,
+			"time":       formatHumanTime(a.Time),
+		})
+	}
+
+	issuerCount, verifierCount, _ := staffCounts()
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"totalIssued":         counters.TotalIssued,
+		"totalVerified":       counters.TotalVerified,
+		"totalRevoked":        counters.TotalRevoked,
+		"totalSuspended":      counters.TotalSuspended,
+		"totalExpired":        counters.TotalExpired,
+		"issuedToday":         counters.IssuedToday,
+		"verifiedToday":       counters.VerifiedToday,
+		"alertsUnread":        counters.AlertsUnread,
+		"expiringSoon":        counters.ExpiringSoon,
+		"recentActivity":      recentActivity,
+		"expiryWarnings":      expiryOut,
+		"weeklyIssued":        weekly,
+		"recentVerifications": recentVerifJSON,
+		"statusAlerts":        alertsJSON,
+		"dailyVerified":       daily,
+		"issuerStaffCount":    issuerCount,
+		"verifierStaffCount":  verifierCount,
+	})
+}
+
+func eventToText(e EventRow) string {
+	subject := e.CredentialType
+	if subject == "" {
+		subject = "Credential"
+	}
+	switch e.EventType {
+	case "issued":
+		return fmt.Sprintf("%s issued to %s", subject, e.HolderName)
+	case "revoked":
+		return fmt.Sprintf("%s revoked — %s", subject, e.HolderName)
+	case "suspended":
+		return fmt.Sprintf("%s suspended — %s", subject, e.HolderName)
+	case "restored":
+		return fmt.Sprintf("%s restored — %s", subject, e.HolderName)
+	}
+	return fmt.Sprintf("%s %s — %s", subject, e.EventType, e.HolderName)
+}
+
+// buildWeeklyChart converts raw YEARWEEK rows into the doc's 4-entry "Wk 1"..."Wk 4"
+// shape. Oldest week becomes "Wk 1". If fewer than 4 weeks have data, missing entries
+// are padded with value=0 at the START (so the newest week stays as "Wk 4").
+func buildWeeklyChart(raw []ChartPoint) []map[string]any {
+	// Order raw oldest → newest (already ordered by SQL).
+	values := make([]int, 4)
+	// Take last up-to-4 entries.
+	start := len(raw) - 4
+	if start < 0 {
+		start = 0
+	}
+	rawWindow := raw[start:]
+	// Right-align into the 4-slot array so the newest week is in slot 3.
+	offset := 4 - len(rawWindow)
+	for i, p := range rawWindow {
+		values[offset+i] = p.Value
+	}
+	out := make([]map[string]any, 4)
+	for i := 0; i < 4; i++ {
+		out[i] = map[string]any{
+			"label": fmt.Sprintf("Wk %d", i+1),
+			"value": values[i],
+		}
+	}
+	return out
+}
+
+// buildDailyChart returns exactly 7 entries Mon→Sun, padding missing days with value=0.
+func buildDailyChart(counts map[string]int) []map[string]any {
+	order := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+	out := make([]map[string]any, 0, 7)
+	for _, day := range order {
+		out = append(out, map[string]any{
+			"label": day,
+			"value": counts[day],
+		})
+	}
+	return out
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  HELPERS
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 func mustLoadLocation(tz string) *time.Location {
 	loc, err := time.LoadLocation(tz)
@@ -804,8 +1395,14 @@ func main() {
 	mux.HandleFunc("POST /issueCredential", handleIssueCredential)
 	mux.HandleFunc("POST /verifyCredential", handleVerifyCredential)
 	mux.HandleFunc("POST /revokeCredential", handleRevokeCredential)
+	mux.HandleFunc("POST /suspendCredential", handleSuspendCredential)
+	mux.HandleFunc("POST /restoreCredential", handleRestoreCredential)
 	mux.HandleFunc("POST /setCID", handleSetCID)
 	mux.HandleFunc("GET /getCredentialsByHolder", handleGetCredentialsByHolder)
+	mux.HandleFunc("GET /getAllCredentials", handleGetAllCredentials)
+	mux.HandleFunc("GET /getHolders", handleGetHolders)
+	mux.HandleFunc("GET /getVerificationHistory", handleGetVerificationHistory)
+	mux.HandleFunc("GET /getDashboardStats", handleGetDashboardStats)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})

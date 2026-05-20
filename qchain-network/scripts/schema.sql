@@ -156,8 +156,26 @@ CREATE TABLE IF NOT EXISTS verification_logs (
     hash_verified       BOOLEAN DEFAULT FALSE,
     signature_verified  BOOLEAN DEFAULT FALSE,
     status_at_verify    VARCHAR(20),
+    verified_by         VARCHAR(100) DEFAULT 'System Verifier',                     -- [NOW]  human-readable verifier label
     verified_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (verifier_id) REFERENCES verifiers(verifier_id)
+);
+
+-- ─── CREDENTIAL EVENTS ────────────────────────────────────────────────────────
+-- [NOW] Append-only log of every credential status change. Drives the dashboard
+-- activity feed. Written by the Go server after each issuance/revoke/suspend/restore.
+
+CREATE TABLE IF NOT EXISTS credential_events (
+    event_id      BIGINT AUTO_INCREMENT PRIMARY KEY,
+    credential_id VARCHAR(20)  NOT NULL,
+    event_type    ENUM('issued','revoked','suspended','restored') NOT NULL,
+    actor_id      VARCHAR(20),                                                    -- issuer_id (NULL = system)
+    actor_name    VARCHAR(100),                                                   -- denormalised for display
+    notes         VARCHAR(500),                                                   -- e.g. suspend reason
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_credev_created    (created_at DESC),
+    INDEX idx_credev_credential (credential_id),
+    FOREIGN KEY (credential_id) REFERENCES credentials(credential_id)
 );
 
 -- ─── POLICIES ─────────────────────────────────────────────────────────────────

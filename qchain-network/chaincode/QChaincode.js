@@ -107,6 +107,65 @@ class QChaincode extends Contract {
         }
     }
 
+    // suspendCredential — temporary, reversible status change. Use restoreCredential
+    // to bring an active suspended credential back. Cannot suspend a revoked or
+    // expired credential.
+    async suspendCredential(ctx, credID, reason) {
+        try {
+            await this.checkAccess(ctx, "issuer");
+
+            const Credential = await this.getCredential(ctx, credID);
+
+            if (Credential.Status === "suspended") {
+                throw new Error(`Credential ${credID} is already suspended`);
+            }
+            if (Credential.Status === "revoked") {
+                throw new Error(`Cannot suspend a revoked credential`);
+            }
+            if (Credential.Status === "expired") {
+                throw new Error(`Cannot suspend an expired credential`);
+            }
+
+            Credential.Status = "suspended";
+            Credential.SuspendedAt = new Date().toISOString();
+            Credential.SuspendedReason = reason || "";
+
+            await ctx.stub.putState(credID, Buffer.from(stringify(sortKeysRecursive(Credential))));
+
+            return JSON.stringify({ message: "Credential suspended successfully", credentialID: credID });
+        } catch (error) {
+            return JSON.stringify({ success: false, error: error.message });
+        }
+    }
+
+    // restoreCredential — only restores from "suspended" back to "active".
+    // Revoked credentials cannot be restored (revocation is permanent for audit).
+    async restoreCredential(ctx, credID) {
+        try {
+            await this.checkAccess(ctx, "issuer");
+
+            const Credential = await this.getCredential(ctx, credID);
+
+            if (Credential.Status === "active") {
+                throw new Error(`Credential ${credID} is already active`);
+            }
+            if (Credential.Status !== "suspended") {
+                throw new Error(`Cannot restore credential with status ${Credential.Status}`);
+            }
+
+            Credential.Status = "active";
+            delete Credential.SuspendedAt;
+            delete Credential.SuspendedReason;
+            Credential.RestoredAt = new Date().toISOString();
+
+            await ctx.stub.putState(credID, Buffer.from(stringify(sortKeysRecursive(Credential))));
+
+            return JSON.stringify({ message: "Credential restored successfully", credentialID: credID });
+        } catch (error) {
+            return JSON.stringify({ success: false, error: error.message });
+        }
+    }
+
     // setCID is retained for administrative use (manual correction if IPFS upload
     // failed after issuance). Normal issuances pass CID directly to issueCredential.
     async setCID(ctx, credID, cid) {
