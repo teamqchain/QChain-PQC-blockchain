@@ -126,9 +126,7 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
   bool get _canSuspend => _hasSelection && _selStatus == CredentialStatus.valid;
 
   bool get _canRestore =>
-      _hasSelection &&
-      (_selStatus == CredentialStatus.revoked ||
-          _selStatus == CredentialStatus.suspended);
+      _hasSelection && (_selStatus == CredentialStatus.suspended);
 
   void _toggleSelection(String id) {
     setState(() {
