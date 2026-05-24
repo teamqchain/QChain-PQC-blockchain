@@ -476,10 +476,10 @@ class _DetailsSection extends StatelessWidget {
       _DetailRow(label: 'Document Type', value: doc.title),
       _DetailRow(
         label: 'Credential ID',
-        value: 'CRED-2024-${doc.number.replaceAll(' ', '')}',
+        value: '${doc.number.replaceAll(' ', '')}',
       ),
       const _DetailRow(label: 'Issued To', value: 'Ahmed Salih'),
-      const _DetailRow(label: 'National ID', value: 'AE-784-2019-7654321-1'),
+      const _DetailRow(label: 'National ID', value: '784-2004-7654321-1'),
       _DetailRow(label: 'Issuing Authority', value: doc.subtitle),
       const _DetailRow(
         label: 'Country of Issue',
@@ -489,14 +489,14 @@ class _DetailsSection extends StatelessWidget {
       _DetailRow(label: 'Expiry Date', value: doc.expires, highlight: true),
       const _DetailRow(
         label: 'Digital Signature',
-        value: 'CRYSTALS-Dilithium3',
+        value: 'ML-DSA',
       ),
-      const _DetailRow(
-        label: 'Blockchain Anchor',
-        value: 'QChain · Block #48821',
-      ),
-      const _DetailRow(label: 'DID', value: 'did:fabric:0x3f...8a2c'),
-      const _DetailRow(label: 'Schema Version', value: 'W3C VC 2.0'),
+      // const _DetailRow(
+      //   label: 'Blockchain Anchor',
+      //   value: 'QChain · Block #48821',
+      // ),
+      // const _DetailRow(label: 'DID', value: 'did:fabric:0x3f...8a2c'),
+      // const _DetailRow(label: 'Schema Version', value: 'W3C VC 2.0'),
       const _DetailRow(
         label: 'Verification Status',
         value: 'Valid',

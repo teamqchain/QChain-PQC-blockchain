@@ -48,6 +48,7 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
         child: Padding(
           padding: const EdgeInsets.fromLTRB(28, 16, 28, 32),
           child: Column(
+            // Text and top elements stay on the left
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Back
@@ -94,14 +95,14 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
                     children: [...previous, if (current != null) current],
                   ),
                   child: _done
-                      ? _TextBlock(
-                          key: const ValueKey('done'),
+                      ? const _TextBlock(
+                          key: ValueKey('done'),
                           heading: 'Your wallet\nis ready',
                           body:
                               'Your quantum-resistant keypair is ready.\nAll credentials are encrypted on-device.',
                         )
-                      : _TextBlock(
-                          key: const ValueKey('loading'),
+                      : const _TextBlock(
+                          key: ValueKey('loading'),
                           heading: 'Creating your\nsecure identity',
                           body:
                               'Generating your quantum-resistant keypair.\nThis stays on your device — no one else has it.',
@@ -159,29 +160,34 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
 
               const SizedBox(height: 24),
 
-              // ── Button greyed out until done ──
-              GestureDetector(
-                onTap: _done ? () => Get.offAllNamed(Routes.SHELL) : null,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 17),
-                  decoration: BoxDecoration(
-                    color: _done ? Colors.white : const Color(0xFF2A2A2A),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  alignment: Alignment.center,
-                  child: AnimatedDefaultTextStyle(
-                    duration: const Duration(milliseconds: 300),
-                    style: TextStyle(
-                      color: _done
-                          ? const Color(0xFF000000)
-                          : const Color(0xFF555555),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
+              // ONLY the button gets centered and constrained
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 350),
+                  child: GestureDetector(
+                    onTap: _done ? () => Get.offAllNamed(Routes.SHELL) : null,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 17),
+                      decoration: BoxDecoration(
+                        color: _done ? Colors.white : const Color(0xFF2A2A2A),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      alignment: Alignment.center,
+                      child: AnimatedDefaultTextStyle(
+                        duration: const Duration(milliseconds: 300),
+                        style: TextStyle(
+                          color: _done
+                              ? const Color(0xFF000000)
+                              : const Color(0xFF555555),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.3,
+                        ),
+                        child: const Text('Open My Wallet'),
+                      ),
                     ),
-                    child: const Text('Open My Wallet'),
                   ),
                 ),
               ),

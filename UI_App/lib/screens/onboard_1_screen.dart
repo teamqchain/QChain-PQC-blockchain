@@ -16,6 +16,7 @@ class Onboard1Screen extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(28, 16, 28, 32),
           child: Column(
+            // Text and top elements stay on the left
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Top row
@@ -125,9 +126,15 @@ class Onboard1Screen extends StatelessWidget {
 
               const SizedBox(height: 24),
 
-              _OnboardBtn(
-                label: 'Next',
-                onTap: () => Get.toNamed(Routes.ONBOARD2),
+              // ONLY the button gets centered and constrained
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 350),
+                  child: _OnboardBtn(
+                    label: 'Next',
+                    onTap: () => Get.toNamed(Routes.ONBOARD2),
+                  ),
+                ),
               ),
             ],
           ),

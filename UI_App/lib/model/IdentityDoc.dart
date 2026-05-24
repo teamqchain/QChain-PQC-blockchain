@@ -43,7 +43,7 @@ final List<IdentityDoc> allDocs = [
     cardColor: qAzureBlue,
     icon: Icons.badge,
     category: 'identity',
-    isFavourite: true,
+    isFavourite: false,
   ),
   IdentityDoc(
     id: '2',
@@ -69,32 +69,49 @@ final List<IdentityDoc> allDocs = [
     category: 'identity',
     isFavourite: false,
   ),
+
+  //**************************************************************************************************************************************** */
+  
   IdentityDoc(
     id: '4',
-    title: 'Bachelor of Science',
+    title: 'Bachelor of Science in Applied Physics',
     subtitle: 'University of Sharjah',
-    issued: '15 Jun 2020',
-    expires: '15 Jun 2030',
-    number: 'UOS-2020-12345',
+    issued: '21 May 2026',
+    expires: 'No Expiry',
+    number: 'CRED-0006',
     cardColor: qAmethyst,
     icon: Icons.school,
     category: 'education',
     isFavourite: false,
   ),
-  IdentityDoc(
+  IdentityDoc( //TODO: update counts based on actual data
     id: '5',
-    title: 'IELTS Certificate',
-    subtitle: 'British Council',
-    issued: '10 Aug 2021',
-    expires: '10 Aug 2026',
-    number: 'BC-2021-98765',
+    title: 'Bachelor in Business Administration',
+    subtitle: 'University of Sharjah',
+    issued: '21 May 2026',
+    expires: 'No Expiry',
+    number: 'CRED-0007',
     cardColor: qSlateBlue,
-    icon: Icons.description,
+    icon: Icons.school,
     category: 'education',
     isFavourite: false,
   ),
   IdentityDoc(
     id: '6',
+    title: 'Bachelor of Science in Computer Science',
+    subtitle: 'University of Sharjah',
+    issued: '21 May 2026',
+    expires: 'No Expiry',
+    number: 'CRED-0008',
+    cardColor: qAzureBlue,
+    icon: Icons.school,
+    category: 'education',
+    isFavourite: false,
+  ),
+
+  //**************************************************************************************************************************************** */
+  IdentityDoc(
+    id: '7',
     title: 'Health Insurance',
     subtitle: 'DAMAN',
     issued: '01 Jan 2023',
@@ -106,7 +123,7 @@ final List<IdentityDoc> allDocs = [
     isFavourite: false,
   ),
   IdentityDoc(
-    id: '7',
+    id: '8',
     title: 'Medical Certificate',
     subtitle: 'UHS',
     issued: '01 Jan 2023',
@@ -119,8 +136,8 @@ final List<IdentityDoc> allDocs = [
   ),
 
   IdentityDoc(
-    id: '8',
-    title: 'New car§d 8',
+    id: '9',
+    title: 'New card 8',
     subtitle: 'Federal Authority for Identity',
     issued: '15 Jan 2023',
     expires: '14 Jan 2028',
@@ -131,7 +148,7 @@ final List<IdentityDoc> allDocs = [
     isFavourite: true,
   ),
   IdentityDoc(
-    id: '9',
+    id: '10',
     title: 'new card 9',
     subtitle: 'General Directorate of Residency',
     issued: '20 Mar 2023',
@@ -143,7 +160,7 @@ final List<IdentityDoc> allDocs = [
     isFavourite: false,
   ),
   IdentityDoc(
-    id: '10',
+    id: '11',
     title: 'New card 10',
     subtitle: 'Ministry of Interior',
     issued: '05 Jun 2019',
