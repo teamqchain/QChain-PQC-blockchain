@@ -344,11 +344,12 @@ CREATE TABLE IF NOT EXISTS catalog_issuers (
 );
 
 CREATE TABLE IF NOT EXISTS catalog_services (
-    id          VARCHAR(50)  NOT NULL PRIMARY KEY,                               -- SRV-UOS-101
-    issuer_id   VARCHAR(50)  NOT NULL,
-    name        VARCHAR(100) NOT NULL,
-    description VARCHAR(500) NOT NULL DEFAULT '',
-    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id            VARCHAR(50)  NOT NULL PRIMARY KEY,                             -- SRV-UOS-101
+    issuer_id     VARCHAR(50)  NOT NULL,
+    name          VARCHAR(100) NOT NULL,
+    description   VARCHAR(500) NOT NULL DEFAULT '',
+    match_pattern VARCHAR(100) NOT NULL DEFAULT '',                              -- SQL LIKE pattern matched against credentials.credential_type
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_catalog_services_issuer (issuer_id),
     FOREIGN KEY (issuer_id) REFERENCES catalog_issuers(id) ON DELETE CASCADE
 );
@@ -389,10 +390,10 @@ INSERT IGNORE INTO catalog_issuers (id, category, name, is_active) VALUES
     ('ORG-DED-001', 'Government', 'Dubai Education Department',            1),
     ('ORG-EAD-001', 'Government', 'ENOC Authority',                       1);
 
-INSERT IGNORE INTO catalog_services (id, issuer_id, name, description) VALUES
-    ('SRV-UOS-101', 'ORG-UOS-001', 'Bachelor Degree',         'Request official transcript and degree verification.'),
-    ('SRV-UOS-102', 'ORG-UOS-001', 'Graduation Certificate',  'Request official graduation certificate.'),
-    ('SRV-AUS-101', 'ORG-AUS-001', 'Student ID',              'Request official student identification document.'),
-    ('SRV-MOH-101', 'ORG-MOH-001', 'Health Certificate',      'Request health certification and vaccination records.'),
-    ('SRV-DED-101', 'ORG-DED-001', 'Student Record',          'Request official student records and transcript.'),
-    ('SRV-EAD-101', 'ORG-EAD-001', 'Employment Certificate',  'Request employment certificate and work authorization.');
+INSERT IGNORE INTO catalog_services (id, issuer_id, name, description, match_pattern) VALUES
+    ('SRV-UOS-101', 'ORG-UOS-001', 'Bachelor Degree',         'Request official transcript and degree verification.',   '%Bachelor%'),
+    ('SRV-UOS-102', 'ORG-UOS-001', 'Graduation Certificate',  'Request official graduation certificate.',               '%Graduation%'),
+    ('SRV-AUS-101', 'ORG-AUS-001', 'Student ID',              'Request official student identification document.',      '%Student ID%'),
+    ('SRV-MOH-101', 'ORG-MOH-001', 'Health Certificate',      'Request health certification and vaccination records.',  '%Health%'),
+    ('SRV-DED-101', 'ORG-DED-001', 'Student Record',          'Request official student records and transcript.',       '%Student Record%'),
+    ('SRV-EAD-101', 'ORG-EAD-001', 'Employment Certificate',  'Request employment certificate and work authorization.', '%Employment%');
