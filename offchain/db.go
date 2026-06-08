@@ -2,9 +2,11 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -896,13 +898,13 @@ func statusAlerts(limit int) ([]StatusAlertRow, error) {
 	return out, rows.Err()
 }
 
-// staffCounts returns active issuer + verifier counts for the IT Admin dashboard.
+// staffCounts returns issuer + verifier staff counts from the unified staff table.
 func staffCounts() (issuers, verifiers int, err error) {
 	if db == nil {
 		return 0, 0, fmt.Errorf("database not configured")
 	}
-	_ = db.QueryRow(`SELECT COUNT(*) FROM issuers   WHERE status = 'active'`).Scan(&issuers)
-	_ = db.QueryRow(`SELECT COUNT(*) FROM verifiers WHERE status = 'active'`).Scan(&verifiers)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM staff WHERE portal = 'issuer'   AND status != 'deleted'`).Scan(&issuers)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM staff WHERE portal = 'verifier' AND status != 'deleted'`).Scan(&verifiers)
 	return issuers, verifiers, nil
 }
 
@@ -960,4 +962,1000 @@ func formatHumanTime(t time.Time) string {
 	default:
 		return t.Format("02 Jan 2006")
 	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PHASE B — SHARED HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── DATE FORMAT HELPERS ─────────────────────────────────────────────────────
+
+var monthAbbr = []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+
+// FormatISO formats as "YYYY-MM-DDTHH:MM:SS" — required by Dart's DateTime.tryParse.
+func FormatISO(t time.Time) string { return t.Format("2006-01-02T15:04:05") }
+
+// FormatDateISO formats as "YYYY-MM-DD".
+func FormatDateISO(t time.Time) string { return t.Format("2006-01-02") }
+
+// FormatDateDisplay formats as "DD MMM YYYY" (e.g. "15 Jan 2025").
+func FormatDateDisplay(t time.Time) string {
+	return fmt.Sprintf("%02d %s %d", t.Day(), monthAbbr[t.Month()-1], t.Year())
+}
+
+// FormatDateTimeDisplay formats as "DD MMM YYYY HH:MM" (24 h).
+func FormatDateTimeDisplay(t time.Time) string {
+	return fmt.Sprintf("%02d %s %d %02d:%02d", t.Day(), monthAbbr[t.Month()-1], t.Year(), t.Hour(), t.Minute())
+}
+
+// NullDateDisplay returns "DD MMM YYYY" or fallback when the value is NULL.
+func NullDateDisplay(nt sql.NullTime, fallback string) string {
+	if !nt.Valid {
+		return fallback
+	}
+	return FormatDateDisplay(nt.Time)
+}
+
+// ─── ID GENERATORS ───────────────────────────────────────────────────────────
+// MAX-based sequential IDs — safe for single-server, low-concurrency use.
+
+func generateAuditLogID() string {
+	if db == nil {
+		return "AUD-001"
+	}
+	var maxID sql.NullString
+	_ = db.QueryRow(`SELECT MAX(audit_id) FROM portal_audit_log`).Scan(&maxID)
+	if !maxID.Valid || maxID.String == "" {
+		return "AUD-001"
+	}
+	parts := strings.Split(maxID.String, "-")
+	if len(parts) != 2 {
+		return "AUD-001"
+	}
+	n, _ := strconv.Atoi(parts[1])
+	return fmt.Sprintf("AUD-%03d", n+1)
+}
+
+func generateAlertID() string {
+	if db == nil {
+		return "ALT-001"
+	}
+	var maxID sql.NullString
+	_ = db.QueryRow(`SELECT MAX(alert_id) FROM alerts`).Scan(&maxID)
+	if !maxID.Valid || maxID.String == "" {
+		return "ALT-001"
+	}
+	parts := strings.Split(maxID.String, "-")
+	if len(parts) != 2 {
+		return "ALT-001"
+	}
+	n, _ := strconv.Atoi(parts[1])
+	return fmt.Sprintf("ALT-%03d", n+1)
+}
+
+func generateStaffID() string {
+	if db == nil {
+		return "STF-0001"
+	}
+	var maxID sql.NullString
+	_ = db.QueryRow(`SELECT MAX(id) FROM staff`).Scan(&maxID)
+	if !maxID.Valid || maxID.String == "" {
+		return "STF-0001"
+	}
+	parts := strings.Split(maxID.String, "-")
+	if len(parts) != 2 {
+		return "STF-0001"
+	}
+	n, _ := strconv.Atoi(parts[1])
+	return fmt.Sprintf("STF-%04d", n+1)
+}
+
+func generateSubscriptionID() string {
+	if db == nil {
+		return "SUB-001"
+	}
+	var maxID sql.NullString
+	_ = db.QueryRow(`SELECT MAX(subscription_id) FROM subscriptions`).Scan(&maxID)
+	if !maxID.Valid || maxID.String == "" {
+		return "SUB-001"
+	}
+	parts := strings.Split(maxID.String, "-")
+	if len(parts) != 2 {
+		return "SUB-001"
+	}
+	n, _ := strconv.Atoi(parts[1])
+	return fmt.Sprintf("SUB-%03d", n+1)
+}
+
+// ─── AUDIT LOG ───────────────────────────────────────────────────────────────
+
+// insertAuditLog appends a row to portal_audit_log. Non-fatal: errors are logged.
+func insertAuditLog(action, details, performedBy, performedByRole, ipAddress string) {
+	if db == nil {
+		return
+	}
+	logID := generateAuditLogID()
+	_, err := db.Exec(`
+		INSERT INTO portal_audit_log
+		  (audit_id, action, details, performed_by_name, performed_by_role, ip_address)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		logID, auditActionToEnum(action), details, performedBy, performedByRole, ipAddress,
+	)
+	if err != nil {
+		log.Printf("insertAuditLog error: %v", err)
+	}
+}
+
+// auditActionToEnum maps Phase 2 action strings to portal_audit_log ENUM values.
+func auditActionToEnum(action string) string {
+	switch action {
+	case "issued", "revoked", "suspended", "restored", "verified",
+		"staff_added", "staff_removed", "settings_changed",
+		"schema_created", "schema_archived",
+		"policy_created", "policy_deleted",
+		"batch_issued", "exported", "login", "logout",
+		"verification_failed":
+		return action
+	case "policy_changed":
+		return "policy_created"
+	case "system_config":
+		return "settings_changed"
+	}
+	return "verification_failed"
+}
+
+// ─── DAILY ISSUED CHART ──────────────────────────────────────────────────────
+
+// dailyIssued returns issuance counts grouped by day-of-week for the last 7 days.
+// Caller uses buildDailyChart to pad missing days and produce 7 entries.
+func dailyIssued() (map[string]int, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not configured")
+	}
+	rows, err := db.Query(`
+		SELECT DATE_FORMAT(issued_at, '%a') AS label, COUNT(*) AS value
+		  FROM credentials
+		 WHERE issued_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+		 GROUP BY label`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]int{}
+	for rows.Next() {
+		var label string
+		var value int
+		if err := rows.Scan(&label, &value); err != nil {
+			return nil, err
+		}
+		out[label] = value
+	}
+	return out, rows.Err()
+}
+
+// ─── IT ADMIN DASHBOARD QUERIES ──────────────────────────────────────────────
+
+type RoleCount struct {
+	Label string
+	Count int
+}
+
+type AdminAuditRow struct {
+	Action      string
+	Details     string
+	Role        string
+	PerformedBy string
+	Timestamp   time.Time
+}
+
+func staffTotals() (total, active, invited int, err error) {
+	if db == nil {
+		return 0, 0, 0, fmt.Errorf("database not configured")
+	}
+	_ = db.QueryRow(`SELECT COUNT(*) FROM staff WHERE status != 'deleted'`).Scan(&total)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM staff WHERE status = 'active'`).Scan(&active)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM staff WHERE status = 'invited'`).Scan(&invited)
+	return total, active, invited, nil
+}
+
+func staffRoleBreakdown(portal string) ([]RoleCount, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not configured")
+	}
+	rows, err := db.Query(`
+		SELECT role AS label, COUNT(*) AS count
+		  FROM staff
+		 WHERE portal = ? AND status != 'deleted' AND role != 'admin'
+		 GROUP BY role ORDER BY count DESC`, portal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []RoleCount{}
+	for rows.Next() {
+		var r RoleCount
+		if err := rows.Scan(&r.Label, &r.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func recentAuditLogs(limit int) ([]AdminAuditRow, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not configured")
+	}
+	rows, err := db.Query(`
+		SELECT action,
+		       COALESCE(details, '') AS details,
+		       COALESCE(performed_by_role, '') AS role,
+		       COALESCE(performed_by_name, '') AS performed_by,
+		       created_at
+		  FROM portal_audit_log
+		 ORDER BY created_at DESC
+		 LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AdminAuditRow{}
+	for rows.Next() {
+		var r AdminAuditRow
+		if err := rows.Scan(&r.Action, &r.Details, &r.Role, &r.PerformedBy, &r.Timestamp); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PHASE C — QUERY FUNCTIONS FOR NEW ENDPOINTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── CREDENTIAL DETAIL ───────────────────────────────────────────────────────
+
+type CredentialDetailRow struct {
+	CredentialID   string
+	CredentialType string
+	HolderName     string
+	HolderEmail    string
+	HolderEID      string
+	HolderID       string
+	IssuedAt       time.Time
+	IssuedBy       string
+	Status         string
+	ExpiryDate     sql.NullTime
+}
+
+type AuditTrailRow struct {
+	Action      string
+	PerformedBy string
+	OccurredAt  time.Time
+	Notes       sql.NullString
+}
+
+func getCredentialDetail(credentialID string) (CredentialDetailRow, error) {
+	var r CredentialDetailRow
+	if db == nil {
+		return r, fmt.Errorf("database not configured")
+	}
+	err := db.QueryRow(`
+		SELECT c.credential_id, c.credential_type,
+		       CONCAT_WS(' ', h.first_name, h.last_name) AS holder_name,
+		       COALESCE(h.email, '') AS holder_email,
+		       COALESCE(h.emirates_id, '') AS holder_eid,
+		       h.holder_id,
+		       c.issued_at,
+		       COALESCE(i.full_name, '') AS issued_by,
+		       c.status,
+		       c.expiry_date
+		  FROM credentials c
+		  JOIN holders h ON c.holder_id = h.holder_id
+		  LEFT JOIN issuers i ON c.issuer_id = i.issuer_id
+		 WHERE c.credential_id = ?
+		 LIMIT 1`, credentialID).Scan(
+		&r.CredentialID, &r.CredentialType, &r.HolderName, &r.HolderEmail, &r.HolderEID,
+		&r.HolderID, &r.IssuedAt, &r.IssuedBy, &r.Status, &r.ExpiryDate,
+	)
+	if err == sql.ErrNoRows {
+		return r, sql.ErrNoRows
+	}
+	return r, err
+}
+
+func getCredentialAuditTrail(credentialID string) ([]AuditTrailRow, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not configured")
+	}
+	rows, err := db.Query(`
+		SELECT event_type,
+		       COALESCE(actor_name, '') AS performed_by,
+		       created_at,
+		       notes
+		  FROM credential_events
+		 WHERE credential_id = ?
+		 ORDER BY created_at ASC`, credentialID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AuditTrailRow{}
+	for rows.Next() {
+		var r AuditTrailRow
+		if err := rows.Scan(&r.Action, &r.PerformedBy, &r.OccurredAt, &r.Notes); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func updateCredentialExpiry(credentialID string, expiryDate *time.Time) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	_, err := db.Exec(`UPDATE credentials SET expiry_date = ?, updated_at = NOW() WHERE credential_id = ?`,
+		expiryDate, credentialID)
+	return err
+}
+
+func updateHolderEmail(credentialID, email string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	_, err := db.Exec(`
+		UPDATE holders SET email = ?
+		 WHERE holder_id = (SELECT holder_id FROM credentials WHERE credential_id = ? LIMIT 1)`,
+		email, credentialID)
+	return err
+}
+
+// ─── VERIFICATION DETAIL ─────────────────────────────────────────────────────
+
+type VerificationDetailRow struct {
+	LogID          string
+	VerifiedAt     time.Time
+	CredentialID   string
+	CredentialType string
+	HolderName     string
+	HolderID       string
+	IssuerName     string
+	IssuedAt       sql.NullTime
+	ExpiryDate     sql.NullTime
+	Result         string
+	FailureReason  sql.NullString
+	Method         string
+	VerifiedBy     string
+	ChainVerified  sql.NullBool
+	HashVerified   sql.NullBool
+	SigVerified    sql.NullBool
+	StatusAtVerify sql.NullString
+}
+
+func getVerificationDetail(logID string) (VerificationDetailRow, error) {
+	var r VerificationDetailRow
+	if db == nil {
+		return r, fmt.Errorf("database not configured")
+	}
+	err := db.QueryRow(`
+		SELECT vl.log_id, vl.verified_at,
+		       COALESCE(vl.credential_id, '') AS credential_id,
+		       COALESCE(c.credential_type, '') AS credential_type,
+		       COALESCE(CONCAT_WS(' ', h.first_name, h.last_name), '') AS holder_name,
+		       COALESCE(h.holder_id, '') AS holder_id,
+		       COALESCE(i.full_name, '') AS issuer_name,
+		       c.issued_at,
+		       c.expiry_date,
+		       vl.result,
+		       vl.failure_reason,
+		       COALESCE(vl.verify_method, 'manual') AS method,
+		       COALESCE(vl.verified_by, 'System Verifier') AS verified_by,
+		       vl.chain_verified,
+		       vl.hash_verified,
+		       vl.signature_verified,
+		       vl.status_at_verify
+		  FROM verification_logs vl
+		  LEFT JOIN credentials c ON vl.credential_id = c.credential_id
+		  LEFT JOIN holders     h ON c.holder_id = h.holder_id
+		  LEFT JOIN issuers     i ON c.issuer_id  = i.issuer_id
+		 WHERE vl.log_id = ?
+		 LIMIT 1`, logID).Scan(
+		&r.LogID, &r.VerifiedAt, &r.CredentialID, &r.CredentialType,
+		&r.HolderName, &r.HolderID, &r.IssuerName, &r.IssuedAt, &r.ExpiryDate,
+		&r.Result, &r.FailureReason, &r.Method, &r.VerifiedBy,
+		&r.ChainVerified, &r.HashVerified, &r.SigVerified, &r.StatusAtVerify,
+	)
+	if err == sql.ErrNoRows {
+		return r, sql.ErrNoRows
+	}
+	return r, err
+}
+
+// ─── SUBSCRIPTIONS ───────────────────────────────────────────────────────────
+
+type SubscriptionRow struct {
+	SubscriptionID string
+	HolderName     string
+	HolderID       string
+	CredentialType string
+	Issuer         string
+	SubscribedAt   sql.NullTime
+	ExpiryDate     sql.NullTime
+	Status         string
+}
+
+func insertSubscription(subscriptionID, credentialID, holderID string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	_, err := db.Exec(`
+		INSERT INTO subscriptions (subscription_id, verifier_id, holder_id, credential_id, status, subscribed_at)
+		VALUES (?, 'VER-UOS-0001', ?, ?, 'pending', NOW())`,
+		subscriptionID, holderID, credentialID,
+	)
+	return err
+}
+
+func activeSubscriptionExists(credentialID string) (bool, error) {
+	if db == nil {
+		return false, fmt.Errorf("database not configured")
+	}
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM subscriptions
+		 WHERE credential_id = ? AND status IN ('active','pending')`, credentialID).Scan(&count)
+	return count > 0, err
+}
+
+func getSubscriptions(page, limit int) ([]SubscriptionRow, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not configured")
+	}
+	offset := (page - 1) * limit
+	rows, err := db.Query(`
+		SELECT s.subscription_id,
+		       CONCAT_WS(' ', h.first_name, h.last_name) AS holder_name,
+		       h.holder_id,
+		       COALESCE(c.credential_type, '') AS credential_type,
+		       COALESCE(i.full_name, '') AS issuer,
+		       s.subscribed_at,
+		       s.expiry_date,
+		       s.status
+		  FROM subscriptions s
+		  JOIN credentials c ON s.credential_id = c.credential_id
+		  JOIN holders     h ON s.holder_id     = h.holder_id
+		  LEFT JOIN issuers i ON c.issuer_id    = i.issuer_id
+		 ORDER BY s.created_at DESC
+		 LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SubscriptionRow{}
+	for rows.Next() {
+		var r SubscriptionRow
+		if err := rows.Scan(&r.SubscriptionID, &r.HolderName, &r.HolderID,
+			&r.CredentialType, &r.Issuer, &r.SubscribedAt, &r.ExpiryDate, &r.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func getSubscriptionStatus(subscriptionID string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("database not configured")
+	}
+	var status string
+	err := db.QueryRow(`SELECT status FROM subscriptions WHERE subscription_id = ? LIMIT 1`, subscriptionID).Scan(&status)
+	if err == sql.ErrNoRows {
+		return "", sql.ErrNoRows
+	}
+	return status, err
+}
+
+func deleteSubscriptionRow(subscriptionID string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	_, err := db.Exec(`DELETE FROM subscriptions WHERE subscription_id = ? AND status = 'pending'`, subscriptionID)
+	return err
+}
+
+func unsubscribeSubscription(subscriptionID string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	_, err := db.Exec(`
+		UPDATE subscriptions SET status = 'unsubscribed', updated_at = NOW()
+		 WHERE subscription_id = ? AND status = 'active'`, subscriptionID)
+	return err
+}
+
+// ─── ALERTS ──────────────────────────────────────────────────────────────────
+
+type AlertRow struct {
+	AlertID        string
+	HolderName     string
+	CredentialName string
+	Severity       string
+	Description    string
+	TriggeredAt    time.Time
+	Acknowledged   bool
+}
+
+func getAlerts() ([]AlertRow, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not configured")
+	}
+	rows, err := db.Query(`
+		SELECT alert_id,
+		       COALESCE(holder_name, '') AS holder_name,
+		       COALESCE(credential_name, '') AS credential_name,
+		       severity,
+		       COALESCE(description, '') AS description,
+		       triggered_at,
+		       acknowledged
+		  FROM alerts
+		 ORDER BY triggered_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AlertRow{}
+	for rows.Next() {
+		var r AlertRow
+		var ack int
+		if err := rows.Scan(&r.AlertID, &r.HolderName, &r.CredentialName,
+			&r.Severity, &r.Description, &r.TriggeredAt, &ack); err != nil {
+			return nil, err
+		}
+		r.Acknowledged = ack == 1
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func acknowledgeAlert(alertID string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	_, err := db.Exec(`UPDATE alerts SET acknowledged = 1 WHERE alert_id = ?`, alertID)
+	return err
+}
+
+func alertExists(alertID string) (bool, error) {
+	if db == nil {
+		return false, fmt.Errorf("database not configured")
+	}
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM alerts WHERE alert_id = ?`, alertID).Scan(&count)
+	return count > 0, err
+}
+
+// insertAlertForCredential creates a status-change alert row. Non-fatal on error.
+func insertAlertForCredential(credentialID, credentialName, holderID, holderName, severity, description string) {
+	if db == nil {
+		return
+	}
+	alertID := generateAlertID()
+	_, err := db.Exec(`
+		INSERT INTO alerts (alert_id, holder_id, credential_id, credential_name, holder_name, description, severity)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		alertID, nullIfEmpty(holderID), nullIfEmpty(credentialID),
+		credentialName, holderName, description, severity,
+	)
+	if err != nil {
+		log.Printf("insertAlertForCredential error: %v", err)
+	}
+}
+
+// ─── AUDIT LOGS ──────────────────────────────────────────────────────────────
+
+type AuditLogRow struct {
+	AuditID         string
+	Action          string
+	Details         string
+	PerformedByName string
+	PerformedByRole string
+	IPAddress       string
+	CreatedAt       time.Time
+}
+
+func getAuditLogs(page, limit int) ([]AuditLogRow, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not configured")
+	}
+	offset := (page - 1) * limit
+	rows, err := db.Query(`
+		SELECT audit_id, action,
+		       COALESCE(details, '') AS details,
+		       COALESCE(performed_by_name, '') AS performed_by_name,
+		       COALESCE(performed_by_role, '') AS performed_by_role,
+		       COALESCE(ip_address, '') AS ip_address,
+		       created_at
+		  FROM portal_audit_log
+		 ORDER BY created_at DESC
+		 LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AuditLogRow{}
+	for rows.Next() {
+		var r AuditLogRow
+		if err := rows.Scan(&r.AuditID, &r.Action, &r.Details,
+			&r.PerformedByName, &r.PerformedByRole, &r.IPAddress, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ─── STAFF ───────────────────────────────────────────────────────────────────
+
+type StaffRow struct {
+	ID        string
+	Name      string
+	Email     string
+	Portal    string
+	Role      string
+	Status    string
+	AddedDate time.Time
+}
+
+func getStaff() ([]StaffRow, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not configured")
+	}
+	rows, err := db.Query(`
+		SELECT id, name, email, portal, role, status, added_date
+		  FROM staff
+		 WHERE status != 'deleted'
+		 ORDER BY added_date DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []StaffRow{}
+	for rows.Next() {
+		var r StaffRow
+		if err := rows.Scan(&r.ID, &r.Name, &r.Email, &r.Portal, &r.Role, &r.Status, &r.AddedDate); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func staffEmailExists(email string) (bool, error) {
+	if db == nil {
+		return false, fmt.Errorf("database not configured")
+	}
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM staff WHERE email = ?`, email).Scan(&count)
+	return count > 0, err
+}
+
+func insertStaff(id, email, portal, role string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	_, err := db.Exec(`
+		INSERT INTO staff (id, name, email, portal, role, status, added_date)
+		VALUES (?, '', ?, ?, ?, 'invited', CURDATE())`,
+		id, email, portal, role,
+	)
+	return err
+}
+
+func getStaffByID(id string) (StaffRow, error) {
+	var r StaffRow
+	if db == nil {
+		return r, fmt.Errorf("database not configured")
+	}
+	err := db.QueryRow(`
+		SELECT id, name, email, portal, role, status, added_date
+		  FROM staff WHERE id = ? AND status != 'deleted' LIMIT 1`, id).Scan(
+		&r.ID, &r.Name, &r.Email, &r.Portal, &r.Role, &r.Status, &r.AddedDate,
+	)
+	if err == sql.ErrNoRows {
+		return r, sql.ErrNoRows
+	}
+	return r, err
+}
+
+func updateStaffRole(id, portal, role string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	_, err := db.Exec(`UPDATE staff SET portal = ?, role = ? WHERE id = ?`, portal, role, id)
+	return err
+}
+
+func softDeleteStaff(id string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	_, err := db.Exec(`UPDATE staff SET status = 'deleted' WHERE id = ?`, id)
+	return err
+}
+
+// ─── MOBILE SESSIONS ─────────────────────────────────────────────────────────
+
+type MobileSessionRow struct {
+	ID           string
+	SessionType  string
+	CredentialID string
+	HolderID     string
+	HiddenFields []string
+	ExpiresAt    time.Time
+}
+
+func insertMobileSession(id, sessionType, credentialID, holderID string, hiddenFields []string, expiresInSeconds int) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	var hiddenJSON []byte
+	if len(hiddenFields) > 0 {
+		var err error
+		hiddenJSON, err = json.Marshal(hiddenFields)
+		if err != nil {
+			return err
+		}
+	}
+	_, err := db.Exec(`
+		INSERT INTO mobile_sessions (id, session_type, credential_id, holder_id, hidden_fields, expires_at)
+		VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND))`,
+		id, sessionType, credentialID, holderID, hiddenJSON, expiresInSeconds,
+	)
+	return err
+}
+
+func getMobileSession(id string) (MobileSessionRow, error) {
+	var r MobileSessionRow
+	if db == nil {
+		return r, fmt.Errorf("database not configured")
+	}
+	var hiddenJSON sql.NullString
+	err := db.QueryRow(`
+		SELECT id, session_type, credential_id, holder_id, hidden_fields, expires_at
+		  FROM mobile_sessions WHERE id = ? LIMIT 1`, id).Scan(
+		&r.ID, &r.SessionType, &r.CredentialID, &r.HolderID, &hiddenJSON, &r.ExpiresAt,
+	)
+	if err == sql.ErrNoRows {
+		return r, sql.ErrNoRows
+	}
+	if err != nil {
+		return r, err
+	}
+	if hiddenJSON.Valid && hiddenJSON.String != "" {
+		_ = json.Unmarshal([]byte(hiddenJSON.String), &r.HiddenFields)
+	}
+	return r, nil
+}
+
+func deleteMobileSession(id string) {
+	if db == nil {
+		return
+	}
+	if _, err := db.Exec(`DELETE FROM mobile_sessions WHERE id = ?`, id); err != nil {
+		log.Printf("deleteMobileSession error: %v", err)
+	}
+}
+
+func mobileSessionExists(id string) bool {
+	if db == nil {
+		return false
+	}
+	var count int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM mobile_sessions WHERE id = ?`, id).Scan(&count)
+	return count > 0
+}
+
+func credentialHolderID(credentialID string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("database not configured")
+	}
+	var holderID string
+	err := db.QueryRow(`SELECT holder_id FROM credentials WHERE credential_id = ? LIMIT 1`, credentialID).Scan(&holderID)
+	if err == sql.ErrNoRows {
+		return "", sql.ErrNoRows
+	}
+	return holderID, err
+}
+
+// ─── CATALOG ─────────────────────────────────────────────────────────────────
+
+type CatalogIssuerRow struct {
+	IssuerID    string
+	Category    string
+	IssuerName  string
+	ServiceID   sql.NullString
+	ServiceName sql.NullString
+	Description sql.NullString
+}
+
+func getCatalogRows() ([]CatalogIssuerRow, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not configured")
+	}
+	rows, err := db.Query(`
+		SELECT i.id AS issuer_id, i.category, i.name AS issuer_name,
+		       s.id AS service_id, s.name AS service_name, s.description
+		  FROM catalog_issuers i
+		  LEFT JOIN catalog_services s ON i.id = s.issuer_id
+		 WHERE i.is_active = 1
+		 ORDER BY i.category ASC, i.name ASC, s.name ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []CatalogIssuerRow{}
+	for rows.Next() {
+		var r CatalogIssuerRow
+		if err := rows.Scan(&r.IssuerID, &r.Category, &r.IssuerName,
+			&r.ServiceID, &r.ServiceName, &r.Description); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ─── MOBILE CREDENTIAL QUERIES ───────────────────────────────────────────────
+
+type MobileCredentialRow struct {
+	CredentialID   string
+	CredentialType string
+	IssuedAt       time.Time
+	ExpiryDate     sql.NullTime
+	Status         string
+	IsFavorite     bool
+	Category       string
+	CredentialData string
+	Signature      string
+	FabricCredID   string
+	IPFSCID        string
+	PublicKey      string
+	IssuerName     string
+	HolderName     string
+	HolderEID      string
+}
+
+func getMobileCredentials(emiratesID string) ([]MobileCredentialRow, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not configured")
+	}
+	rows, err := db.Query(`
+		SELECT c.credential_id, c.credential_type, c.issued_at, c.expiry_date,
+		       c.status, c.is_favorite, c.category,
+		       COALESCE(c.credential_data, '{}') AS credential_data,
+		       COALESCE(c.issuer_signature, '') AS signature,
+		       COALESCE(c.fabric_cred_id, '') AS fabric_cred_id,
+		       COALESCE(c.ipfs_cid, '') AS ipfs_cid,
+		       COALESCE(c.issuer_public_key, '') AS public_key,
+		       COALESCE(i.full_name, 'Unknown Issuer') AS issuer_name,
+		       CONCAT_WS(' ', h.first_name, h.last_name) AS holder_name,
+		       h.emirates_id
+		  FROM credentials c
+		  JOIN holders h ON c.holder_id = h.holder_id
+		  LEFT JOIN issuers i ON c.issuer_id = i.issuer_id
+		 WHERE h.emirates_id = ?
+		   AND c.in_wallet = 1
+		 ORDER BY c.issued_at DESC`, emiratesID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []MobileCredentialRow{}
+	for rows.Next() {
+		var r MobileCredentialRow
+		var isFav int
+		if err := rows.Scan(
+			&r.CredentialID, &r.CredentialType, &r.IssuedAt, &r.ExpiryDate,
+			&r.Status, &isFav, &r.Category, &r.CredentialData,
+			&r.Signature, &r.FabricCredID, &r.IPFSCID, &r.PublicKey,
+			&r.IssuerName, &r.HolderName, &r.HolderEID,
+		); err != nil {
+			return nil, err
+		}
+		r.IsFavorite = isFav == 1
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func toggleFavorite(credentialID, holderEID string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	result, err := db.Exec(`
+		UPDATE credentials c
+		  JOIN holders h ON c.holder_id = h.holder_id
+		   SET c.is_favorite = NOT c.is_favorite
+		 WHERE c.credential_id = ? AND h.emirates_id = ?`,
+		credentialID, holderEID,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+type MobileActivityRow struct {
+	EventID        int64
+	EventType      string
+	CredentialType string
+	ActorName      string
+	CreatedAt      time.Time
+}
+
+func getMobileActivity(emiratesID string) ([]MobileActivityRow, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not configured")
+	}
+	rows, err := db.Query(`
+		SELECT ce.event_id, ce.event_type,
+		       COALESCE(c.credential_type, '') AS credential_type,
+		       COALESCE(ce.actor_name, '') AS actor_name,
+		       ce.created_at
+		  FROM credential_events ce
+		  JOIN credentials c ON ce.credential_id = c.credential_id
+		  JOIN holders h ON c.holder_id = h.holder_id
+		 WHERE h.emirates_id = ?
+		 ORDER BY ce.created_at DESC
+		 LIMIT 100`, emiratesID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []MobileActivityRow{}
+	for rows.Next() {
+		var r MobileActivityRow
+		if err := rows.Scan(&r.EventID, &r.EventType, &r.CredentialType, &r.ActorName, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// fetchDocumentInDB checks if a credential from a given org/service exists for the holder,
+// and sets in_wallet=1 if found. Returns (found, alreadyInWallet, err).
+func fetchDocumentInDB(holderEID, issuerID, serviceName string) (found bool, alreadyInWallet bool, err error) {
+	if db == nil {
+		return false, false, fmt.Errorf("database not configured")
+	}
+	var credID string
+	var inWallet int
+	err = db.QueryRow(`
+		SELECT c.credential_id, c.in_wallet
+		  FROM credentials c
+		  JOIN holders h ON c.holder_id = h.holder_id
+		  JOIN issuers iss ON c.issuer_id = iss.issuer_id
+		 WHERE h.emirates_id = ?
+		   AND iss.org_id = ?
+		   AND c.credential_type LIKE ?
+		 LIMIT 1`, holderEID, issuerID, "%"+serviceName+"%").Scan(&credID, &inWallet)
+	if err == sql.ErrNoRows {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	if inWallet == 1 {
+		return true, true, nil
+	}
+	_, err = db.Exec(`UPDATE credentials SET in_wallet = 1 WHERE credential_id = ?`, credID)
+	return true, false, err
 }

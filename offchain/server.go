@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/x509"
 	"database/sql"
 	"encoding/hex"
@@ -9,6 +10,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -545,6 +547,8 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 
 	// Record the issuance event for the dashboard activity feed.
 	insertCredentialEvent(displayCredID, "issued", "ISS-UOS-0001", "Mohammed Al Issuer", "")
+	insertAuditLog("issued", fmt.Sprintf("Credential %s issued to holder %s", displayCredID, holderID),
+		"Mohammed Al Issuer", "Issuer Admin", r.RemoteAddr)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":        true,
@@ -745,6 +749,8 @@ func handleRevokeCredential(w http.ResponseWriter, r *http.Request) {
 	}
 
 	insertCredentialEvent(req.CredentialID, "revoked", "ISS-UOS-0001", "Mohammed Al Issuer", "")
+	insertAuditLog("revoked", fmt.Sprintf("Credential %s revoked", req.CredentialID),
+		"Mohammed Al Issuer", "Issuer Admin", r.RemoteAddr)
 
 	var parsed any
 	_ = json.Unmarshal(result, &parsed)
@@ -920,6 +926,8 @@ func handleSuspendCredential(w http.ResponseWriter, r *http.Request) {
 		log.Printf("DB markCredentialSuspended warning: %v", dbErr)
 	}
 	insertCredentialEvent(req.CredentialID, "suspended", issuerActorID, issuerActorName, req.Reason)
+	insertAuditLog("suspended", fmt.Sprintf("Credential %s suspended. Reason: %s", req.CredentialID, req.Reason),
+		issuerActorName, "Issuer Admin", r.RemoteAddr)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":      true,
@@ -978,6 +986,8 @@ func handleRestoreCredential(w http.ResponseWriter, r *http.Request) {
 		log.Printf("DB markCredentialRestored warning: %v", dbErr)
 	}
 	insertCredentialEvent(req.CredentialID, "restored", issuerActorID, issuerActorName, "")
+	insertAuditLog("restored", fmt.Sprintf("Credential %s restored to active", req.CredentialID),
+		issuerActorName, "Issuer Admin", r.RemoteAddr)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":      true,
@@ -1248,9 +1258,9 @@ func handleGetDashboardStats(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Weekly issued (always 4 entries, oldest → newest, labelled "Wk 1"–"Wk 4").
-	weeklyRaw, _ := weeklyIssued()
-	weekly := buildWeeklyChart(weeklyRaw)
+	// Daily issued (always 7 entries, Mon → Sun — replaces weeklyIssued).
+	dailyIssuedMap, _ := dailyIssued()
+	dailyIssuedChart := buildDailyChart(dailyIssuedMap)
 
 	// Daily verified (always 7 entries, Mon → Sun).
 	dailyMap, _ := dailyVerified()
@@ -1269,9 +1279,9 @@ func handleGetDashboardStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Status alerts (verifier dashboard).
-	alerts, _ := statusAlerts(10)
-	alertsJSON := make([]map[string]any, 0, len(alerts))
-	for _, a := range alerts {
+	statusAlertRows, _ := statusAlerts(10)
+	alertsJSON := make([]map[string]any, 0, len(statusAlertRows))
+	for _, a := range statusAlertRows {
 		alertsJSON = append(alertsJSON, map[string]any{
 			"name":       a.Name,
 			"credential": a.Credential,
@@ -1280,7 +1290,31 @@ func handleGetDashboardStats(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// IT Admin fields.
 	issuerCount, verifierCount, _ := staffCounts()
+	adminTotal, adminActive, adminInvited, _ := staffTotals()
+	issuerRoles, _ := staffRoleBreakdown("issuer")
+	verifierRoles, _ := staffRoleBreakdown("verifier")
+	recentAudit, _ := recentAuditLogs(10)
+
+	issuerRolesJSON := make([]map[string]any, 0, len(issuerRoles))
+	for _, rc := range issuerRoles {
+		issuerRolesJSON = append(issuerRolesJSON, map[string]any{"label": rc.Label, "count": rc.Count})
+	}
+	verifierRolesJSON := make([]map[string]any, 0, len(verifierRoles))
+	for _, rc := range verifierRoles {
+		verifierRolesJSON = append(verifierRolesJSON, map[string]any{"label": rc.Label, "count": rc.Count})
+	}
+	recentAuditJSON := make([]map[string]any, 0, len(recentAudit))
+	for _, a := range recentAudit {
+		recentAuditJSON = append(recentAuditJSON, map[string]any{
+			"action":      a.Action,
+			"details":     a.Details,
+			"role":        a.Role,
+			"performedBy": a.PerformedBy,
+			"timestamp":   FormatISO(a.Timestamp),
+		})
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"totalIssued":         counters.TotalIssued,
@@ -1294,12 +1328,18 @@ func handleGetDashboardStats(w http.ResponseWriter, r *http.Request) {
 		"expiringSoon":        counters.ExpiringSoon,
 		"recentActivity":      recentActivity,
 		"expiryWarnings":      expiryOut,
-		"weeklyIssued":        weekly,
+		"dailyIssued":         dailyIssuedChart,
 		"recentVerifications": recentVerifJSON,
 		"statusAlerts":        alertsJSON,
 		"dailyVerified":       daily,
 		"issuerStaffCount":    issuerCount,
 		"verifierStaffCount":  verifierCount,
+		"adminTotalStaff":     adminTotal,
+		"adminActiveStaff":    adminActive,
+		"adminInvitedStaff":   adminInvited,
+		"issuerRoles":         issuerRolesJSON,
+		"verifierRoles":       verifierRolesJSON,
+		"recentAudit":         recentAuditJSON,
 	})
 }
 
@@ -1362,6 +1402,1063 @@ func buildDailyChart(counts map[string]int) []map[string]any {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  PHASE C — QPORTAL PHASE 2 HANDLERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /getCredentialDetail?credentialID=CRED-0001
+func handleGetCredentialDetail(w http.ResponseWriter, r *http.Request) {
+	credentialID := r.URL.Query().Get("credentialID")
+	if credentialID == "" {
+		writeError(w, http.StatusBadRequest, "missing credentialID")
+		return
+	}
+	cred, err := getCredentialDetail(credentialID)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "credential not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	trail, err := getCredentialAuditTrail(credentialID)
+	if err != nil {
+		log.Printf("getCredentialAuditTrail warning: %v", err)
+	}
+	trailJSON := make([]map[string]any, 0, len(trail))
+	for _, t := range trail {
+		var note any
+		if t.Notes.Valid {
+			note = t.Notes.String
+		}
+		trailJSON = append(trailJSON, map[string]any{
+			"action":      t.Action,
+			"performedBy": t.PerformedBy,
+			"date":        FormatDateDisplay(t.OccurredAt),
+			"note":        note,
+		})
+	}
+
+	var expiry any
+	if cred.ExpiryDate.Valid {
+		expiry = FormatDateISO(cred.ExpiryDate.Time)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"credentialID":   cred.CredentialID,
+		"credentialType": cred.CredentialType,
+		"holderName":     cred.HolderName,
+		"holderEmail":    cred.HolderEmail,
+		"holderEID":      cred.HolderEID,
+		"holderID":       cred.HolderID,
+		"issuedAt":       FormatISO(cred.IssuedAt),
+		"issuedBy":       firstNonEmpty(cred.IssuedBy, issuerActorName),
+		"status":         cred.Status,
+		"expiryDate":     expiry,
+		"auditTrail":     trailJSON,
+	})
+}
+
+// POST /updateCredential
+func handleUpdateCredential(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CredentialID string  `json:"credentialID"`
+		HolderEmail  *string `json:"holderEmail"`
+		ExpiryDate   *string `json:"expiryDate"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.CredentialID == "" {
+		writeError(w, http.StatusBadRequest, "missing credentialID")
+		return
+	}
+	cred, err := getCredentialDetail(req.CredentialID)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "credential not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if cred.Status == "revoked" {
+		writeError(w, http.StatusBadRequest, "cannot update a revoked credential")
+		return
+	}
+	if req.HolderEmail != nil {
+		if err := updateHolderEmail(req.CredentialID, *req.HolderEmail); err != nil {
+			writeError(w, http.StatusInternalServerError, "database error")
+			return
+		}
+	}
+	if req.ExpiryDate != nil {
+		if *req.ExpiryDate == "" {
+			if err := updateCredentialExpiry(req.CredentialID, nil); err != nil {
+				writeError(w, http.StatusInternalServerError, "database error")
+				return
+			}
+		} else {
+			t, err := time.Parse("2006-01-02", *req.ExpiryDate)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid expiryDate format")
+				return
+			}
+			if err := updateCredentialExpiry(req.CredentialID, &t); err != nil {
+				writeError(w, http.StatusInternalServerError, "database error")
+				return
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "credentialID": req.CredentialID})
+}
+
+// GET /getVerificationDetail?id=VL-...
+func handleGetVerificationDetail(w http.ResponseWriter, r *http.Request) {
+	logID := r.URL.Query().Get("id")
+	if logID == "" {
+		writeError(w, http.StatusBadRequest, "missing id")
+		return
+	}
+	vd, err := getVerificationDetail(logID)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "verification record not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	mappedResult := verifyResultDBToAPI(vd.Result, vd.FailureReason.String)
+	existsOnChain := nullBoolOrDerive(vd.ChainVerified, mappedResult != "notFound")
+	notRevoked := nullBoolOrDerive(vd.HashVerified, mappedResult == "valid" || mappedResult == "expired")
+	sigValid := nullBoolOrDerive(vd.SigVerified, mappedResult != "tampered")
+	hashMatches := nullBoolOrDerive(vd.HashVerified, mappedResult != "tampered")
+
+	var expiry any
+	if vd.ExpiryDate.Valid {
+		expiry = FormatDateISO(vd.ExpiryDate.Time)
+	}
+	var issuedAt any
+	if vd.IssuedAt.Valid {
+		issuedAt = FormatISO(vd.IssuedAt.Time)
+	}
+	var reason any
+	if vd.FailureReason.Valid && vd.FailureReason.String != "" {
+		reason = vd.FailureReason.String
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":             vd.LogID,
+		"verifiedAt":     FormatISO(vd.VerifiedAt),
+		"credentialID":   vd.CredentialID,
+		"credentialType": vd.CredentialType,
+		"holderName":     vd.HolderName,
+		"holderID":       vd.HolderID,
+		"issuerName":     vd.IssuerName,
+		"issuedAt":       issuedAt,
+		"expiryDate":     expiry,
+		"result":         mappedResult,
+		"reason":         reason,
+		"method":         verifyMethodDBToAPI(vd.Method),
+		"verifiedBy":     vd.VerifiedBy,
+		"checks": map[string]bool{
+			"existsOnChain":  existsOnChain,
+			"notRevoked":     notRevoked,
+			"signatureValid": sigValid,
+			"hashMatches":    hashMatches,
+		},
+	})
+}
+
+func nullBoolOrDerive(nb sql.NullBool, derived bool) bool {
+	if nb.Valid {
+		return nb.Bool
+	}
+	return derived
+}
+
+// POST /resolveSession — called by ScanToValidatePage (QR) and ManualVerifyPage (OTP).
+// Frontend prepends "OTP-" to the 6-digit code before sending.
+func handleResolveSession(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SessionToken string `json:"sessionToken"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.SessionToken == "" {
+		writeError(w, http.StatusBadRequest, "missing sessionToken")
+		return
+	}
+
+	session, err := getMobileSession(req.SessionToken)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "Session not found or invalid QR code.")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if time.Now().After(session.ExpiresAt) {
+		writeError(w, http.StatusBadRequest, "Session expired. Please generate a new QR code.")
+		return
+	}
+
+	fabricCredID, err := fabricCredIDByDisplay(session.CredentialID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "credential not found")
+		return
+	}
+
+	contract, gw, conn, err := getContract(verifierOrgName, verifierIdentity)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer gw.Close()
+	defer conn.Close()
+
+	chainResult, err := contract.EvaluateTransaction("getCredential", fabricCredID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "chaincode lookup failed: "+err.Error())
+		return
+	}
+	var cred map[string]any
+	if err := json.Unmarshal(chainResult, &cred); err != nil {
+		writeError(w, http.StatusInternalServerError, "invalid chaincode response")
+		return
+	}
+
+	credInfoStr, _ := cred["Info"].(string)
+	var infoPayload map[string]string
+	_ = json.Unmarshal([]byte(credInfoStr), &infoPayload)
+	holderIDFromChain := infoPayload["holderID"]
+	credentialType := infoPayload["credentialType"]
+	issuedAtFromInfo := infoPayload["issuedAt"]
+	innerInfoStr := infoPayload["info"]
+
+	var credData map[string]any
+	if innerInfoStr != "" {
+		_ = json.Unmarshal([]byte(innerInfoStr), &credData)
+	}
+	expiryDate := ""
+	if credData != nil {
+		if v, ok := credData["expiryDate"].(string); ok {
+			expiryDate = v
+		}
+	}
+
+	applySelectiveDisclosure(credData, session.HiddenFields)
+	hiddenSet := make(map[string]bool, len(session.HiddenFields))
+	for _, f := range session.HiddenFields {
+		hiddenSet[f] = true
+	}
+	holderName, holderEmail, holderEID, _ := holderInfoByID(holderIDFromChain)
+	if holderName == "" {
+		holderName, _ = holderNameByID(holderIDFromChain)
+	}
+	if hiddenSet["holderName"] {
+		holderName = ""
+	}
+	if hiddenSet["issuedAt"] {
+		issuedAtFromInfo = ""
+	}
+	if hiddenSet["expiryDate"] {
+		expiryDate = ""
+	}
+
+	const resolveVerifiedBy = "System Verifier"
+	status, _ := cred["Status"].(string)
+	notRevoked := strings.EqualFold(status, "active")
+
+	if !notRevoked {
+		logVerificationToDB(session.CredentialID, fabricCredID, "VER-UOS-0001", resolveVerifiedBy,
+			"failure", strings.ToUpper(status), true, false, false, false, status)
+		deleteMobileSession(req.SessionToken)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"verified": false, "credentialID": session.CredentialID,
+			"holderID": holderIDFromChain, "holderName": holderName,
+			"holderEmail": holderEmail, "holderEID": holderEID,
+			"credentialType": credentialType, "issuer": "University of Sharjah",
+			"verifiedBy": resolveVerifiedBy, "status": status,
+			"issuedAt": issuedAtFromInfo, "expiryDate": expiryDate,
+			"credentialData": credData, "reason": strings.ToUpper(status),
+			"checks": map[string]bool{"existsOnChain": true, "notRevoked": false, "signatureValid": false, "hashMatches": false},
+		})
+		return
+	}
+
+	credHash, _ := cred["CredentialHash"].(string)
+	signature, _ := cred["Signature"].(string)
+	publicKey, _ := cred["PublicKey"].(string)
+	sigValid, _ := pqcVerify(credHash, signature, publicKey)
+	recomputed := sha3Hex(credInfoStr)
+	hashMatches := strings.EqualFold(recomputed, credHash)
+	verified := notRevoked && sigValid && hashMatches
+
+	result := "success"
+	failureReason := ""
+	if !verified {
+		result = "failure"
+		if !sigValid {
+			failureReason = "signature_invalid"
+		} else if !hashMatches {
+			failureReason = "hash_mismatch"
+		}
+	}
+	logVerificationToDB(session.CredentialID, fabricCredID, "VER-UOS-0001", resolveVerifiedBy,
+		result, failureReason, true, hashMatches, sigValid, notRevoked, status)
+	deleteMobileSession(req.SessionToken)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"verified": verified, "credentialID": session.CredentialID,
+		"fabricCredID": fabricCredID, "holderID": holderIDFromChain,
+		"holderName": holderName, "holderEmail": holderEmail, "holderEID": holderEID,
+		"credentialType": credentialType, "issuer": "University of Sharjah",
+		"verifiedBy": resolveVerifiedBy, "status": status,
+		"issuedAt": issuedAtFromInfo, "expiryDate": expiryDate,
+		"credentialData": credData,
+		"checks": map[string]bool{
+			"existsOnChain": true, "notRevoked": notRevoked,
+			"signatureValid": sigValid, "hashMatches": hashMatches,
+		},
+	})
+}
+
+func applySelectiveDisclosure(credData map[string]any, hiddenFields []string) {
+	if credData == nil {
+		return
+	}
+	for _, field := range hiddenFields {
+		if strings.Contains(field, ".") {
+			parts := strings.SplitN(field, ".", 2)
+			if sub, ok := credData[parts[0]].(map[string]any); ok {
+				sub[parts[1]] = nil
+			}
+		} else {
+			if _, exists := credData[field]; exists {
+				credData[field] = nil
+			}
+		}
+	}
+}
+
+// ─── SUBSCRIPTIONS ───────────────────────────────────────────────────────────
+
+func handleRequestSubscription(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CredentialID string `json:"credentialID"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.CredentialID == "" {
+		writeError(w, http.StatusBadRequest, "missing credentialID")
+		return
+	}
+	cred, err := getCredentialDetail(req.CredentialID)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "credential not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if cred.Status == "revoked" {
+		writeError(w, http.StatusBadRequest, "cannot subscribe to a revoked credential")
+		return
+	}
+	exists, err := activeSubscriptionExists(req.CredentialID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if exists {
+		writeError(w, http.StatusConflict, "subscription already exists for this credential")
+		return
+	}
+	subID := generateSubscriptionID()
+	if err := insertSubscription(subID, req.CredentialID, cred.HolderID); err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "subscriptionID": subID})
+}
+
+func handleGetSubscriptions(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	page := parsePositiveInt(q.Get("page"), 1)
+	limit := parsePositiveInt(q.Get("limit"), 100)
+	rows, err := getSubscriptions(page, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	out := make([]map[string]any, 0, len(rows))
+	for _, s := range rows {
+		out = append(out, map[string]any{
+			"id":             s.SubscriptionID,
+			"holderName":     s.HolderName,
+			"holderID":       s.HolderID,
+			"credentialType": s.CredentialType,
+			"issuer":         s.Issuer,
+			"subscribedDate": NullDateDisplay(s.SubscribedAt, "—"),
+			"expiryDate":     NullDateDisplay(s.ExpiryDate, "—"),
+			"status":         s.Status,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"subscriptions": out})
+}
+
+func handleDeleteSubscription(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SubscriptionID string `json:"subscriptionID"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.SubscriptionID == "" {
+		writeError(w, http.StatusBadRequest, "missing subscriptionID")
+		return
+	}
+	status, err := getSubscriptionStatus(req.SubscriptionID)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "subscription not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if status != "pending" {
+		writeError(w, http.StatusBadRequest, "only pending subscriptions can be deleted")
+		return
+	}
+	if err := deleteSubscriptionRow(req.SubscriptionID); err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "subscriptionID": req.SubscriptionID})
+}
+
+func handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SubscriptionID string `json:"subscriptionID"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.SubscriptionID == "" {
+		writeError(w, http.StatusBadRequest, "missing subscriptionID")
+		return
+	}
+	status, err := getSubscriptionStatus(req.SubscriptionID)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "subscription not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if status != "active" {
+		writeError(w, http.StatusBadRequest, "only active subscriptions can be unsubscribed")
+		return
+	}
+	if err := unsubscribeSubscription(req.SubscriptionID); err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "subscriptionID": req.SubscriptionID})
+}
+
+// ─── ALERTS ──────────────────────────────────────────────────────────────────
+
+func handleGetSubscriptionAlerts(w http.ResponseWriter, r *http.Request) {
+	rows, err := getAlerts()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	out := make([]map[string]any, 0, len(rows))
+	for _, a := range rows {
+		out = append(out, map[string]any{
+			"id":             a.AlertID,
+			"holderName":     a.HolderName,
+			"credentialName": a.CredentialName,
+			"severity":       a.Severity,
+			"description":    a.Description,
+			"dateTime":       FormatDateTimeDisplay(a.TriggeredAt),
+			"acknowledged":   a.Acknowledged,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"alerts": out})
+}
+
+func handleAcknowledgeAlert(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		AlertID string `json:"alertID"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.AlertID == "" {
+		writeError(w, http.StatusBadRequest, "missing alertID")
+		return
+	}
+	exists, err := alertExists(req.AlertID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if !exists {
+		writeError(w, http.StatusNotFound, "alert not found")
+		return
+	}
+	if err := acknowledgeAlert(req.AlertID); err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "alertID": req.AlertID})
+}
+
+// ─── AUDIT LOGS ──────────────────────────────────────────────────────────────
+
+func handleGetAuditLogs(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	page := parsePositiveInt(q.Get("page"), 1)
+	limit := parsePositiveInt(q.Get("limit"), 500)
+	rows, err := getAuditLogs(page, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	out := make([]map[string]any, 0, len(rows))
+	for _, a := range rows {
+		out = append(out, map[string]any{
+			"id":              a.AuditID,
+			"action":          a.Action,
+			"details":         a.Details,
+			"performedBy":     a.PerformedByName,
+			"performedByRole": a.PerformedByRole,
+			"ipAddress":       a.IPAddress,
+			"timestamp":       FormatISO(a.CreatedAt),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"records": out})
+}
+
+// ─── STAFF MANAGEMENT ────────────────────────────────────────────────────────
+
+func handleGetStaff(w http.ResponseWriter, r *http.Request) {
+	rows, err := getStaff()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	out := make([]map[string]any, 0, len(rows))
+	for _, s := range rows {
+		out = append(out, map[string]any{
+			"id":        s.ID,
+			"name":      s.Name,
+			"email":     s.Email,
+			"portal":    s.Portal,
+			"role":      s.Role,
+			"addedDate": FormatDateDisplay(s.AddedDate),
+			"status":    s.Status,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"staff": out})
+}
+
+func handleInviteStaff(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email  string `json:"email"`
+		Portal string `json:"portal"`
+		Role   string `json:"role"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.Email == "" {
+		writeError(w, http.StatusBadRequest, "missing email")
+		return
+	}
+	if req.Portal == "" {
+		writeError(w, http.StatusBadRequest, "missing portal")
+		return
+	}
+	if req.Role == "" {
+		writeError(w, http.StatusBadRequest, "missing role")
+		return
+	}
+	if req.Portal != "issuer" && req.Portal != "verifier" {
+		writeError(w, http.StatusBadRequest, "invalid portal")
+		return
+	}
+	if req.Role == "admin" {
+		writeError(w, http.StatusBadRequest, "admin role cannot be assigned via this endpoint")
+		return
+	}
+	if err := validateStaffRole(req.Portal, req.Role); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	exists, err := staffEmailExists(req.Email)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if exists {
+		writeError(w, http.StatusConflict, "email already invited or active")
+		return
+	}
+	staffID := generateStaffID()
+	if err := insertStaff(staffID, req.Email, req.Portal, req.Role); err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	insertAuditLog("staff_added",
+		fmt.Sprintf("Staff %s invited to %s portal as %s", req.Email, req.Portal, req.Role),
+		issuerActorName, "Issuer Admin", r.RemoteAddr)
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "staffID": staffID})
+}
+
+func handleUpdateStaffRole(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID     string `json:"id"`
+		Portal string `json:"portal"`
+		Role   string `json:"role"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.ID == "" {
+		writeError(w, http.StatusBadRequest, "missing id")
+		return
+	}
+	if req.Portal == "" {
+		writeError(w, http.StatusBadRequest, "missing portal")
+		return
+	}
+	if req.Role == "" {
+		writeError(w, http.StatusBadRequest, "missing role")
+		return
+	}
+	if req.Portal != "issuer" && req.Portal != "verifier" {
+		writeError(w, http.StatusBadRequest, "invalid portal")
+		return
+	}
+	if req.Role == "admin" {
+		writeError(w, http.StatusBadRequest, "admin role cannot be modified via this endpoint")
+		return
+	}
+	if err := validateStaffRole(req.Portal, req.Role); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if _, err := getStaffByID(req.ID); err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "staff member not found")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if err := updateStaffRole(req.ID, req.Portal, req.Role); err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "staffID": req.ID})
+}
+
+func handleDeleteStaff(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID     string `json:"id"`
+		Portal string `json:"portal"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.ID == "" {
+		writeError(w, http.StatusBadRequest, "missing id")
+		return
+	}
+	if req.Portal == "" {
+		writeError(w, http.StatusBadRequest, "missing portal")
+		return
+	}
+	if req.Portal != "issuer" && req.Portal != "verifier" {
+		writeError(w, http.StatusBadRequest, "invalid portal")
+		return
+	}
+	staff, err := getStaffByID(req.ID)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "staff member not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if staff.Portal != req.Portal {
+		writeError(w, http.StatusBadRequest, "portal mismatch")
+		return
+	}
+	if err := softDeleteStaff(req.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	insertAuditLog("staff_removed",
+		fmt.Sprintf("Staff %s removed from %s portal", staff.Email, req.Portal),
+		issuerActorName, "Issuer Admin", r.RemoteAddr)
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "staffID": req.ID})
+}
+
+func validateStaffRole(portal, role string) error {
+	if portal == "issuer" {
+		switch role {
+		case "staff", "schemaManager":
+			return nil
+		}
+		return fmt.Errorf("invalid role for portal")
+	}
+	switch role {
+	case "verifier", "policyManager":
+		return nil
+	}
+	return fmt.Errorf("invalid role for portal")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PHASE C — QWALLET MOBILE HANDLERS (/mobile/*)
+// ─────────────────────────────────────────────────────────────────────────────
+
+func handleMobileGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) {
+	emiratesID := r.URL.Query().Get("emiratesID")
+	if emiratesID == "" {
+		writeError(w, http.StatusBadRequest, "missing emiratesID")
+		return
+	}
+	rows, err := getMobileCredentials(emiratesID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	out := make([]map[string]any, 0, len(rows))
+	for _, c := range rows {
+		var expiry any
+		if c.ExpiryDate.Valid {
+			expiry = c.ExpiryDate.Time.UTC().Format(time.RFC3339)
+		}
+		var attrs map[string]any
+		_ = json.Unmarshal([]byte(c.CredentialData), &attrs)
+		out = append(out, map[string]any{
+			"credentialID":   c.CredentialID,
+			"credentialType": c.CredentialType,
+			"holderName":     c.HolderName,
+			"holderEID":      c.HolderEID,
+			"issuedBy":       c.IssuerName,
+			"issuedAt":       c.IssuedAt.UTC().Format(time.RFC3339),
+			"expiryDate":     expiry,
+			"status":         c.Status,
+			"isFavorite":     c.IsFavorite,
+			"category":       c.Category,
+			"attributes":     attrs,
+			"signature":      c.Signature,
+			"txHash":         c.FabricCredID,
+			"cid":            c.IPFSCID,
+			"publicKey":      c.PublicKey,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func handleToggleFavorite(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		HolderEID    string `json:"holderEID"`
+		CredentialID string `json:"credentialID"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.HolderEID == "" {
+		writeError(w, http.StatusBadRequest, "missing holderEID")
+		return
+	}
+	if req.CredentialID == "" {
+		writeError(w, http.StatusBadRequest, "missing credentialID")
+		return
+	}
+	if err := toggleFavorite(req.CredentialID, req.HolderEID); err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "credential not found")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func handleGetActivity(w http.ResponseWriter, r *http.Request) {
+	emiratesID := r.URL.Query().Get("emiratesID")
+	if emiratesID == "" {
+		writeError(w, http.StatusBadRequest, "missing emiratesID")
+		return
+	}
+	rows, err := getMobileActivity(emiratesID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	out := make([]map[string]any, 0, len(rows))
+	for _, a := range rows {
+		out = append(out, map[string]any{
+			"id":             strconv.FormatInt(a.EventID, 10),
+			"type":           a.EventType,
+			"credentialName": a.CredentialType,
+			"actor":          a.ActorName,
+			"timestamp":      a.CreatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "activity": out})
+}
+
+func handleGenerateOTP(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CredentialID string   `json:"credentialID"`
+		HiddenFields []string `json:"hiddenFields"`
+		ExpiresIn    int      `json:"expiresIn"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.CredentialID == "" {
+		writeError(w, http.StatusBadRequest, "missing credentialID")
+		return
+	}
+	if req.ExpiresIn <= 0 {
+		req.ExpiresIn = 120
+	}
+	holderID, err := credentialHolderID(req.CredentialID)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "credential not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	var otpID string
+	for i := 0; i < 3; i++ {
+		n, _ := rand.Int(rand.Reader, big.NewInt(1000000))
+		otpID = fmt.Sprintf("OTP-%06d", n.Int64())
+		if !mobileSessionExists(otpID) {
+			break
+		}
+		otpID = ""
+	}
+	if otpID == "" {
+		writeError(w, http.StatusInternalServerError, "unable to generate unique OTP. Please try again.")
+		return
+	}
+	if err := insertMobileSession(otpID, "otp", req.CredentialID, holderID, req.HiddenFields, req.ExpiresIn); err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	expiresAt := time.Now().UTC().Add(time.Duration(req.ExpiresIn) * time.Second)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":   true,
+		"otp":       otpID[4:],
+		"expiresAt": expiresAt.Format(time.RFC3339),
+	})
+}
+
+func handleGeneratePresentation(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CredentialID string   `json:"credentialID"`
+		HiddenFields []string `json:"hiddenFields"`
+		ExpiresIn    int      `json:"expiresIn"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.CredentialID == "" {
+		writeError(w, http.StatusBadRequest, "missing credentialID")
+		return
+	}
+	if req.ExpiresIn <= 0 {
+		req.ExpiresIn = 120
+	}
+	holderID, err := credentialHolderID(req.CredentialID)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "credential not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	var presID string
+	for i := 0; i < 3; i++ {
+		b := make([]byte, 4)
+		_, _ = rand.Read(b)
+		presID = fmt.Sprintf("PRES-%x", b)
+		if !mobileSessionExists(presID) {
+			break
+		}
+		presID = ""
+	}
+	if presID == "" {
+		writeError(w, http.StatusInternalServerError, "unable to generate unique session ID. Please try again.")
+		return
+	}
+	if err := insertMobileSession(presID, "qr", req.CredentialID, holderID, req.HiddenFields, req.ExpiresIn); err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	expiresAt := time.Now().UTC().Add(time.Duration(req.ExpiresIn) * time.Second)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":        true,
+		"presentationID": presID,
+		"expiresAt":      expiresAt.Format(time.RFC3339),
+	})
+}
+
+func handleGetCatalog(w http.ResponseWriter, r *http.Request) {
+	catalogRows, err := getCatalogRows()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	type serviceJSON struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	type issuerJSON struct {
+		ID       string        `json:"id"`
+		Name     string        `json:"name"`
+		Services []serviceJSON `json:"services"`
+	}
+	type categoryJSON struct {
+		Name    string       `json:"name"`
+		Issuers []issuerJSON `json:"issuers"`
+	}
+
+	categoryMap := map[string]int{}
+	categories := []categoryJSON{}
+
+	for _, row := range catalogRows {
+		catIdx, exists := categoryMap[row.Category]
+		if !exists {
+			catIdx = len(categories)
+			categoryMap[row.Category] = catIdx
+			categories = append(categories, categoryJSON{Name: row.Category, Issuers: []issuerJSON{}})
+		}
+		cat := &categories[catIdx]
+
+		issuerIdx := -1
+		for i, iss := range cat.Issuers {
+			if iss.ID == row.IssuerID {
+				issuerIdx = i
+				break
+			}
+		}
+		if issuerIdx == -1 {
+			cat.Issuers = append(cat.Issuers, issuerJSON{ID: row.IssuerID, Name: row.IssuerName, Services: []serviceJSON{}})
+			issuerIdx = len(cat.Issuers) - 1
+		}
+		if row.ServiceID.Valid {
+			cat.Issuers[issuerIdx].Services = append(cat.Issuers[issuerIdx].Services, serviceJSON{
+				ID:          row.ServiceID.String,
+				Name:        row.ServiceName.String,
+				Description: row.Description.String,
+			})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "categories": categories})
+}
+
+func handleFetchDocument(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		HolderEID   string `json:"holderEID"`
+		IssuerID    string `json:"issuerID"`
+		ServiceName string `json:"serviceName"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.HolderEID == "" {
+		writeError(w, http.StatusBadRequest, "missing holderEID")
+		return
+	}
+	if req.IssuerID == "" {
+		writeError(w, http.StatusBadRequest, "missing issuerID")
+		return
+	}
+	if req.ServiceName == "" {
+		writeError(w, http.StatusBadRequest, "missing serviceName")
+		return
+	}
+	if _, _, err := holderByEmiratesID(req.HolderEID); err != nil {
+		writeError(w, http.StatusBadRequest, "holder not found")
+		return
+	}
+	var issuerCount int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM catalog_issuers WHERE id = ?`, req.IssuerID).Scan(&issuerCount)
+	if issuerCount == 0 {
+		writeError(w, http.StatusBadRequest, "issuer not found")
+		return
+	}
+	var serviceCount int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM catalog_services WHERE issuer_id = ? AND name = ?`,
+		req.IssuerID, req.ServiceName).Scan(&serviceCount)
+	if serviceCount == 0 {
+		writeError(w, http.StatusBadRequest, "service not found")
+		return
+	}
+
+	found, _, err := fetchDocumentInDB(req.HolderEID, req.IssuerID, req.ServiceName)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"message": "Document not yet issued. Please request from the issuer.",
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Document retrieved successfully.",
+	})
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1403,6 +2500,33 @@ func main() {
 	mux.HandleFunc("GET /getHolders", handleGetHolders)
 	mux.HandleFunc("GET /getVerificationHistory", handleGetVerificationHistory)
 	mux.HandleFunc("GET /getDashboardStats", handleGetDashboardStats)
+
+	// Phase 2 — QPortal
+	mux.HandleFunc("GET /getCredentialDetail", handleGetCredentialDetail)
+	mux.HandleFunc("POST /updateCredential", handleUpdateCredential)
+	mux.HandleFunc("GET /getVerificationDetail", handleGetVerificationDetail)
+	mux.HandleFunc("POST /resolveSession", handleResolveSession)
+	mux.HandleFunc("POST /requestSubscription", handleRequestSubscription)
+	mux.HandleFunc("GET /getSubscriptions", handleGetSubscriptions)
+	mux.HandleFunc("POST /deleteSubscription", handleDeleteSubscription)
+	mux.HandleFunc("POST /unsubscribe", handleUnsubscribe)
+	mux.HandleFunc("GET /getSubscriptionAlerts", handleGetSubscriptionAlerts)
+	mux.HandleFunc("POST /acknowledgeAlert", handleAcknowledgeAlert)
+	mux.HandleFunc("GET /getAuditLogs", handleGetAuditLogs)
+	mux.HandleFunc("GET /getStaff", handleGetStaff)
+	mux.HandleFunc("POST /inviteStaff", handleInviteStaff)
+	mux.HandleFunc("POST /updateStaffRole", handleUpdateStaffRole)
+	mux.HandleFunc("POST /deleteStaff", handleDeleteStaff)
+
+	// QWallet — mobile endpoints
+	mux.HandleFunc("GET /mobile/getCredentialsByHolder", handleMobileGetCredentialsByHolder)
+	mux.HandleFunc("POST /mobile/toggleFavorite", handleToggleFavorite)
+	mux.HandleFunc("GET /mobile/getActivity", handleGetActivity)
+	mux.HandleFunc("POST /mobile/generateOTP", handleGenerateOTP)
+	mux.HandleFunc("POST /mobile/generatePresentation", handleGeneratePresentation)
+	mux.HandleFunc("GET /mobile/getCatalog", handleGetCatalog)
+	mux.HandleFunc("POST /mobile/fetchDocument", handleFetchDocument)
+
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
