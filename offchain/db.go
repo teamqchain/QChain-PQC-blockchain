@@ -1936,6 +1936,18 @@ func fetchDocumentInDB(holderEID, issuerID, serviceName string) (found bool, alr
 	if db == nil {
 		return false, false, fmt.Errorf("database not configured")
 	}
+	// Resolve the catalog service's match_pattern (a SQL LIKE pattern against
+	// credential_type). The catalog service name is a friendly label
+	// ("Bachelor Degree") that won't substring-match a specific credential_type
+	// ("Bachelor of Science in Computer Science"), so we match on the pattern.
+	// Fall back to a substring of the service name if no pattern is configured.
+	var matchPattern string
+	_ = db.QueryRow(`SELECT match_pattern FROM catalog_services WHERE issuer_id = ? AND name = ? LIMIT 1`,
+		issuerID, serviceName).Scan(&matchPattern)
+	if matchPattern == "" {
+		matchPattern = "%" + serviceName + "%"
+	}
+
 	var credID string
 	var inWallet int
 	err = db.QueryRow(`
@@ -1946,7 +1958,7 @@ func fetchDocumentInDB(holderEID, issuerID, serviceName string) (found bool, alr
 		 WHERE h.emirates_id = ?
 		   AND iss.org_id = ?
 		   AND c.credential_type LIKE ?
-		 LIMIT 1`, holderEID, issuerID, "%"+serviceName+"%").Scan(&credID, &inWallet)
+		 LIMIT 1`, holderEID, issuerID, matchPattern).Scan(&credID, &inWallet)
 	if err == sql.ErrNoRows {
 		return false, false, nil
 	}
