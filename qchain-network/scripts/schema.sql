@@ -125,6 +125,9 @@ CREATE TABLE IF NOT EXISTS credentials (
     ipfs_cid            VARCHAR(100),                                               -- [NOW]  nullable if IPFS skipped
     status              ENUM('active','revoked','suspended','expired') NOT NULL DEFAULT 'active',
     credential_data     JSON         NOT NULL,                                      -- [NOW]  parsed attributes for display
+    is_favorite         TINYINT(1)   NOT NULL DEFAULT 0,                            -- [NOW]  QWallet favorite flag
+    category            VARCHAR(50)  NOT NULL DEFAULT 'General',                    -- [NOW]  QWallet display category
+    in_wallet           TINYINT(1)   NOT NULL DEFAULT 0,                            -- [NOW]  1 once pulled in via /mobile/fetchDocument
     issued_at           TIMESTAMP    NOT NULL,
     expiry_date         TIMESTAMP    NULL,                                          -- [LATER]
     revoked_at          TIMESTAMP    NULL,                                          -- [NOW]  set on revocation
@@ -168,7 +171,7 @@ CREATE TABLE IF NOT EXISTS verification_logs (
 CREATE TABLE IF NOT EXISTS credential_events (
     event_id      BIGINT AUTO_INCREMENT PRIMARY KEY,
     credential_id VARCHAR(20)  NOT NULL,
-    event_type    ENUM('issued','revoked','suspended','restored') NOT NULL,
+    event_type    ENUM('issued','revoked','suspended','restored','verified','expired') NOT NULL,
     actor_id      VARCHAR(20),                                                    -- issuer_id (NULL = system)
     actor_name    VARCHAR(100),                                                   -- denormalised for display
     notes         VARCHAR(500),                                                   -- e.g. suspend reason
@@ -224,7 +227,10 @@ CREATE TABLE IF NOT EXISTS alerts (
     holder_name     VARCHAR(200),                                                   -- denormalised for display
     description     TEXT NOT NULL,
     severity        ENUM('revoked','expired','suspended','tampered','renewed','reissued') NOT NULL,
+    acknowledged    TINYINT(1)  NOT NULL DEFAULT 0,                                  -- [NOW]  1 = acknowledged by verifier
+    subscription_id VARCHAR(20) NULL,                                                -- [NOW]  optional link to subscriptions
     triggered_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_alerts_acknowledged (acknowledged),
     FOREIGN KEY (holder_id)     REFERENCES holders(holder_id),
     FOREIGN KEY (credential_id) REFERENCES credentials(credential_id)
 );
@@ -290,6 +296,63 @@ CREATE TABLE IF NOT EXISTS batch_job_rows (
     FOREIGN KEY (credential_id) REFERENCES credentials(credential_id)
 );
 
+-- ─── STAFF ────────────────────────────────────────────────────────────────────
+-- [NOW] Unified Manage-Staff table (QPortal). Roles stored camelCase to match the
+-- frontend contract. Separate from issuers/verifiers (which drive issuance/auth).
+
+CREATE TABLE IF NOT EXISTS staff (
+    id         VARCHAR(20)  PRIMARY KEY,                                        -- STF-0001
+    name       VARCHAR(100) NOT NULL DEFAULT '',
+    email      VARCHAR(100) NOT NULL,
+    portal     ENUM('issuer','verifier') NOT NULL,
+    role       VARCHAR(50)  NOT NULL,                                           -- admin|staff|schemaManager|verifier|policyManager
+    status     ENUM('active','invited','deleted') NOT NULL DEFAULT 'invited',
+    added_date DATE         NOT NULL DEFAULT (CURRENT_DATE),
+    INDEX idx_staff_email  (email),
+    INDEX idx_staff_portal (portal),
+    INDEX idx_staff_status (status)
+);
+
+-- ─── MOBILE SESSIONS ──────────────────────────────────────────────────────────
+-- [NOW] OTP / QR selective-disclosure sessions (QWallet). PK `id` is the OTP/PRES token.
+
+CREATE TABLE IF NOT EXISTS mobile_sessions (
+    id            VARCHAR(50)  NOT NULL PRIMARY KEY,                             -- OTP-XXXXXX | PRES-xxxxxxxx
+    session_type  ENUM('otp','qr') NOT NULL,
+    credential_id VARCHAR(20)  NOT NULL,
+    holder_id     VARCHAR(10)  NOT NULL,
+    hidden_fields JSON         DEFAULT NULL,
+    expires_at    DATETIME     NOT NULL,
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_mobile_sessions_cred    (credential_id),
+    INDEX idx_mobile_sessions_expires (expires_at),
+    FOREIGN KEY (credential_id) REFERENCES credentials(credential_id) ON DELETE CASCADE,
+    FOREIGN KEY (holder_id)     REFERENCES holders(holder_id)        ON DELETE CASCADE
+);
+
+-- ─── CATALOG (issuer directory) ───────────────────────────────────────────────
+-- [NOW] Public directory powering the QWallet "fetch document" flow.
+
+CREATE TABLE IF NOT EXISTS catalog_issuers (
+    id         VARCHAR(50)  NOT NULL PRIMARY KEY,                                -- ORG-UOS-001
+    category   VARCHAR(50)  NOT NULL,
+    name       VARCHAR(100) NOT NULL,
+    is_active  TINYINT(1)   NOT NULL DEFAULT 1,
+    created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_catalog_issuers_category (category),
+    INDEX idx_catalog_issuers_active   (is_active)
+);
+
+CREATE TABLE IF NOT EXISTS catalog_services (
+    id          VARCHAR(50)  NOT NULL PRIMARY KEY,                               -- SRV-UOS-101
+    issuer_id   VARCHAR(50)  NOT NULL,
+    name        VARCHAR(100) NOT NULL,
+    description VARCHAR(500) NOT NULL DEFAULT '',
+    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_catalog_services_issuer (issuer_id),
+    FOREIGN KEY (issuer_id) REFERENCES catalog_issuers(id) ON DELETE CASCADE
+);
+
 -- ─── SEED DATA (demo environment) ─────────────────────────────────────────────
 
 INSERT IGNORE INTO government_organization (org_id, org_name)
@@ -312,3 +375,24 @@ INSERT IGNORE INTO holders (holder_id, emirates_id, first_name, last_name, fabri
 VALUES
     ('H-0001', '784-1990-1234567-1', 'Ahmed', 'Al Mansouri', 'H-0001', FALSE),
     ('H-0002', '784-1995-7654321-2', 'Sara',  'Al Hashimi',  'H-0002', FALSE);
+
+-- Demo staff (mirrors the seed issuer/verifier for the Manage-Staff UI)
+INSERT IGNORE INTO staff (id, name, email, portal, role, status, added_date) VALUES
+    ('STF-0001', 'Mohammed Al Issuer', 'issuer@uos.ac.ae',   'issuer',   'admin', 'active', CURRENT_DATE),
+    ('STF-0002', 'Verifier Portal',    'verifier@uos.ac.ae', 'verifier', 'admin', 'active', CURRENT_DATE);
+
+-- Issuer directory (QWallet catalog)
+INSERT IGNORE INTO catalog_issuers (id, category, name, is_active) VALUES
+    ('ORG-UOS-001', 'Education',  'University of Sharjah',                1),
+    ('ORG-AUS-001', 'Education',  'American University of Sharjah',       1),
+    ('ORG-MOH-001', 'Health',     'Ministry of Health and Prevention',    1),
+    ('ORG-DED-001', 'Government', 'Dubai Education Department',            1),
+    ('ORG-EAD-001', 'Government', 'ENOC Authority',                       1);
+
+INSERT IGNORE INTO catalog_services (id, issuer_id, name, description) VALUES
+    ('SRV-UOS-101', 'ORG-UOS-001', 'Bachelor Degree',         'Request official transcript and degree verification.'),
+    ('SRV-UOS-102', 'ORG-UOS-001', 'Graduation Certificate',  'Request official graduation certificate.'),
+    ('SRV-AUS-101', 'ORG-AUS-001', 'Student ID',              'Request official student identification document.'),
+    ('SRV-MOH-101', 'ORG-MOH-001', 'Health Certificate',      'Request health certification and vaccination records.'),
+    ('SRV-DED-101', 'ORG-DED-001', 'Student Record',          'Request official student records and transcript.'),
+    ('SRV-EAD-101', 'ORG-EAD-001', 'Employment Certificate',  'Request employment certificate and work authorization.');
