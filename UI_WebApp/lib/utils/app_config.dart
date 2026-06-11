@@ -1,1 +1,0 @@
-const String kApiBaseUrl = 'http://localhost:3000';

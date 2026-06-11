@@ -1,29 +1,56 @@
 // screens/audit_log_page.dart
-//
-// Audit Log — append-only tamper-evident record of all portal activity.
-// Cannot be edited or deleted. Blockchain transactions are recorded on-chain
-// separately; this covers internal portal actions only.
-//
-// Layout contract:
-//   Padding → Column
-//     Title (fixed)
-//     Expanded container → toolbar → header → Expanded list
-//     Pagination bar (fixed)
-//     Action bar — Back + Export (fixed)
-//
-// ── Integration in app_shell.dart ───────────────────────────────────────────
-//   case RouteName.auditLog:
-//     return AuditLogPage(
-//       onBack: () => _handleNavigate(RouteName.dashboard),
-//     );
 
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/components/filterButton.dart';
+import 'package:qportal_webapp/services/api_service.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
-import 'package:qportal_webapp/models/verifiying_models.dart';
+import 'package:qportal_webapp/components/connection_error.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
+import 'package:qportal_webapp/components/countChip.dart';
+
+// ─── ACTION EXTENSION (Maps API Enums to UI Colors) ─────────────────────────
+
+extension LiveAuditActionX on LiveAuditAction {
+  String get label {
+    switch (this) {
+      case LiveAuditAction.issued:
+        return 'Issued';
+      case LiveAuditAction.revoked:
+        return 'Revoked';
+      case LiveAuditAction.suspended:
+        return 'Suspended';
+      case LiveAuditAction.verified:
+        return 'Verified';
+      case LiveAuditAction.policy:
+        return 'Policy Change';
+      case LiveAuditAction.system:
+        return 'System Config';
+      case LiveAuditAction.error:
+        return 'Error';
+    }
+  }
+
+  Color get colour {
+    switch (this) {
+      case LiveAuditAction.issued:
+        return AppColors.valid;
+      case LiveAuditAction.revoked:
+        return AppColors.revoked;
+      case LiveAuditAction.suspended:
+        return AppColors.suspended;
+      case LiveAuditAction.verified:
+        return AppColors.verifyingLight;
+      case LiveAuditAction.policy:
+        return const Color(0xFFF97316);
+      case LiveAuditAction.system:
+        return const Color(0xFF60A5FA);
+      case LiveAuditAction.error:
+        return AppColors.revoked;
+    }
+  }
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  PAGE
@@ -39,32 +66,60 @@ class AuditLogPage extends StatefulWidget {
 }
 
 class _AuditLogPageState extends State<AuditLogPage> {
-  // ── data ──────────────────────────────────────────────────────────────────
-  final List<AuditLogRecord> _all = List.from(kMockAuditLog);
-  late List<AuditLogRecord> _filtered;
+  // ── LIVE STATE ─────────────────────────────────────────────────────────────
+  List<LiveAuditLogRecord> _allRows = [];
+  List<LiveAuditLogRecord> _filtered = [];
+  bool _isLoading = true;
+  String? _errorMessage;
 
-  // ── search ────────────────────────────────────────────────────────────────
+  // ── SEARCH ─────────────────────────────────────────────────────────────────
   String _query = '';
   final _searchCtrl = TextEditingController();
 
-  // ── pagination ────────────────────────────────────────────────────────────
+  // ── PAGINATION ─────────────────────────────────────────────────────────────
   int _rowsPerPage = 25;
   int _currentPage = 1;
-
-  // ── lifecycle ─────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
-    _applyFilter();
+    _fetchData();
+  }
+
+  Future<void> _fetchData() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // Fetch an initial large batch, similar to subscription page architecture.
+      final records = await ApiService.getAuditLogs(limit: 500);
+      if (mounted) {
+        setState(() {
+          _allRows = records;
+          _isLoading = false;
+          _applyFilter();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _allRows = [];
+          _errorMessage = 'error'; // triggers the connection error state
+        });
+      }
+    }
   }
 
   void _applyFilter() {
     final q = _query.toLowerCase().trim();
     _filtered = q.isEmpty
-        ? List.from(_all)
-        : _all.where((r) {
-            return r.action.label.toLowerCase().contains(q) ||
+        ? List.from(_allRows)
+        : _allRows.where((r) {
+            return r.id.toLowerCase().contains(q) ||
+                r.action.label.toLowerCase().contains(q) ||
                 r.details.toLowerCase().contains(q) ||
                 r.performedBy.toLowerCase().contains(q) ||
                 r.performedByRole.toLowerCase().contains(q) ||
@@ -76,17 +131,18 @@ class _AuditLogPageState extends State<AuditLogPage> {
     if (_currentPage > maxPage) _currentPage = maxPage;
   }
 
-  List<AuditLogRecord> get _pageRows {
+  List<LiveAuditLogRecord> get _pageRows {
+    if (_filtered.isEmpty) return [];
     final start = (_currentPage - 1) * _rowsPerPage;
     final end = (start + _rowsPerPage).clamp(0, _filtered.length);
     return _filtered.sublist(start, end);
   }
 
-  int get _totalPages =>
-      (_filtered.length / _rowsPerPage).ceil().clamp(1, 99999);
-
-  // ── export dialog ─────────────────────────────────────────────────────────
-
+  int get _totalPages {
+    if (_rowsPerPage <= 0 || _filtered.isEmpty) return 1;
+    return (_filtered.length / _rowsPerPage).ceil().clamp(1, 99999);
+  }
+// ── export dialog ─────────────────────────────────────────────────────────
   void _onExport() {
     showDialog(context: context, builder: (_) => const _ExportDialog());
   }
@@ -132,7 +188,7 @@ class _AuditLogPageState extends State<AuditLogPage> {
                       color: AppColors.adminLight,
                     ),
                     const SizedBox(width: 5),
-                    Text(
+                    const Text(
                       'Append-only · Read-only',
                       style: TextStyle(
                         fontSize: 10,
@@ -219,24 +275,14 @@ class _AuditLogPageState extends State<AuditLogPage> {
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       child: Row(
         children: [
-          // Count chip
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.adminAccent.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: AppColors.adminAccent.withOpacity(0.25),
-              ),
-            ),
-            child: Text(
-              '${_filtered.length} entr${_filtered.length == 1 ? 'y' : 'ies'}',
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: AppColors.adminLight,
-              ),
-            ),
+            // Count chip
+          CountChip(
+            count: _filtered.length,
+            label: 'entry',
+            pluralLabel: 'entries',
+            backgroundColor: AppColors.adminAccent.withOpacity(0.10),
+            borderColor: AppColors.adminAccent.withOpacity(0.25),
+            textColor: AppColors.adminLight,
           ),
           const Spacer(),
 
@@ -266,7 +312,7 @@ class _AuditLogPageState extends State<AuditLogPage> {
               });
             },
             barWidth: 280,
-            searchLabel: 'Search actions, details, staff…',
+            searchLabel: 'Search ID, actions, details, staff…',
             activeColor: AppColors.adminAccent,
           ),
         ],
@@ -274,22 +320,17 @@ class _AuditLogPageState extends State<AuditLogPage> {
     );
   }
 
-  // ── COLUMN HEADER ─────────────────────────────────────────────────────────
-  //
-  // Flex layout:                    Action(2)  Details(5)  PerformedBy(3)  IP(2)  Timestamp(3)
-  // Each column is padded on both sides via _th's internal EdgeInsets so text
-  // from adjacent columns never visually touches.
-
   Widget _buildHeader() {
     return Container(
       color: AppColors.adminAccent.withOpacity(0.16),
       padding: const EdgeInsets.symmetric(vertical: 9),
       child: Row(
         children: [
+          const SizedBox(width: 12),
+          _th('LOG ID', flex: 2),
           _th('ACTION', flex: 2),
-          _th('DETAILS', flex: 8),
+          _th('DETAILS', flex: 6),
           _th('PERFORMED BY', flex: 3),
-          _th('Role', flex: 2),
           _th('IP ADDRESS', flex: 2),
           _th('TIMESTAMP', flex: 3),
         ],
@@ -313,9 +354,20 @@ class _AuditLogPageState extends State<AuditLogPage> {
     ),
   );
 
-  // ── LIST ──────────────────────────────────────────────────────────────────
-
   Widget _buildList() {
+    if (_errorMessage != null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 80.0),
+        child: ConnectionErrorWidget(onRetry: _fetchData),
+      );
+    }
+
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.adminAccent),
+      );
+    }
+
     if (_filtered.isEmpty) {
       return Center(
         child: Column(
@@ -364,7 +416,7 @@ class _AuditLogPageState extends State<AuditLogPage> {
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _AuditRow extends StatefulWidget {
-  final AuditLogRecord record;
+  final LiveAuditLogRecord record;
   const _AuditRow({required this.record});
 
   @override
@@ -389,7 +441,27 @@ class _AuditRowState extends State<_AuditRow> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // ── ACTION badge ─────────────────────────────────────────────
+            const SizedBox(width: 12),
+
+            // ── LOG ID
+            Expanded(
+              flex: 2,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  r.id,
+                  style: AppTextStyles.bodyTiny.copyWith(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDim,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ),
+
+            // ── ACTION
             Expanded(
               flex: 2,
               child: Padding(
@@ -398,9 +470,9 @@ class _AuditRowState extends State<_AuditRow> {
               ),
             ),
 
-            // ── DETAILS ──────────────────────────────────────────────────
+            // ── DETAILS
             Expanded(
-              flex: 8,
+              flex: 6,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Text(
@@ -415,43 +487,41 @@ class _AuditRowState extends State<_AuditRow> {
               ),
             ),
 
-            // ── PERFORMED BY ─────────────────────────────────────────────
+            // ── PERFORMED BY
             Expanded(
               flex: 3,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  r.performedBy,
-                  style: AppTextStyles.bodyTiny.copyWith(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.text,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      r.performedBy,
+                      style: AppTextStyles.bodyTiny.copyWith(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.text,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      r.performedByRole,
+                      style: AppTextStyles.bodyTiny.copyWith(
+                        fontSize: 9,
+                        color: AppColors.textDim,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ],
                 ),
               ),
             ),
 
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  r.performedByRole,
-                  style: AppTextStyles.bodyTiny.copyWith(
-                    fontSize: 9,
-                    color: AppColors.textDim,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-            ),
-
-
-
-            // ── IP ADDRESS ───────────────────────────────────────────────
+            // ── IP ADDRESS
             Expanded(
               flex: 2,
               child: Padding(
@@ -469,7 +539,7 @@ class _AuditRowState extends State<_AuditRow> {
               ),
             ),
 
-            // ── TIMESTAMP ────────────────────────────────────────────────
+            // ── TIMESTAMP
             Expanded(
               flex: 3,
               child: Padding(
@@ -510,8 +580,6 @@ class _ActionBadge extends StatelessWidget {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        // mainAxisAlignment: MainAxisAlignment.center
-        
         children: [
           Container(
             width: 5,
@@ -538,7 +606,7 @@ class _ActionBadge extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  EXPORT DIALOG
+//  EXPORT DIALOG & FORMAT CHIPS (Unchanged functionality)
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _ExportDialog extends StatefulWidget {
@@ -550,7 +618,6 @@ class _ExportDialog extends StatefulWidget {
 
 class _ExportDialogState extends State<_ExportDialog> {
   String _selected = 'XLSX';
-
   static const _formats = ['XLSX', 'PDF', 'JSON'];
 
   @override
@@ -665,7 +732,6 @@ class _ExportDialogState extends State<_ExportDialog> {
                       hoverColor: AppColors.adminAccent.withOpacity(0.82),
                       onTap: () {
                         Navigator.pop(context);
-                        // In production: trigger download.
                       },
                     ),
                   ),
@@ -685,7 +751,7 @@ class _ExportDialogState extends State<_ExportDialog> {
       case 'JSON':
         return Icons.data_object_rounded;
       default:
-        return Icons.table_chart_outlined; // XLSX
+        return Icons.table_chart_outlined;
     }
   }
 
@@ -819,7 +885,7 @@ class _FormatOptionState extends State<_FormatOption> {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  PAGINATION BAR  (identical pattern to other list pages)
+//  PAGINATION BAR
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _PaginationBar extends StatelessWidget {
@@ -846,7 +912,9 @@ class _PaginationBar extends StatelessWidget {
     if (currentPage > 4) result.add(null);
     final start = (currentPage - 2).clamp(2, totalPages - 1);
     final end = (currentPage + 2).clamp(2, totalPages - 1);
-    for (int i = start; i <= end; i++) result.add(i);
+    for (int i = start; i <= end; i++) {
+      result.add(i);
+    }
     if (currentPage < totalPages - 3) result.add(null);
     result.add(totalPages);
     return result;
@@ -864,9 +932,9 @@ class _PaginationBar extends StatelessWidget {
         Row(
           children: [
             _PageBtn(
-              child: const Icon(Icons.chevron_left, size: 16),
               enabled: currentPage > 1,
               onTap: () => onPageChanged(currentPage - 1),
+              child: const Icon(Icons.chevron_left, size: 16),
             ),
             const SizedBox(width: 4),
             ..._pages.map((p) {
@@ -904,15 +972,13 @@ class _PaginationBar extends StatelessWidget {
             }),
             const SizedBox(width: 4),
             _PageBtn(
-              child: const Icon(Icons.chevron_right, size: 16),
               enabled: currentPage < totalPages,
               onTap: () => onPageChanged(currentPage + 1),
+              child: const Icon(Icons.chevron_right, size: 16),
             ),
           ],
         ),
         const SizedBox(width: 20),
-
-        // Showing N–M of X
         Text(
           totalRows == 0 ? 'No results' : 'Showing $start–$end of $totalRows',
           style: AppTextStyles.bodyTiny.copyWith(

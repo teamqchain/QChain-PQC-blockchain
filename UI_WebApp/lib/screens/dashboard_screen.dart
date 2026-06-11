@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/components/dashboard_varients.dart';
 import 'package:qportal_webapp/components/varientToggler.dart';
+import 'package:qportal_webapp/components/connection_error.dart';
 import 'package:qportal_webapp/models/dashboard_Model.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
@@ -25,6 +26,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic> _stats = {};
   bool _isLoading = true;
+  bool _hasError = false;
 
   @override
   void initState() {
@@ -33,12 +35,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadStats() async {
-    final data = await ApiService.getDashboardStats();
-    if (mounted) {
-      setState(() {
-        _stats = data;
-        _isLoading = false;
-      });
+    try {
+      final data = await ApiService.getDashboardStats();
+      if (mounted) {
+        setState(() {
+          _stats = data;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+        });
+      }
     }
   }
 
@@ -63,7 +74,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           _buildPageTitle(),
           const SizedBox(height: 20),
-          if (_isLoading)
+          if (_hasError)
+            _buildErrorState()
+          else if (_isLoading)
             _buildSkeletonLoading()
           else ...[
             StatChipsRow(variant: widget.variant, stats: _stats),
@@ -92,6 +105,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Text('Dashboard', style: AppTextStyles.pageTitle),
         const SizedBox(height: 4),
       ],
+    );
+  }
+
+  Widget _buildErrorState() {
+    return ConnectionErrorWidget(
+      onRetry: () {
+        setState(() {
+          _isLoading = true;
+          _hasError = false;
+        });
+        _loadStats();
+      },
     );
   }
 

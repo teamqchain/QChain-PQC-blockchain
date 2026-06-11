@@ -3,40 +3,35 @@
 // Verification Details — shows the full verification result for a record
 // selected from the Verification History page.
 //
-// Everything is identical to verification_result_page.dart (result_page.dart)
-// EXCEPT the two action buttons:
-//   • "Save Receipt"  →  replaced by "Back"   (returns to history)
-//   • "Verify Another" →  replaced by "Export" (opens PDF / JSON dialog)
-//
-// ── Integration in app_shell.dart ────────────────────────────────────────────
-//   import 'package:qportal_webapp/screens/verifier/verification_detail_page.dart';
-//   import 'package:qportal_webapp/models/verifying_models.dart';
-//
-//   case RouteName.verificationDetail:
+// ── Integration ──────────────────────────────────────────────────────────────
+//   case RouteName.verificationDetails:
 //     return VerificationDetailPage(
-//       result: _selectedVerificationResult ?? VerifyingMockData.valid(),
+//       recordId: _selectedVerificationHistoryId ?? '',
 //       onBack: () => _handleNavigate(RouteName.verificationHistory),
 //     );
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/components/connection_error.dart';
 import 'package:qportal_webapp/models/verifiying_models.dart';
+import 'package:qportal_webapp/services/api_service.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
+import 'package:qportal_webapp/utils/logger.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  PAGE
 // ═════════════════════════════════════════════════════════════════════════════
 
 class VerificationDetailPage extends StatefulWidget {
-  final VerificationResult result;
+  final String recordId;
   final VoidCallback onBack;
 
   const VerificationDetailPage({
     super.key,
-    required this.result,
+    required this.recordId,
     required this.onBack,
   });
 
@@ -45,15 +40,35 @@ class VerificationDetailPage extends StatefulWidget {
 }
 
 class _VerificationDetailPageState extends State<VerificationDetailPage> {
-  // Identical to result_page.dart — processing spinner shown for 2 s.
-  bool _processing = true;
+  VerificationDetailData? _data;
+  bool _loading = true;
+  bool _error = false;
 
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(milliseconds: 2000), () {
-      if (mounted) setState(() => _processing = false);
-    });
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final detail = await ApiService.getVerificationDetail(widget.recordId);
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        if (detail == null) {
+          _error = true;
+        } else {
+          _data = detail;
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = true;
+      });
+    }
   }
 
   // ─── BUILD ─────────────────────────────────────────────────────────────────
@@ -63,49 +78,84 @@ class _VerificationDetailPageState extends State<VerificationDetailPage> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Page title — identical to result_page.dart
-          Text(
-            _processing ? 'Verifying…' : 'Verification Details',
-            style: AppTextStyles.navLabelActive.copyWith(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 18),
+          _buildHeader(),
+          const SizedBox(height: 24),
 
-          // Main container — identical to result_page.dart
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: const Color(0xFF111111),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: AppColors.border),
               ),
+              clipBehavior: Clip.hardEdge,
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
-                child: _processing ? _buildProcessing() : _buildResult(),
+                child: _buildBody(),
               ),
             ),
           ),
-
-          // Action buttons — only shown after processing, CHANGED vs result_page
-          if (!_processing) ...[const SizedBox(height: 16), _buildActions()],
         ],
       ),
     );
   }
 
-  // ─── PROCESSING ─────────────────────────────────────────────────────────────
-  // Identical to result_page.dart.
+  // ─── HEADER ROW ────────────────────────────────────────────────────────────
 
-  Widget _buildProcessing() {
-    return const Center(
-      key: ValueKey('processing'),
+  Widget _buildHeader() {
+    return Row(
+      children: [
+        AppButton(
+          icon: Icons.arrow_back_rounded,
+          label: 'Back',
+          showBorder: true,
+          borderColor: AppColors.border,
+          hoverColor: AppColors.surfaceHover,
+          onTap: widget.onBack,
+        ),
+        const SizedBox(width: 16),
+        Text(
+          'Verification Record',
+          style: AppTextStyles.navLabelActive.copyWith(
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const Spacer(),
+        if (!_loading && !_error && _data != null)
+          AppButton(
+            icon: Icons.download_rounded,
+            label: 'Export',
+            showBorder: true,
+            backgroundColor: AppColors.verifyingAccent.withOpacity(0.1),
+            borderColor: AppColors.verifyingAccent.withOpacity(0.4),
+            textColor: AppColors.verifyingLight,
+            iconColor: AppColors.verifyingLight,
+            hoverColor: AppColors.verifyingAccent.withOpacity(0.18),
+            onTap: _showExportDialog,
+          ),
+      ],
+    );
+  }
+
+  // ─── BODY SWITCHER ──────────────────────────────────────────────────────────
+
+  Widget _buildBody() {
+    if (_loading) return _buildLoading();
+    if (_error || _data == null) return _buildError();
+    return _buildResultContent();
+  }
+
+  // ─── LOADING ────────────────────────────────────────────────────────────────
+
+  Widget _buildLoading() {
+    return Center(
+      key: const ValueKey('loading'),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [
+        children: const [
           SizedBox(
             width: 40,
             height: 40,
@@ -116,7 +166,7 @@ class _VerificationDetailPageState extends State<VerificationDetailPage> {
           ),
           SizedBox(height: 20),
           Text(
-            'Verifying on blockchain...',
+            'Retrieving verification details...',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -128,66 +178,476 @@ class _VerificationDetailPageState extends State<VerificationDetailPage> {
     );
   }
 
-  // ─── RESULT ─────────────────────────────────────────────────────────────────
-  // Identical to result_page.dart.
+  // ─── ERROR ──────────────────────────────────────────────────────────────────
 
-  Widget _buildResult() {
-    return SingleChildScrollView(
-      key: const ValueKey('result'),
-      padding: const EdgeInsets.all(28),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: _CertCard(result: widget.result),
-        ),
+  Widget _buildError() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 40.0),
+      child: ConnectionErrorWidget(
+        onRetry: () {
+          setState(() {
+            _loading = true;
+            _error = false;
+          });
+          _loadData();
+        },
       ),
     );
   }
 
-  // ─── ACTION BAR ─────────────────────────────────────────────────────────────
-  // CHANGED: "Save Receipt" → "Back",  "Verify Another" → "Export"
+  // ─── RESULT CONTENT ──────────────────────────────────────────────────────────
 
-  Widget _buildActions() {
-    return Row(
-      children: [
-        // Back button
-        AppButton(
-          icon: Icons.arrow_back_rounded,
-          label: 'Back',
-          showBorder: true,
-          borderColor: AppColors.border,
-          hoverColor: AppColors.surfaceHover,
-          onTap: widget.onBack,
-        ),
-        const SizedBox(width: 10),
+  Widget _buildResultContent() {
+    final data = _data!;
 
-        // Export button — opens format picker dialog
-        AppButton(
-          icon: Icons.download_rounded,
-          label: 'Export',
-          showBorder: true,
-          borderColor: AppColors.verifyingAccent.withOpacity(0.5),
-          textColor: AppColors.verifyingLight,
-          iconColor: AppColors.verifyingLight,
-          hoverColor: AppColors.verifyingAccent.withOpacity(0.08),
-          onTap: _showExportDialog,
+    return SingleChildScrollView(
+      key: const ValueKey('result'),
+      padding: const EdgeInsets.all(32),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 860),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _StatusBanner(result: data.result),
+              const SizedBox(height: 24),
+              _VerificationMetaSection(record: data.historyRecord),
+              const SizedBox(height: 24),
+              if (data.result.credential != null) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: _CredentialMetaSection(
+                        credential: data.result.credential!,
+                      ),
+                    ),
+                    const SizedBox(width: 24),
+                    Expanded(
+                      flex: 4,
+                      child: Column(
+                        children: [
+                          _HolderSection(credential: data.result.credential!),
+                          const SizedBox(height: 24),
+                          _PolicySection(result: data.result),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
         ),
-      ],
+      ),
     );
   }
 
   void _showExportDialog() {
     showDialog(
       context: context,
-      builder: (_) => _ExportDialog(isValid: widget.result.isValid),
+      builder: (_) => _ExportDialog(isValid: _data!.result.isValid),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  DATA SECTIONS
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─── STATUS BANNER ────────────────────────────────────────────────────────────
+
+class _StatusBanner extends StatelessWidget {
+  final VerificationResult result;
+
+  const _StatusBanner({required this.result});
+
+  @override
+  Widget build(BuildContext context) {
+    final verifyResult = result.toVerifyResult();
+    final Color accent = verifyResult.fg;
+    final Color bg = verifyResult.bg;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accent.withOpacity(0.35), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: accent.withOpacity(0.15),
+            ),
+            child: Icon(verifyResult.headerIcon, size: 28, color: accent),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  verifyResult.headerLabel.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: accent,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  result.isValid
+                      ? 'The blockchain record indicates this credential is fully valid and unmodified.'
+                      : _getInvalidMessage(),
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: accent.withOpacity(0.9),
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  @override
-  void dispose() {
-    super.dispose();
+  String _getInvalidMessage() {
+    final c = result.credential;
+    switch (result.invalidReason) {
+      case InvalidReason.revoked:
+        return 'Revoked on ${c?.revokedDate ?? '—'}. Reason: ${c?.revokedReason ?? 'Not specified'}.';
+      case InvalidReason.expired:
+        return 'Expired on ${c?.expiryDate ?? '—'}. The credential is no longer valid.';
+      case InvalidReason.suspended:
+        return 'Temporarily suspended until ${c?.suspendedUntil ?? '—'}. Reason: ${c?.suspendedReason ?? 'Not specified'}.';
+      case InvalidReason.tampered:
+        return 'Data mismatch. The credential presented has been tampered with or modified from the original blockchain record.';
+      case InvalidReason.notFound:
+        return 'This credential was not found on the QChain network.';
+      default:
+        return 'Unknown error during verification.';
+    }
   }
 }
+
+// ─── VERIFICATION METADATA ────────────────────────────────────────────────────
+
+class _VerificationMetaSection extends StatelessWidget {
+  final VerificationHistoryRecord record;
+
+  const _VerificationMetaSection({required this.record});
+
+  @override
+  Widget build(BuildContext context) {
+    return _SectionCard(
+      title: 'VERIFICATION EVENT DETAILS',
+      icon: Icons.history_rounded,
+      child: Wrap(
+        spacing: 40,
+        runSpacing: 20,
+        children: [
+          _DataColumn(label: 'Verification ID', value: record.id),
+          _DataColumn(
+            label: 'Timestamp',
+            value: '${record.date}, ${record.time}',
+          ),
+          _DataColumn(label: 'Mode / Method', value: record.method.label),
+          _DataColumn(
+            label: 'Verified By',
+            value: record.verifiedBy.isNotEmpty ? record.verifiedBy : '—',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── CREDENTIAL RECORD METADATA ───────────────────────────────────────────────
+
+class _CredentialMetaSection extends StatelessWidget {
+  final CredentialRecord credential;
+
+  const _CredentialMetaSection({required this.credential});
+
+  @override
+  Widget build(BuildContext context) {
+    return _SectionCard(
+      title: 'CREDENTIAL DETAILS',
+      icon: Icons.description_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _DataRow(label: 'Credential ID', value: credential.id),
+          _divider(),
+          _DataRow(label: 'Type', value: credential.credentialType),
+          _divider(),
+          _DataRow(label: 'Issuer Org', value: credential.issuerOrg),
+          _divider(),
+          _DataRow(
+            label: 'Issue Date',
+            value: credential.issueDate,
+            isDate: true,
+          ),
+          _divider(),
+          _DataRow(
+            label: 'Expiry Date',
+            value: credential.expiryDate ?? 'No Expiry',
+            isDate: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── HOLDER SECTION ───────────────────────────────────────────────────────────
+
+class _HolderSection extends StatelessWidget {
+  final CredentialRecord credential;
+
+  const _HolderSection({required this.credential});
+
+  @override
+  Widget build(BuildContext context) {
+    return _SectionCard(
+      title: 'SUBJECT / HOLDER',
+      icon: Icons.person_outline_rounded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _DataRow(label: 'Holder Name', value: credential.holderName),
+          _divider(),
+          _DataRow(label: 'Holder ID', value: credential.holderId),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── POLICY CHECKS SECTION ────────────────────────────────────────────────────
+
+class _PolicySection extends StatelessWidget {
+  final VerificationResult result;
+
+  const _PolicySection({required this.result});
+
+  @override
+  Widget build(BuildContext context) {
+    if (result.policyChecks.isEmpty) return const SizedBox.shrink();
+
+    return _SectionCard(
+      title: 'SYSTEM & POLICY CHECKS',
+      icon: Icons.rule_rounded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: result.policyChecks.map((p) {
+          final passed = p.passed;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  passed
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.cancel_outlined,
+                  size: 16,
+                  color: passed ? AppColors.verifyingAccent : AppColors.revoked,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        p.label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: passed
+                              ? AppColors.textMuted
+                              : AppColors.revoked,
+                        ),
+                      ),
+                      if (p.note != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          p.note!,
+                          style: AppTextStyles.bodyTiny.copyWith(
+                            fontSize: 11,
+                            color: AppColors.textDim,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  SHARED LAYOUT WIDGETS
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _SectionCard extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Widget child;
+
+  const _SectionCard({
+    required this.title,
+    required this.icon,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: AppColors.border)),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: AppColors.verifyingAccent),
+                const SizedBox(width: 10),
+                Text(
+                  title,
+                  style: AppTextStyles.bodyTiny.copyWith(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(padding: const EdgeInsets.all(20), child: child),
+        ],
+      ),
+    );
+  }
+}
+
+class _DataColumn extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _DataColumn({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: AppTextStyles.bodyTiny.copyWith(
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.0,
+            color: AppColors.textDim,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.text,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DataRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool isDate;
+
+  const _DataRow({
+    required this.label,
+    required this.value,
+    this.isDate = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 130,
+            child: Text(
+              label,
+              style: AppTextStyles.bodyTiny.copyWith(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textDim,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: isDate ? (value == 'No Expiry' ? AppColors.revoked : AppColors.verifyingLight) : AppColors.text,
+                fontStyle: isDate ? (value == 'No Expiry' ? FontStyle.italic : FontStyle.normal) : FontStyle.normal,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Widget _divider() => Container(
+  height: 1,
+  color: AppColors.border.withOpacity(0.5),
+  margin: const EdgeInsets.symmetric(vertical: 4),
+);
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  EXPORT DIALOG
@@ -411,7 +871,6 @@ class _FormatOptionState extends State<_FormatOption> {
         ),
         child: Row(
           children: [
-            // Icon box
             Container(
               width: 34,
               height: 34,
@@ -422,7 +881,6 @@ class _FormatOptionState extends State<_FormatOption> {
               child: Icon(widget.icon, size: 17, color: widget.color),
             ),
             const SizedBox(width: 12),
-            // Label + description
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -445,7 +903,6 @@ class _FormatOptionState extends State<_FormatOption> {
                 ],
               ),
             ),
-            // Checkmark when selected
             if (widget.selected)
               Icon(Icons.check_circle_rounded, size: 18, color: widget.color),
           ],
@@ -453,408 +910,4 @@ class _FormatOptionState extends State<_FormatOption> {
       ),
     ),
   );
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  ALL WIDGETS BELOW ARE IDENTICAL TO result_page.dart
-//  (copied verbatim — no modifications)
-// ═════════════════════════════════════════════════════════════════════════════
-
-// ─── CERTIFICATE CARD ─────────────────────────────────────────────────────────
-
-class _CertCard extends StatelessWidget {
-  final VerificationResult result;
-
-  const _CertCard({required this.result});
-
-  @override
-  Widget build(BuildContext context) {
-    final verifyResult = result.toVerifyResult();
-    final Color accent = verifyResult.fg;
-    final Color accentBg = verifyResult.bg;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: accentBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: accent.withOpacity(0.35), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: accent.withOpacity(0.07),
-            blurRadius: 32,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.hardEdge,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _StatusHeader(verifyResult: verifyResult, accent: accent),
-          Padding(
-            padding: const EdgeInsets.all(22),
-            child: result.isValid
-                ? _ValidBody(result: result)
-                : _InvalidBody(result: result, accent: accent),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── STATUS HEADER ────────────────────────────────────────────────────────────
-
-class _StatusHeader extends StatelessWidget {
-  final VerifyResult verifyResult;
-  final Color accent;
-
-  const _StatusHeader({required this.verifyResult, required this.accent});
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-    color: accent.withOpacity(0.14),
-    child: Row(
-      children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: accent.withOpacity(0.18),
-            border: Border.all(color: accent.withOpacity(0.5)),
-          ),
-          child: Icon(
-            verifyResult.headerIcon,
-            size: 18,
-            color: accent,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Text(
-          verifyResult.headerLabel,
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-            color: accent,
-            letterSpacing: 1.2,
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-// ─── VALID BODY ───────────────────────────────────────────────────────────────
-
-class _ValidBody extends StatelessWidget {
-  final VerificationResult result;
-
-  const _ValidBody({required this.result});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = result.credential!;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          c.credentialType,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: AppColors.text,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          c.category,
-          style: AppTextStyles.bodyTiny.copyWith(
-            fontSize: 11,
-            color: AppColors.textDim,
-          ),
-        ),
-        const SizedBox(height: 20),
-        _divider(),
-        const SizedBox(height: 16),
-
-        _Row('Credential ID', c.id),
-        _Row('Holder Name', c.holderName),
-        _Row('Holder ID', c.holderId),
-        IssuedByRow(org: c.issuerOrg),
-        _Row('Issue Date', c.issueDate),
-        _Row('Expiry Date', c.expiryDate ?? 'No expiry'),
-
-        if (result.policyChecks.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          _divider(),
-          const SizedBox(height: 14),
-          const Text(
-            'POLICY CHECKS',
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.2,
-              color: AppColors.textDim,
-            ),
-          ),
-          const SizedBox(height: 10),
-          ...result.policyChecks.map((p) => _PolicyRow(check: p)),
-        ],
-      ],
-    );
-  }
-}
-
-// ─── INVALID BODY ─────────────────────────────────────────────────────────────
-
-class _InvalidBody extends StatelessWidget {
-  final VerificationResult result;
-  final Color accent;
-
-  const _InvalidBody({required this.result, required this.accent});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildReasonBox(),
-        const SizedBox(height: 20),
-        _divider(),
-        const SizedBox(height: 16),
-        if (result.credential != null) _buildCredentialDetails(),
-      ],
-    );
-  }
-
-  Widget _buildReasonBox() {
-    final String message;
-    final IconData icon;
-    final c = result.credential;
-
-    switch (result.invalidReason) {
-      case InvalidReason.revoked:
-        icon = Icons.block_rounded;
-        message =
-            'Revoked on ${c?.revokedDate ?? '—'}.'
-            '${c?.revokedReason != null ? '\nReason: ${c!.revokedReason}' : ''}';
-        break;
-      case InvalidReason.expired:
-        icon = Icons.schedule_rounded;
-        message =
-            'Expired on ${c?.expiryDate ?? '—'}. '
-            'Ask holder to get it renewed.';
-        break;
-      case InvalidReason.suspended:
-        icon = Icons.pause_circle_outline_rounded;
-        message =
-            'Temporarily suspended until ${c?.suspendedUntil ?? '—'}.'
-            '${c?.suspendedReason != null ? '\nReason: ${c!.suspendedReason}' : ''}';
-        break;
-      case InvalidReason.tampered:
-        icon = Icons.warning_amber_rounded;
-        message =
-            'Credential data does not match the blockchain record. '
-            'This credential may have been modified. Do not accept.';
-        break;
-      case InvalidReason.notFound:
-        icon = Icons.search_off_rounded;
-        message = 'This credential was not found on the QChain network.';
-        break;
-      default:
-        icon = Icons.error_outline_rounded;
-        message = 'Unknown error.';
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: accent.withOpacity(0.07),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: accent.withOpacity(0.25)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 16, color: accent),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: accent,
-                height: 1.6,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCredentialDetails() {
-    final c = result.credential!;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          c.credentialType,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: AppColors.text,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          c.category,
-          style: AppTextStyles.bodyTiny.copyWith(
-            fontSize: 11,
-            color: AppColors.textDim,
-          ),
-        ),
-        const SizedBox(height: 12),
-        _Row('Credential ID', c.id),
-        _Row('Holder Name', c.holderName),
-        _Row('Holder ID', c.holderId),
-        IssuedByRow(org: c.issuerOrg, person: c.issuedBy),
-        _Row('Issue Date', c.issueDate),
-        if (c.expiryDate != null) _Row('Expiry Date', c.expiryDate!),
-      ],
-    );
-  }
-}
-
-// ─── SHARED SMALL WIDGETS ─────────────────────────────────────────────────────
-
-Widget _divider() =>
-    Container(height: 1, color: AppColors.border.withOpacity(0.6));
-
-class IssuedByRow extends StatelessWidget {
-  final String org;
-  final String? person;
-  const IssuedByRow({required this.org, this.person});
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 120,
-          child: Text(
-            'Issued By',
-            style: AppTextStyles.bodyTiny.copyWith(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textDim,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                org,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.text,
-                  height: 1.4,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _Row extends StatelessWidget {
-  final String label;
-  final String value;
-  const _Row(this.label, this.value);
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 120,
-          child: Text(
-            label,
-            style: AppTextStyles.bodyTiny.copyWith(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textDim,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppColors.text,
-              height: 1.4,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _PolicyRow extends StatelessWidget {
-  final PolicyCheck check;
-  const _PolicyRow({required this.check});
-
-  @override
-  Widget build(BuildContext context) {
-    final Color c = check.passed
-        ? AppColors.verifyingAccent
-        : AppColors.revoked;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 7),
-      child: Row(
-        children: [
-          Icon(
-            check.passed
-                ? Icons.check_circle_outline_rounded
-                : Icons.cancel_outlined,
-            size: 14,
-            color: c,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            check.label,
-            style: TextStyle(
-              fontSize: 12,
-              color: check.passed ? AppColors.textMuted : AppColors.revoked,
-            ),
-          ),
-          if (check.note != null) ...[
-            const SizedBox(width: 6),
-            Text(
-              '· ${check.note}',
-              style: AppTextStyles.bodyTiny.copyWith(
-                fontSize: 10,
-                color: AppColors.textDim,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
 }

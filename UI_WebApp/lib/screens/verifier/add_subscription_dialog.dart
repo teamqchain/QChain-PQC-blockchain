@@ -1,55 +1,20 @@
 // widgets/verifier/add_new_subscription_dialog.dart
-//
-// Add New Subscription — two-step dialog flow:
-//   Step 1: Enter Credential ID  →  Subscribe button
-//   Step 2: Confirmation dialog  →  Send button
-//   After Send: toast "Request sent." at the top of the screen
-//
-// ── Usage in subscription_page.dart ─────────────────────────────────────────
-//   // Replace the onAddNewRequest: () {} stub with:
-//   onAddNewRequest: () => showDialog(
-//     context: context,
-//     builder: (_) => AddNewSubscriptionDialog(
-//       overlayContext: context, // page context for the toast overlay
-//     ),
-//   ),
-
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/services/api_service.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
-
-// ─── CREDENTIAL LOOKUP ───────────────────────────────────────────────────────
-//
-// In production this would be a network call.
-// Returns ({credentialName, holderName}) for a known Credential ID,
-// or null when the ID is not found.
-
-({String credentialName, String holderName})? _lookupCredential(String id) {
-  final normalised = id.trim().toUpperCase();
-  try {
-    final record = IssuingMockData.credentials.firstWhere(
-      (c) => c.id.toUpperCase() == normalised,
-    );
-    return (credentialName: record.credentialType, holderName: record.holderName);
-  } on StateError {
-    return null;
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  STEP 1 — ADD NEW SUBSCRIPTION DIALOG
-// ═════════════════════════════════════════════════════════════════════════════
+import 'package:qportal_webapp/components/appButton.dart';
 
 class AddNewSubscriptionDialog extends StatefulWidget {
-  /// The BuildContext of the page that opened this dialog.
-  /// Used to insert the toast into the correct Overlay after both
-  /// dialogs have been dismissed.
   final BuildContext overlayContext;
+  final VoidCallback? onSubscriptionRequested;
 
-  const AddNewSubscriptionDialog({super.key, required this.overlayContext});
+  const AddNewSubscriptionDialog({
+    super.key,
+    required this.overlayContext,
+    this.onSubscriptionRequested,
+  });
 
   @override
   State<AddNewSubscriptionDialog> createState() =>
@@ -60,17 +25,16 @@ class _AddNewSubscriptionDialogState extends State<AddNewSubscriptionDialog> {
   final _ctrl = TextEditingController();
   final _focus = FocusNode();
 
-  // Becomes non-null once the user has submitted an ID that isn't found.
   String? _errorText;
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    // Auto-focus the text field when the dialog opens.
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
 
-  void _onSubscribe() {
+  Future<void> _onSubscribe() async {
     final id = _ctrl.text.trim();
 
     if (id.isEmpty) {
@@ -78,31 +42,46 @@ class _AddNewSubscriptionDialogState extends State<AddNewSubscriptionDialog> {
       return;
     }
 
-    final match = _lookupCredential(id);
+    setState(() {
+      _isLoading = true;
+      _errorText = null;
+    });
 
-    if (match == null) {
-      setState(
-        () => _errorText =
-            'Credential "$id" was not found. Check the ID and try again.',
+    try {
+      final cred = await ApiService.getCredentialDetail(id);
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      if (cred == null) {
+        setState(() {
+          _errorText =
+              'Credential "$id" was not found. Check the ID and try again.';
+        });
+        return;
+      }
+
+      showDialog(
+        context: context,
+        builder: (_) => _ConfirmDialog(
+          credentialID: cred.id,
+          credentialName: cred.credentialType,
+          holderName: cred.holderName,
+          overlayContext: widget.overlayContext,
+          onSent: () {
+            widget.onSubscriptionRequested?.call();
+            if (mounted) Navigator.pop(context);
+          },
+        ),
       );
-      return;
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorText =
+            'Connection Error: Unable to reach the server. Please check your connection and try again.';
+      });
     }
-
-    setState(() => _errorText = null);
-
-    // Push the confirmation dialog on top of this one.
-    showDialog(
-      context: context,
-      builder: (_) => _ConfirmDialog(
-        credentialName: match.credentialName,
-        holderName: match.holderName,
-        overlayContext: widget.overlayContext,
-        onSent: () {
-          // Dismiss this (Step 1) dialog after both dialogs are gone.
-          if (mounted) Navigator.pop(context);
-        },
-      ),
-    );
   }
 
   @override
@@ -128,7 +107,6 @@ class _AddNewSubscriptionDialogState extends State<AddNewSubscriptionDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Header ───────────────────────────────────────────────────
             Container(
               padding: const EdgeInsets.all(20),
               decoration: const BoxDecoration(
@@ -163,14 +141,11 @@ class _AddNewSubscriptionDialogState extends State<AddNewSubscriptionDialog> {
                 ],
               ),
             ),
-
-            // ── Body — Credential ID field ────────────────────────────────
             Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Field label
                   Text(
                     'CREDENTIAL ID',
                     style: AppTextStyles.bodyTiny.copyWith(
@@ -181,8 +156,6 @@ class _AddNewSubscriptionDialogState extends State<AddNewSubscriptionDialog> {
                     ),
                   ),
                   const SizedBox(height: 8),
-
-                  // Text field
                   Container(
                     decoration: BoxDecoration(
                       color: AppColors.surfaceHover,
@@ -203,6 +176,7 @@ class _AddNewSubscriptionDialogState extends State<AddNewSubscriptionDialog> {
                     child: TextField(
                       controller: _ctrl,
                       focusNode: _focus,
+                      enabled: !_isLoading,
                       style: const TextStyle(
                         fontSize: 13,
                         color: AppColors.text,
@@ -211,14 +185,13 @@ class _AddNewSubscriptionDialogState extends State<AddNewSubscriptionDialog> {
                       decoration: InputDecoration(
                         isDense: true,
                         border: InputBorder.none,
-                        hintText: 'e.g. QC-2025-009182',
+                        hintText: 'e.g. CRED-0001',
                         hintStyle: AppTextStyles.bodyTiny.copyWith(
                           fontSize: 12,
                           color: AppColors.textDim,
                         ),
                       ),
                       onChanged: (_) {
-                        // Clear the error as the user types.
                         if (_errorText != null) {
                           setState(() => _errorText = null);
                         }
@@ -226,8 +199,6 @@ class _AddNewSubscriptionDialogState extends State<AddNewSubscriptionDialog> {
                       onSubmitted: (_) => _onSubscribe(),
                     ),
                   ),
-
-                  // Error text
                   AnimatedSize(
                     duration: const Duration(milliseconds: 160),
                     alignment: Alignment.topLeft,
@@ -238,7 +209,10 @@ class _AddNewSubscriptionDialogState extends State<AddNewSubscriptionDialog> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Icon(
-                                  Icons.error_outline_rounded,
+                                  // Change icon depending on if it's a network error or missing credential
+                                  _errorText!.startsWith('Connection Error')
+                                      ? Icons.wifi_off_rounded
+                                      : Icons.error_outline_rounded,
                                   size: 13,
                                   color: AppColors.revoked.withOpacity(0.8),
                                 ),
@@ -263,8 +237,6 @@ class _AddNewSubscriptionDialogState extends State<AddNewSubscriptionDialog> {
                 ],
               ),
             ),
-
-            // ── Buttons ───────────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
               child: Row(
@@ -275,16 +247,20 @@ class _AddNewSubscriptionDialogState extends State<AddNewSubscriptionDialog> {
                       showBorder: true,
                       borderColor: AppColors.border,
                       hoverColor: AppColors.surfaceHover,
+                      enabled: !_isLoading,
                       onTap: () => Navigator.pop(context),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: AppButton(
-                      icon: Icons.notifications_active_outlined,
-                      label: 'Subscribe',
+                      icon: _isLoading
+                          ? null
+                          : Icons.notifications_active_outlined,
+                      label: _isLoading ? 'Searching...' : 'Subscribe',
                       backgroundColor: AppColors.verifyingAccent,
                       hoverColor: AppColors.verifyingAccent.withOpacity(0.82),
+                      enabled: !_isLoading,
                       onTap: _onSubscribe,
                     ),
                   ),
@@ -305,30 +281,55 @@ class _AddNewSubscriptionDialogState extends State<AddNewSubscriptionDialog> {
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  STEP 2 — CONFIRMATION DIALOG
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _ConfirmDialog extends StatelessWidget {
+class _ConfirmDialog extends StatefulWidget {
+  final String credentialID;
   final String credentialName;
   final String holderName;
   final BuildContext overlayContext;
-  final VoidCallback onSent; // called after this dialog is popped
+  final VoidCallback onSent;
 
   const _ConfirmDialog({
+    required this.credentialID,
     required this.credentialName,
     required this.holderName,
     required this.overlayContext,
     required this.onSent,
   });
 
-  void _onSend(BuildContext context) {
-    // Dismiss this confirmation dialog.
-    Navigator.pop(context);
-    // Dismiss the Step-1 dialog.
-    onSent();
-    // Show the toast using the page-level overlay.
-    _showToast(overlayContext);
+  @override
+  State<_ConfirmDialog> createState() => _ConfirmDialogState();
+}
+
+class _ConfirmDialogState extends State<_ConfirmDialog> {
+  bool _isSending = false;
+  String? _errorText;
+
+  Future<void> _onSend() async {
+    setState(() {
+      _isSending = true;
+      _errorText = null;
+    });
+
+    try {
+      final success = await ApiService.requestSubscription(widget.credentialID);
+      setState(() => _isSending = false);
+
+      if (success) {
+        if (mounted) Navigator.pop(context);
+        widget.onSent();
+        _showToast(widget.overlayContext);
+      } else {
+        setState(
+          () => _errorText = 'An unexpected error occurred. Please try again.',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSending = false;
+        _errorText = 'Connection Error: Unable to reach the server.';
+      });
+    }
   }
 
   @override
@@ -354,7 +355,6 @@ class _ConfirmDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Header ───────────────────────────────────────────────────
             Container(
               padding: const EdgeInsets.all(20),
               decoration: const BoxDecoration(
@@ -389,14 +389,11 @@ class _ConfirmDialog extends StatelessWidget {
                 ],
               ),
             ),
-
-            // ── Body ─────────────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Confirmation message with resolved names
                   RichText(
                     text: TextSpan(
                       style: const TextStyle(
@@ -407,7 +404,7 @@ class _ConfirmDialog extends StatelessWidget {
                       children: [
                         const TextSpan(text: 'Subscription request for '),
                         TextSpan(
-                          text: credentialName,
+                          text: widget.credentialName,
                           style: const TextStyle(
                             fontWeight: FontWeight.w700,
                             color: AppColors.verifyingLight,
@@ -415,7 +412,7 @@ class _ConfirmDialog extends StatelessWidget {
                         ),
                         const TextSpan(text: ' of '),
                         TextSpan(
-                          text: holderName,
+                          text: widget.holderName,
                           style: const TextStyle(
                             fontWeight: FontWeight.w700,
                             color: AppColors.text,
@@ -426,8 +423,6 @@ class _ConfirmDialog extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
-
-                  // Info box
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -460,11 +455,21 @@ class _ConfirmDialog extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (_errorText != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 16),
+                      child: Text(
+                        _errorText!,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.revoked.withOpacity(0.9),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
-
-            // ── Buttons ───────────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
               child: Row(
@@ -474,16 +479,18 @@ class _ConfirmDialog extends StatelessWidget {
                     showBorder: true,
                     borderColor: AppColors.border,
                     hoverColor: AppColors.surfaceHover,
+                    enabled: !_isSending,
                     onTap: () => Navigator.pop(context),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: AppButton(
-                      icon: Icons.send_rounded,
-                      label: 'Send',
+                      icon: _isSending ? null : Icons.send_rounded,
+                      label: _isSending ? 'Sending...' : 'Send',
                       backgroundColor: AppColors.verifyingAccent,
                       hoverColor: AppColors.verifyingAccent.withOpacity(0.82),
-                      onTap: () => _onSend(context),
+                      enabled: !_isSending,
+                      onTap: _onSend,
                     ),
                   ),
                 ],
@@ -495,6 +502,8 @@ class _ConfirmDialog extends StatelessWidget {
     );
   }
 }
+
+// ... existing Toast code remains unchanged ...
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  TOAST

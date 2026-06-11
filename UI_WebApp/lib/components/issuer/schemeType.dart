@@ -9,7 +9,7 @@ class SchemaListItem extends StatefulWidget {
   final SchemaRecord schema;
   final bool isSelected;
   final VoidCallback onTap;
-  const SchemaListItem({
+  const SchemaListItem({super.key, 
     required this.schema,
     required this.isSelected,
     required this.onTap,

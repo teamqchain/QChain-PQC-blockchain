@@ -5,7 +5,7 @@ class ToolbarIconBtn extends StatefulWidget {
   final String tooltip;
   final VoidCallback onTap;
   final Color? color;
-  const ToolbarIconBtn({
+  const ToolbarIconBtn({super.key, 
     required this.icon,
     required this.tooltip,
     required this.onTap,

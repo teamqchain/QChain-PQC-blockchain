@@ -8,7 +8,7 @@ class Label extends StatelessWidget {
   final String? counter;
   final bool counterExceeded;
 
-  const Label({
+  const Label({super.key, 
     required this.text,
     this.required = false,
     this.counter,

@@ -11,7 +11,7 @@ class QSearchBar extends StatelessWidget {
   final searchLabel;
   final Color? activeColor;
 
-  const QSearchBar({
+  const QSearchBar({super.key, 
     required this.controller,
     required this.query,
     required this.onChanged,

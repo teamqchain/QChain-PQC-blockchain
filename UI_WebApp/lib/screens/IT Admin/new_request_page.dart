@@ -28,7 +28,7 @@ import 'package:get/get_connect/http/src/utils/utils.dart';
 import 'package:qportal_webapp/components/stepper.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -160,11 +160,12 @@ class _RequestNewCapabilityPageState extends State<RequestNewCapabilityPage> {
   Future<void> _submit() async {
     setState(() => _submitting = true);
     await Future.delayed(const Duration(milliseconds: 1800));
-    if (mounted)
+    if (mounted) {
       setState(() {
         _submitting = false;
         _submitted = true;
       });
+    }
   }
 
   // ─── BUILD ─────────────────────────────────────────────────────────────────

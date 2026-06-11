@@ -19,12 +19,10 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:qportal_webapp/models/issuing_models.dart';
 import 'package:qportal_webapp/models/verifiying_models.dart';
-import 'package:qportal_webapp/screens/verifier/verification_details_page.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  PAGE
@@ -340,7 +338,7 @@ class _ValidBody extends StatelessWidget {
         _Row('Credential ID', c.id),
         _Row('Holder Name', c.holderName),
         _Row('Holder ID', c.holderId),
-        IssuedByRow(org: c.issuerOrg,),
+        // IssuedByRow(org: c.issuerOrg,),
         _Row('Issue Date', c.issueDate),
         _Row('Expiry Date', c.expiryDate ?? 'No expiry'),
 

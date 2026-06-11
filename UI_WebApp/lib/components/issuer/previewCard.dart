@@ -11,7 +11,7 @@ class CredentialPreviewCard extends StatelessWidget {
   final String orgName;
   final String issuerName;
 
-  const CredentialPreviewCard({
+  const CredentialPreviewCard({super.key, 
     required this.schema,
     required this.holder,
     required this.fieldValues,

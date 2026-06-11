@@ -1,28 +1,18 @@
 // screens/verifier/scan_to_validate_page.dart
-//
-// Scan to Validate — verifier scans a QR code via a connected hardware scanner.
-//
-// ── Integration in app_shell.dart ───────────────────────────────────────────
-//   import 'package:qportal_webapp/screens/verifier/scan_to_validate_page.dart';
-//
-//   case RouteName.scanQR:
-//     return ScanToValidatePage(
-//       onBack: () => _handleNavigate(RouteName.dashboard),
-//     );
 
 import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
+import 'package:qportal_webapp/services/api_service.dart';
+import 'package:qportal_webapp/models/verifiying_models.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  SCAN STATE
 // ═════════════════════════════════════════════════════════════════════════════
 
-enum _ScanState {
-  idle, // waiting for scanner input
-  failed, // scan was attempted but failed
-}
+enum _ScanState { scanning, processing, failed }
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  PAGE
@@ -30,9 +20,14 @@ enum _ScanState {
 
 class ScanToValidatePage extends StatefulWidget {
   final VoidCallback onBack;
-  final VoidCallback? onScanSuccess;
+  // UPDATED: Now accepts the actual verification result from the API
+  final Function(VerificationResult)? onScanSuccess;
 
-  const ScanToValidatePage({super.key, required this.onBack, this.onScanSuccess});
+  const ScanToValidatePage({
+    super.key,
+    required this.onBack,
+    this.onScanSuccess,
+  });
 
   @override
   State<ScanToValidatePage> createState() => _ScanToValidatePageState();
@@ -40,32 +35,97 @@ class ScanToValidatePage extends StatefulWidget {
 
 class _ScanToValidatePageState extends State<ScanToValidatePage>
     with SingleTickerProviderStateMixin {
-  _ScanState _state = _ScanState.idle;
+  _ScanState _state = _ScanState.scanning;
+  String _errorMessage = 'Scanning failed. Try again.'; // Dynamic error message
 
-  // Pulse animation for the idle scanning indicator
+  late final MobileScannerController _cameraController;
   late final AnimationController _pulseCtrl;
   late final Animation<double> _pulseAnim;
 
   @override
   void initState() {
     super.initState();
+    _cameraController = MobileScannerController(
+      formats: const [BarcodeFormat.qrCode],
+      detectionSpeed: DetectionSpeed.noDuplicates,
+    );
+
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     )..repeat(reverse: true);
+
     _pulseAnim = Tween<double>(
       begin: 0.1,
       end: 0.75,
     ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
   }
 
-  void _resetToIdle() => setState(() => _state = _ScanState.idle);
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    _cameraController.dispose();
+    super.dispose();
+  }
 
-  // ── For development / demo only — simulates a failed scan ─────────────────
-  void _simulateFail() => setState(() => _state = _ScanState.failed);
+  void _resetToScanning() {
+    setState(() {
+      _state = _ScanState.scanning;
+      _errorMessage = 'Scanning failed. Try again.';
+    });
+    _cameraController.start();
+  }
 
-  // ── For development / demo only — simulates a successful scan ─────────────
-  void _simulateSuccess() => widget.onScanSuccess?.call();
+  // ─── LIVE API QR DETECTION LOGIC ───────────────────────────────────────────
+
+  void _handleDetect(BarcodeCapture capture) async {
+    if (_state != _ScanState.scanning) return;
+
+    final List<Barcode> barcodes = capture.barcodes;
+    if (barcodes.isNotEmpty && barcodes.first.rawValue != null) {
+      final String code = barcodes.first.rawValue!;
+
+      // 1. Pause the camera immediately
+      _cameraController.stop();
+
+      // 2. Show the loading spinner
+      setState(() => _state = _ScanState.processing);
+
+      try {
+        // 3. Hit the backend
+        final result = await ApiService.resolveSession(code);
+
+        // 4. Pass the result up to the shell
+        if (mounted) {
+          widget.onScanSuccess?.call(result);
+        }
+      } catch (e) {
+        debugPrint("QR Resolution Error: $e");
+        if (mounted) {
+          setState(() {
+            _state = _ScanState.failed;
+            // Clean up the error message for the UI
+            _errorMessage = e.toString().replaceAll('Exception: ', '');
+          });
+        }
+      }
+    }
+  }
+
+  // ── For development / demo only — simulates API outcomes ─────────────────
+  void _simulateFail() {
+    _cameraController.stop();
+    setState(() {
+      _state = _ScanState.failed;
+      _errorMessage = 'Simulated failure triggered.';
+    });
+  }
+
+  void _simulateSuccess() {
+    _cameraController.stop();
+    // Simulate passing a valid credential to bypass the API for local Mac testing
+    widget.onScanSuccess?.call(VerifyingMockData.valid());
+  }
 
   // ─── BUILD ─────────────────────────────────────────────────────────────────
 
@@ -76,7 +136,6 @@ class _ScanToValidatePageState extends State<ScanToValidatePage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Page title
           Text(
             'Scan to Validate',
             style: AppTextStyles.navLabelActive.copyWith(
@@ -85,8 +144,6 @@ class _ScanToValidatePageState extends State<ScanToValidatePage>
             ),
           ),
           const SizedBox(height: 18),
-
-          // Main container
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -97,16 +154,12 @@ class _ScanToValidatePageState extends State<ScanToValidatePage>
               child: Center(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 250),
-                  child: _state == _ScanState.failed
-                      ? _buildFailed()
-                      : _buildIdle(),
+                  child: _buildStateContent(),
                 ),
               ),
             ),
           ),
           const SizedBox(height: 16),
-
-          // Action buttons
           Row(
             children: [
               AppButton(
@@ -122,7 +175,7 @@ class _ScanToValidatePageState extends State<ScanToValidatePage>
                   label: 'Try Again',
                   backgroundColor: AppColors.verifyingAccent,
                   icon: Icons.refresh_rounded,
-                  onTap: _resetToIdle,
+                  onTap: _resetToScanning,
                 ),
               ],
             ],
@@ -132,80 +185,103 @@ class _ScanToValidatePageState extends State<ScanToValidatePage>
     );
   }
 
-  // ─── IDLE STATE ────────────────────────────────────────────────────────────
+  Widget _buildStateContent() {
+    switch (_state) {
+      case _ScanState.scanning:
+        return _buildScanning();
+      case _ScanState.processing:
+        return _buildProcessing();
+      case _ScanState.failed:
+        return _buildFailed();
+    }
+  }
 
-  Widget _buildIdle() {
+  Widget _buildScanning() {
     return KeyedSubtree(
-      key: const ValueKey('idle'),
+      key: const ValueKey('scanning'),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Dotted scan area
-          _DottedScanArea(pulseAnim: _pulseAnim),
+          _DottedScanArea(
+            pulseAnim: _pulseAnim,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: MobileScanner(
+                controller: _cameraController,
+                onDetect: _handleDetect,
+                errorBuilder: (context, error) {
+                  return Center(
+                    child: Icon(
+                      Icons.videocam_off,
+                      color: AppColors.textDim.withOpacity(0.5),
+                      size: 40,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
           const SizedBox(height: 28),
-
-          // Status text
           Text(
-            'Waiting for hardware scanner…',
+            'Align QR code within the frame',
             style: AppTextStyles.bodyTiny.copyWith(
               fontSize: 12,
               color: AppColors.textDim,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Connect your QR scanner device and scan a credential QR code.',
-            style: AppTextStyles.bodyTiny.copyWith(
-              fontSize: 11,
-              color: AppColors.textDim.withOpacity(0.7),
+          const SizedBox(height: 16),
+          InkWell(
+            onTap: () => _cameraController.switchCamera(),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.cameraswitch_rounded,
+                    size: 16,
+                    color: AppColors.verifyingAccent,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Switch Camera',
+                    style: AppTextStyles.bodyTiny.copyWith(
+                      fontSize: 12,
+                      color: AppColors.verifyingAccent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            textAlign: TextAlign.center,
           ),
-
-          // Dev-only: simulate buttons (small, dimmed)
-          const SizedBox(height: 32),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: GestureDetector(
-                  onTap: _simulateSuccess,
-                  child: Text(
-                    'Simulate successful scan',
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 10,
-                      color: AppColors.verifyingAccent.withOpacity(0.4),
-                      decoration: TextDecoration.underline,
-                      decorationColor: AppColors.verifyingAccent.withOpacity(0.3),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: GestureDetector(
-                  onTap: _simulateFail,
-                  child: Text(
-                    'Simulate scan failure',
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 10,
-                      color: AppColors.textDim.withOpacity(0.4),
-                      decoration: TextDecoration.underline,
-                      decorationColor: AppColors.textDim.withOpacity(0.3),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+          const SizedBox(height: 24),
+          _buildSimulateButtons(),
         ],
       ),
     );
   }
 
-  // ─── FAILED STATE ──────────────────────────────────────────────────────────
+  Widget _buildProcessing() {
+    return KeyedSubtree(
+      key: const ValueKey('processing'),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(color: AppColors.verifyingAccent),
+          const SizedBox(height: 24),
+          Text(
+            'Resolving session securely...',
+            style: AppTextStyles.bodyTiny.copyWith(
+              fontSize: 13,
+              color: AppColors.textDim,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildFailed() {
     return KeyedSubtree(
@@ -213,11 +289,18 @@ class _ScanToValidatePageState extends State<ScanToValidatePage>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Dotted area — error variant
-          _DottedScanArea(failed: true, pulseAnim: _pulseAnim),
+          _DottedScanArea(
+            failed: true,
+            pulseAnim: _pulseAnim,
+            child: Center(
+              child: Icon(
+                Icons.qr_code_2_rounded,
+                size: 64,
+                color: AppColors.revoked.withOpacity(0.45),
+              ),
+            ),
+          ),
           const SizedBox(height: 28),
-
-          // Error message
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -228,7 +311,7 @@ class _ScanToValidatePageState extends State<ScanToValidatePage>
               ),
               const SizedBox(width: 8),
               Text(
-                'Scanning failed. Try again.',
+                _errorMessage, // Display the exact error from the backend
                 style: AppTextStyles.bodyTiny.copyWith(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -237,24 +320,48 @@ class _ScanToValidatePageState extends State<ScanToValidatePage>
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Make sure the QR code is clearly visible and the scanner is connected.',
-            style: AppTextStyles.bodyTiny.copyWith(
-              fontSize: 11,
-              color: AppColors.textDim,
-            ),
-            textAlign: TextAlign.center,
-          ),
         ],
       ),
     );
   }
 
-  @override
-  void dispose() {
-    _pulseCtrl.dispose();
-    super.dispose();
+  Widget _buildSimulateButtons() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: _simulateSuccess,
+            child: Text(
+              'Simulate successful scan',
+              style: AppTextStyles.bodyTiny.copyWith(
+                fontSize: 10,
+                color: AppColors.verifyingAccent.withOpacity(0.4),
+                decoration: TextDecoration.underline,
+                decorationColor: AppColors.verifyingAccent.withOpacity(0.3),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: _simulateFail,
+            child: Text(
+              'Simulate scan failure',
+              style: AppTextStyles.bodyTiny.copyWith(
+                fontSize: 10,
+                color: AppColors.textDim.withOpacity(0.4),
+                decoration: TextDecoration.underline,
+                decorationColor: AppColors.textDim.withOpacity(0.3),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -265,8 +372,13 @@ class _ScanToValidatePageState extends State<ScanToValidatePage>
 class _DottedScanArea extends StatelessWidget {
   final bool failed;
   final Animation<double> pulseAnim;
+  final Widget child;
 
-  const _DottedScanArea({this.failed = false, required this.pulseAnim});
+  const _DottedScanArea({
+    this.failed = false,
+    required this.pulseAnim,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -277,65 +389,33 @@ class _DottedScanArea extends StatelessWidget {
       child: SizedBox(
         width: 260,
         height: 260,
-        child: Center(
-          child: failed
-              ? _buildFailedContent(accent)
-              : _buildIdleContent(accent),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildIdleContent(Color accent) {
-    return AnimatedBuilder(
-      animation: pulseAnim,
-      builder: (_, child) => Opacity(opacity: pulseAnim.value, child: child),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.qr_code_scanner_rounded,
-            size: 64,
-            color: AppColors.verifyingAccent,
-          ),
-          const SizedBox(height: 14),
-          Text(
-            'Scan to Validate',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: AppColors.verifyingAccent,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned.fill(
+              child: Padding(padding: const EdgeInsets.all(4.0), child: child),
             ),
-          ),
-        ],
+            if (!failed)
+              AnimatedBuilder(
+                animation: pulseAnim,
+                builder: (_, child) =>
+                    Opacity(opacity: pulseAnim.value, child: child),
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: AppColors.verifyingAccent.withOpacity(0.5),
+                      width: 2,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
-    );
-  }
-
-  Widget _buildFailedContent(Color accent) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          Icons.qr_code_2_rounded,
-          size: 64,
-          color: accent.withOpacity(0.45),
-        ),
-        const SizedBox(height: 14),
-        Text(
-          'Scan to Validate',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: accent.withOpacity(0.55),
-          ),
-        ),
-      ],
     );
   }
 }
-
-// ─── DOTTED BORDER PAINTER ────────────────────────────────────────────────────
 
 class _DottedBorderPainter extends CustomPainter {
   final Color color;
@@ -351,14 +431,13 @@ class _DottedBorderPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
-    const double dot = 8; // near-zero dash → perfect circle
+    const double dot = 8;
     const double gap = 8;
-    const double r = 14.0; // corner radius
+    const double r = 14.0;
 
     final rect = Rect.fromLTWH(0, 0, size.width, size.height);
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(r));
 
-    // Draw full dotted rounded-rect outline
     _drawDashedRRect(canvas, paint, rrect, dot, gap);
   }
 

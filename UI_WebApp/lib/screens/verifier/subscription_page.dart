@@ -1,33 +1,14 @@
 // screens/verifier/subscription_page.dart
-//
-// Subscriptions — monitor credentials over time and receive alerts on
-// status changes.
-//
-// Layout contract (matches all_credentials_page.dart):
-//   Padding → Column
-//     Title (fixed)
-//     Expanded table container (toolbar → header → rows)
-//     Pagination bar (fixed)
-//     Action bar (fixed)
-//
-// ── Integration in app_shell.dart ───────────────────────────────────────────
-//   case RouteName.subscription:
-//     return SubscriptionPage(
-//       onBack:  () => _handleNavigate(RouteName.dashboard),
-//       onAlert: (id) => _handleNavigate(RouteName.subscriptionAlert, arg: id),
-//     );
-
 import 'package:flutter/material.dart';
+import 'package:qportal_webapp/services/api_service.dart';
 import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
-import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/components/connection_error.dart';
 import 'package:qportal_webapp/models/verifiying_models.dart';
 import 'package:qportal_webapp/screens/verifier/add_subscription_dialog.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
-
-// ─── SUBSCRIPTION STATUS ENUM ────────────────────────────────────────────────
+import 'package:qportal_webapp/components/appButton.dart';
 
 enum SubStatus { active, pending, unsubscribed, rejected, expired }
 
@@ -52,7 +33,7 @@ extension SubStatusX on SubStatus {
       case SubStatus.active:
         return AppColors.valid;
       case SubStatus.pending:
-        return const Color(0xFF60A5FA); // blue
+        return const Color(0xFF60A5FA);
       case SubStatus.unsubscribed:
         return AppColors.textMuted;
       case SubStatus.rejected:
@@ -62,14 +43,6 @@ extension SubStatusX on SubStatus {
     }
   }
 }
-
-// ─── MODEL ───────────────────────────────────────────────────────────────────
-
-
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  PAGE
-// ═════════════════════════════════════════════════════════════════════════════
 
 class SubscriptionPage extends StatefulWidget {
   final VoidCallback onBack;
@@ -82,26 +55,47 @@ class SubscriptionPage extends StatefulWidget {
 }
 
 class _SubscriptionPageState extends State<SubscriptionPage> {
-  // ── data ──────────────────────────────────────────────────────────────────
-  late List<SubscriptionRecord> _allRows;
-  late List<SubscriptionRecord> _filtered;
-
-  // ── single selection ──────────────────────────────────────────────────────
+  List<SubscriptionRecord> _allRows = [];
+  List<SubscriptionRecord> _filtered = [];
+  bool _isLoading = true;
+  String? _errorMessage; // Tracks connection errors
   String? _selectedId;
-
-  // ── search ────────────────────────────────────────────────────────────────
   String _query = '';
   final _searchCtrl = TextEditingController();
-
-  // ── pagination ────────────────────────────────────────────────────────────
   int _rowsPerPage = 25;
   int _currentPage = 1;
 
   @override
   void initState() {
     super.initState();
-    _allRows = List.from(kMockSubscriptions);
-    _applyFilter();
+    _fetchData();
+  }
+
+  Future<void> _fetchData() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null; // reset on retry
+    });
+
+    try {
+      final data = await ApiService.getSubscriptions();
+      if (mounted) {
+        setState(() {
+          _allRows = data;
+          _applyFilter();
+          _isLoading = false;
+          _selectedId = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage =
+              'Connection Error: Unable to reach the server to fetch subscriptions.';
+        });
+      }
+    }
   }
 
   void _applyFilter() {
@@ -121,13 +115,14 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   }
 
   List<SubscriptionRecord> get _pageRows {
+    if (_filtered.isEmpty) return [];
     final start = (_currentPage - 1) * _rowsPerPage;
     final end = (start + _rowsPerPage).clamp(0, _filtered.length);
     return _filtered.sublist(start, end);
   }
 
   int get _totalPages {
-    if (_rowsPerPage <= 0) return 1;
+    if (_rowsPerPage <= 0 || _filtered.isEmpty) return 1;
     return (_filtered.length / _rowsPerPage).ceil().clamp(1, 99999);
   }
 
@@ -147,11 +142,8 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
       ? null
       : _allRows.where((r) => r.id == _selectedId).firstOrNull;
 
-  // ── Button enablement logic ───────────────────────────────────────────────
-
   bool get _deleteEnabled => _sel?.status == SubStatus.pending;
   bool get _unsubscribeEnabled => _sel?.status == SubStatus.active;
-  bool get _alertEnabled => _sel != null;
 
   String? get _deleteTooltip {
     if (_sel == null) return 'Select a pending request to delete';
@@ -169,23 +161,21 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     return null;
   }
 
-  String? get _alertTooltip =>
-      _sel == null ? 'Select a subscription to manage alerts' : null;
-
-  // ── Actions ───────────────────────────────────────────────────────────────
-
   void _onDelete() {
     final record = _sel!;
     showDialog(
       context: context,
       builder: (_) => _DeleteDialog(
         holderName: record.holderName,
-        onConfirm: () {
-          setState(() {
-            _allRows.removeWhere((r) => r.id == record.id);
-            _selectedId = null;
-            _applyFilter();
-          });
+        onConfirm: () async {
+          try {
+            final success = await ApiService.deleteSubscription(record.id);
+            if (success) _fetchData();
+          } catch (e) {
+            _showErrorSnackbar(
+              'Connection Error: Failed to delete subscription.',
+            );
+          }
         },
       ),
     );
@@ -198,30 +188,27 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
       builder: (_) => _UnsubscribeDialog(
         holderName: record.holderName,
         credentialType: record.credentialType,
-        onConfirm: () {
-          setState(() {
-            final idx = _allRows.indexWhere((r) => r.id == record.id);
-            if (idx != -1) {
-              _allRows[idx] = SubscriptionRecord(
-                id: record.id,
-                holderName: record.holderName,
-                holderId: record.holderId,
-                credentialType: record.credentialType,
-                issuer: record.issuer,
-                subscribedDate: record.subscribedDate,
-                expiryDate: record.expiryDate,
-                status: SubStatus.unsubscribed,
-              );
-            }
-            _selectedId = null;
-            _applyFilter();
-          });
+        onConfirm: () async {
+          try {
+            final success = await ApiService.unsubscribe(record.id);
+            if (success) _fetchData();
+          } catch (e) {
+            _showErrorSnackbar('Connection Error: Failed to unsubscribe.');
+          }
         },
       ),
     );
   }
 
-  // ─── BUILD ────────────────────────────────────────────────────────────────
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.revoked,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -254,13 +241,11 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                   _buildToolbar(),
                   Container(height: 1, color: AppColors.border),
                   _buildHeader(),
-                  // SizedBox(height: 3,),
                   Expanded(child: _buildList()),
                 ],
               ),
             ),
           ),
-
           const SizedBox(height: 14),
 
           // ── Pagination ───────────────────────────────────────────────────
@@ -308,7 +293,6 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
               ),
             ),
           ),
-
           const Spacer(),
 
           // Filter icon
@@ -348,7 +332,10 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
             hoverColor: AppColors.verifyingAccent.withOpacity(0.82),
             onTap: () => showDialog(
               context: context,
-              builder: (_) => AddNewSubscriptionDialog(overlayContext: context),
+              builder: (_) => AddNewSubscriptionDialog(
+                overlayContext: context,
+                onSubscriptionRequested: _fetchData,
+              ),
             ),
           ),
         ],
@@ -362,25 +349,14 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
       child: Row(
         children: [
-          // SizedBox(
-          //   width: 32,
-          //   child: Checkbox(
-          //     value: selectAll,
-          //     tristate: true,
-          //     onChanged: onToggleAll,
-          //     activeColor: AppColors.verifyingAccent,
-          //     side: const BorderSide(color: AppColors.textMuted),
-          //     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          //   ),
-          // ),
-          SizedBox(width: 14,),
-          _th('HOLDER NAME',     flex: 3),
-          _th('HOLDER ID',       flex: 3),
+          const SizedBox(width: 14),
+          _th('HOLDER NAME', flex: 3),
+          _th('HOLDER ID', flex: 3),
           _th('CREDENTIAL TYPE', flex: 4),
-          _th('ISSUER',          flex: 3),
+          _th('ISSUER', flex: 3),
           _th('SUB. DATE', flex: 2),
-          _th('EXPIRY DATE',     flex: 2),
-          _th('STATUS',          flex: 2),
+          _th('EXPIRY DATE', flex: 2),
+          _th('STATUS', flex: 2),
         ],
       ),
     );
@@ -399,12 +375,23 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     ),
   );
 
-
-  
-
-  // ─── LIST ─────────────────────────────────────────────────────────────────
-
   Widget _buildList() {
+    // 1. Connection Error State
+    if (_errorMessage != null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 80.0),
+        child: ConnectionErrorWidget(onRetry: _fetchData),
+      );
+    }
+
+    // 2. Loading State
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.verifyingAccent),
+      );
+    }
+
+    // 3. Empty State
     if (_filtered.isEmpty) {
       return Center(
         child: Column(
@@ -432,6 +419,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
       );
     }
 
+    // 4. Data State
     return ListView.separated(
       padding: const EdgeInsets.symmetric(vertical: 6),
       itemCount: _pageRows.length,
@@ -512,30 +500,6 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
           tooltip: _unsubscribeTooltip,
           onTap: _onUnsubscribe,
         ),
-        // const SizedBox(width: 10),
-
-        // Alert
-        // AppButton(
-        //   icon: Icons.notifications_active_outlined,
-        //   label: 'Alert',
-        //   backgroundColor: _alertEnabled
-        //       ? AppColors.verifyingAccent
-        //       : Colors.transparent,
-        //   hoverColor: _alertEnabled
-        //       ? AppColors.verifyingAccent.withOpacity(0.82)
-        //       : Colors.transparent,
-        //   showBorder: !_alertEnabled,
-        //   borderColor: AppColors.border,
-        //   disabledBorderColor: AppColors.border,
-        //   textColor: _alertEnabled ? AppColors.white : AppColors.textDim,
-        //   iconColor: _alertEnabled ? AppColors.white : AppColors.textDim,
-        //   disabledBackgroundColor: AppColors.verifyingAccent.withOpacity(0.28),
-        //   enabled: _alertEnabled,
-        //   tooltip: _alertTooltip,
-        //   onTap: () => widget.onAlert?.call(_selectedId!),
-        // ),
-
-        // Selection hint
         if (sel != null) ...[
           const SizedBox(width: 16),
           Container(width: 1, height: 18, color: AppColors.border),
@@ -567,6 +531,9 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     super.dispose();
   }
 }
+
+// ... existing _SubRow, _StatusBadge, _DeleteDialog, _UnsubscribeDialog, _PaginationBar code remains ...
+// Add these below the SubscriptionPage definition like in the original file.
 
 // ─── LIST ROW ─────────────────────────────────────────────────────────────────
 
@@ -1110,7 +1077,9 @@ class _PaginationBar extends StatelessWidget {
     if (currentPage > 4) result.add(null);
     final start = (currentPage - 2).clamp(2, totalPages - 1);
     final end = (currentPage + 2).clamp(2, totalPages - 1);
-    for (int i = start; i <= end; i++) result.add(i);
+    for (int i = start; i <= end; i++) {
+      result.add(i);
+    }
     if (currentPage < totalPages - 3) result.add(null);
     result.add(totalPages);
     return result;
@@ -1127,9 +1096,9 @@ class _PaginationBar extends StatelessWidget {
         Row(
           children: [
             _PageBtn(
-              child: const Icon(Icons.chevron_left, size: 16),
               enabled: currentPage > 1,
               onTap: () => onPageChanged(currentPage - 1),
+              child: const Icon(Icons.chevron_left, size: 16),
             ),
             const SizedBox(width: 4),
             ..._pageNumbers.map((p) {
@@ -1165,9 +1134,9 @@ class _PaginationBar extends StatelessWidget {
             }),
             const SizedBox(width: 4),
             _PageBtn(
-              child: const Icon(Icons.chevron_right, size: 16),
               enabled: currentPage < totalPages,
               onTap: () => onPageChanged(currentPage + 1),
+              child: const Icon(Icons.chevron_right, size: 16),
             ),
           ],
         ),

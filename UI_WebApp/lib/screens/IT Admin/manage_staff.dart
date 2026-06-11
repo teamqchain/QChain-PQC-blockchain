@@ -1,30 +1,16 @@
 // screens/issuer/manage_staff_page.dart
-//
-// Manage Staff & Permissions
-//
-// Single unified table listing ALL staff — both issuer and verifier — together.
-// A PORTAL column shows a coloured badge (Issuer / Verifier) per row.
-// ROLE column shows the role within that portal.
-//
-// Columns: NAME | EMAIL | PORTAL | ROLE | ADDED | STATUS
-//
-// Add dialog: user picks Issuer or Verifier first, then chooses the role.
-// Edit dialog: role dropdown is scoped to the entry's portal type.
-//
-// ── Integration in app_shell.dart ───────────────────────────────────────────
-//   case RouteName.issuerStaff:
-//     return ManageStaffPage(
-//       onBack: () => _handleNavigate(RouteName.issuingSettings),
-//     );
 
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/components/filterButton.dart';
+import 'package:qportal_webapp/services/api_service.dart'; // Ensure correct path
+import 'package:qportal_webapp/components/countChip.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
+import 'package:qportal_webapp/components/connection_error.dart';
 import 'package:qportal_webapp/models/issuing_models.dart';
 import 'package:qportal_webapp/models/verifiying_models.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -40,14 +26,12 @@ const _kOrgPool = [
 ];
 
 const _kIssuerRolePerms = <IssuerRole, List<String>>{
-  IssuerRole.admin: ['Full issuing access · Manage staff · Settings'],
-  IssuerRole.staff: ['Issue & revoke credentials · No staff access'],
+  IssuerRole.staff: ['Issue & revoke credentials'],
   IssuerRole.schemaManager: ['Manage schemas only · Cannot issue'],
 };
 
 const _kVerifierRolePerms = <VerifierRole, List<String>>{
-  VerifierRole.admin: ['Full verification access · Manage staff · Settings'],
-  VerifierRole.verifier: ['Run verifications · No staff or policy access'],
+  VerifierRole.verifier: ['Run verifications'],
   VerifierRole.policyManager: [
     'Manage policies only · Cannot run verifications',
   ],
@@ -76,7 +60,6 @@ class _StaffEntry {
   String addedDate;
   StaffStatus status;
   _Portal portal;
-  // exactly one of these is non-null
   IssuerRole? issuerRole;
   VerifierRole? verifierRole;
 
@@ -110,25 +93,39 @@ class _StaffEntry {
     return AppColors.textDim;
   }
 
-  _StaffEntry.issuer(StaffMember m)
-    : id = m.id,
-      name = m.name,
-      email = m.email,
-      addedDate = m.addedDate,
-      status = m.status,
-      portal = _Portal.issuer,
-      issuerRole = m.role,
-      verifierRole = null;
+  _StaffEntry.fromLive(LiveStaffRecord r)
+    : id = r.id,
+      name = r.name,
+      email = r.email,
+      addedDate = r.addedDate,
+      status = _parseStatus(r.status),
+      portal = r.portal == PortalType.issuer
+          ? _Portal.issuer
+          : _Portal.verifier,
+      issuerRole = r.portal == PortalType.issuer
+          ? _parseIssuerRole(r.role)
+          : null,
+      verifierRole = r.portal == PortalType.verifier
+          ? _parseVerifierRole(r.role)
+          : null;
 
-  _StaffEntry.verifier(VerifierStaffMember m)
-    : id = m.id,
-      name = m.name,
-      email = m.email,
-      addedDate = m.addedDate,
-      status = m.status,
-      portal = _Portal.verifier,
-      issuerRole = null,
-      verifierRole = m.role;
+  static StaffStatus _parseStatus(String s) {
+    if (s == 'active') return StaffStatus.active;
+    if (s == 'invited') return StaffStatus.invited;
+    return StaffStatus.invited;
+  }
+
+  static IssuerRole _parseIssuerRole(String s) {
+    if (s == 'admin') return IssuerRole.admin;
+    if (s == 'schemaManager') return IssuerRole.schemaManager;
+    return IssuerRole.staff;
+  }
+
+  static VerifierRole _parseVerifierRole(String s) {
+    if (s == 'admin') return VerifierRole.admin;
+    if (s == 'policyManager') return VerifierRole.policyManager;
+    return VerifierRole.verifier;
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -144,14 +141,14 @@ class ManageStaffPage extends StatefulWidget {
 }
 
 class _ManageStaffPageState extends State<ManageStaffPage> {
-  late List<_StaffEntry> _all;
-  late List<_StaffEntry> _filtered;
+  List<_StaffEntry> _all = [];
+  List<_StaffEntry> _filtered = [];
+  bool _isLoading = true;
+  String? _errorMessage;
 
   String _query = '';
   final _searchCtrl = TextEditingController();
   String? _selectedId;
-
-  // ── helpers ───────────────────────────────────────────────────────────────
 
   _StaffEntry? get _sel => _selectedId == null
       ? null
@@ -160,11 +157,33 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
   @override
   void initState() {
     super.initState();
-    _all = [
-      ...IssuingMockData.staff.map(_StaffEntry.issuer),
-      ...kMockVerifierStaff.map(_StaffEntry.verifier),
-    ];
-    _applyFilter();
+    _fetchData();
+  }
+
+  Future<void> _fetchData() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final records = await ApiService.getStaff();
+      if (mounted) {
+        setState(() {
+          _all = records.map((r) => _StaffEntry.fromLive(r)).toList();
+          _isLoading = false;
+          _selectedId = null;
+          _applyFilter();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Connection Error: Unable to fetch staff records.';
+        });
+      }
+    }
   }
 
   void _applyFilter() {
@@ -183,28 +202,6 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
               .toList();
   }
 
-  String _today() {
-    final n = DateTime.now();
-    const m = [
-      '',
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${n.day.toString().padLeft(2, '0')} ${m[n.month]} ${n.year}';
-  }
-
-  // ── toast ─────────────────────────────────────────────────────────────────
-
   void _showToast(String email, _Portal portal) {
     final overlay = Overlay.of(context);
     late OverlayEntry entry;
@@ -218,26 +215,39 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
     overlay.insert(entry);
   }
 
-  // ── add dialog ────────────────────────────────────────────────────────────
+  void _showErrorSnackbar(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.revoked,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
   void _openAdd() {
     showDialog(
       context: context,
       builder: (_) => _AddStaffDialog(
         existingEmails: _all.map((s) => s.email).toList(),
-        onInvite: (entry) {
-          setState(() {
-            _all.add(entry);
-            _applyFilter();
-          });
-          if (mounted) _showToast(entry.email, entry.portal);
+        onInvite: (email, portal, roleStr) async {
+          final success = await ApiService.inviteStaff(
+            email: email,
+            portal: portal == _Portal.issuer
+                ? PortalType.issuer
+                : PortalType.verifier,
+            role: roleStr,
+          );
+          if (success) {
+            _fetchData();
+            if (mounted) _showToast(email, portal);
+          } else {
+            _showErrorSnackbar('Connection Error: Failed to invite staff.');
+          }
         },
-        today: _today(),
       ),
     );
   }
-
-  // ── edit dialog ───────────────────────────────────────────────────────────
 
   void _openEdit() {
     final sel = _sel;
@@ -246,27 +256,36 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
       context: context,
       builder: (_) => _EditStaffDialog(
         entry: sel,
-        onSave: (email, portal, issuerRole, verifierRole) {
-          setState(() {
-            sel.email = email;
-            sel.portal = portal;
-            sel.issuerRole = issuerRole;
-            sel.verifierRole = verifierRole;
-            _applyFilter();
-          });
+        onSave: (portal, roleStr) async {
+          final success = await ApiService.updateStaffRole(
+            id: sel.id,
+            portal: portal == _Portal.issuer
+                ? PortalType.issuer
+                : PortalType.verifier,
+            role: roleStr,
+          );
+          if (success) {
+            _fetchData();
+          } else {
+            _showErrorSnackbar('Connection Error: Failed to update role.');
+          }
         },
-        onDelete: () {
-          setState(() {
-            _all.removeWhere((s) => s.id == sel.id);
-            if (_selectedId == sel.id) _selectedId = null;
-            _applyFilter();
-          });
+        onDelete: () async {
+          final success = await ApiService.deleteStaff(
+            id: sel.id,
+            portal: sel.portal == _Portal.issuer
+                ? PortalType.issuer
+                : PortalType.verifier,
+          );
+          if (success) {
+            _fetchData();
+          } else {
+            _showErrorSnackbar('Connection Error: Failed to remove staff.');
+          }
         },
       ),
     );
   }
-
-  // ── build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -275,7 +294,6 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title row
           Row(
             children: [
               Text(
@@ -286,31 +304,17 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
                 ),
               ),
               const SizedBox(width: 14),
-              // Total count chip
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 3,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.adminGlow,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.adminAccent.withOpacity(0.35)),
-                ),
-                child: Text(
-                  '${_all.length} members',
-                  style: AppTextStyles.bodyTiny.copyWith(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.adminAccent,
-                  ),
-                ),
+              CountChip(
+                count: _all.length,
+                label: 'member',
+                backgroundColor: AppColors.adminGlow,
+                textColor: AppColors.adminAccent,
+                borderColor: AppColors.adminAccent.withOpacity(0.35),
               ),
             ],
           ),
           const SizedBox(height: 18),
 
-          // Main table container
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -330,7 +334,6 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
           ),
           const SizedBox(height: 16),
 
-          // Action bar
           Row(
             children: [
               AppButton(
@@ -350,7 +353,7 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
                 disabledBackgroundColor: AppColors.adminAccent.withOpacity(
                   0.28,
                 ),
-                enabled: _sel != null,
+                enabled: _sel != null && !_isLoading,
                 tooltip: _sel == null ? 'Select a staff member first' : null,
                 onTap: _openEdit,
               ),
@@ -361,8 +364,6 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
     );
   }
 
-  // ── TOOLBAR ───────────────────────────────────────────────────────────────
-
   Widget _buildToolbar() {
     final selCount = _selectedId != null ? 1 : 0;
     return Container(
@@ -370,20 +371,20 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       child: Row(
         children: [
-          // Issuer count chip
-          _PortalChip(
-            label:
-                '${_all.where((s) => s.portal == _Portal.issuer).length} Issuer',
-            color: AppColors.issuingAccent,
-            light: AppColors.issuingLight,
+          CountChip(
+            count: _all.where((s) => s.portal == _Portal.issuer).length,
+            label: 'Issuer',
+            backgroundColor: AppColors.issuingAccent.withOpacity(0.1),
+            textColor: AppColors.issuingAccent,
+            borderColor: AppColors.issuingAccent.withOpacity(0.25),
           ),
           const SizedBox(width: 8),
-          // Verifier count chip
-          _PortalChip(
-            label:
-                '${_all.where((s) => s.portal == _Portal.verifier).length} Verifier',
-            color: AppColors.verifyingAccent,
-            light: AppColors.verifyingLight,
+          CountChip(
+            count: _all.where((s) => s.portal == _Portal.verifier).length,
+            label: 'Verifier',
+            backgroundColor: AppColors.verifyingAccent.withOpacity(0.1),
+            textColor: AppColors.verifyingAccent,
+            borderColor: AppColors.verifyingAccent.withOpacity(0.25),
           ),
 
           const Spacer(),
@@ -400,15 +401,18 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
             const SizedBox(width: 12),
           ],
 
-          // Filter
+          // _IconBtn(
+          //   icon: Icons.filter_list_rounded,
+          //   tooltip: 'Filter',
+          //   onTap: () {},
+          // ),
           ToolbarIconBtn(
             icon: Icons.filter_list_rounded,
-            tooltip: 'Filter',
+            tooltip: "Filter",
             onTap: () {},
           ),
           const SizedBox(width: 10),
 
-          // Search
           QSearchBar(
             controller: _searchCtrl,
             query: _query,
@@ -426,7 +430,6 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
           ),
           const SizedBox(width: 10),
 
-          // Add
           AppButton(
             label: 'Add',
             icon: Icons.person_add_outlined,
@@ -439,12 +442,10 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
     );
   }
 
-  // ── COLUMN HEADER ─────────────────────────────────────────────────────────
-
   Widget _buildColHeader() {
     return Container(
-      decoration:  BoxDecoration(
-        color: AppColors.adminAccent.withOpacity(0.16),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1B2321), // AppColors.adminAccent.withOpacity(0.16)
         border: Border(
           top: BorderSide(color: AppColors.border),
           bottom: BorderSide(color: AppColors.border),
@@ -453,7 +454,7 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          const SizedBox(width: 36), // checkbox
+          const SizedBox(width: 17),
           _CH('NAME', flex: 4),
           _CH('EMAIL', flex: 4),
           _CH('PORTAL', flex: 2),
@@ -467,9 +468,20 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
     );
   }
 
-  // ── ROWS ──────────────────────────────────────────────────────────────────
-
   Widget _buildRows() {
+    if (_errorMessage != null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 80.0),
+        child: ConnectionErrorWidget(onRetry: _fetchData),
+      );
+    }
+
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.adminAccent),
+      );
+    }
+
     if (_filtered.isEmpty) {
       return Center(
         child: Column(
@@ -544,8 +556,6 @@ class _StaffRowState extends State<_StaffRow> {
   @override
   Widget build(BuildContext context) {
     final s = widget.entry;
-    final accent = s.portal.accent;
-    final light = s.portal.light;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -563,57 +573,30 @@ class _StaffRowState extends State<_StaffRow> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
           child: Row(
             children: [
-              // Checkbox
-              SizedBox(
-                width: 36,
-                child: Checkbox(
-                  value: widget.selected,
-                  onChanged: (_) => widget.onTap(),
-                  activeColor: AppColors.adminAccent,
-                  checkColor: Colors.white,
-                  side: const BorderSide(color: AppColors.border, width: 1.5),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                width: 3,
+                height: 36,
+                margin: const EdgeInsets.only(right: 14),
+                decoration: BoxDecoration(
+                  color: widget.selected
+                      ? AppColors.adminAccent
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
 
-              // Name + avatar
+              // Name
               Expanded(
                 flex: 4,
-                child: Row(
-                  children: [
-                    Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: accent.withOpacity(0.12),
-                        border: Border.all(color: accent.withOpacity(0.30)),
-                      ),
-                      child: Center(
-                        child: Text(
-                          s.name.isNotEmpty ? s.name[0].toUpperCase() : '?',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: light,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        s.name,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.text,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  s.name,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.text,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
 
@@ -630,20 +613,36 @@ class _StaffRowState extends State<_StaffRow> {
                 ),
               ),
 
-              // Portal badge
-              Expanded(flex: 2, child: _PortalBadge(portal: s.portal)),
+              // Portal
+              Expanded(
+                flex: 2,
+                child: Text(
+                  s.portal.label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: s.portal.accent,
+                  ),
+                ),
+              ),
 
               const SizedBox(width: 60),
 
-              // Role chip
+              // Role
               Expanded(
                 flex: 3,
-                child: _RoleChip(label: s.roleLabel, color: s.roleColor),
+                child: Text(
+                  s.roleLabel,
+                  style: AppTextStyles.bodyTiny.copyWith(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
 
               const SizedBox(width: 32),
 
-              // Added date
+              // Added
               Expanded(
                 flex: 3,
                 child: Text(
@@ -655,7 +654,7 @@ class _StaffRowState extends State<_StaffRow> {
                 ),
               ),
 
-              // Status badge
+              // Status
               Expanded(flex: 3, child: _StatusBadge(status: s.status)),
             ],
           ),
@@ -666,19 +665,15 @@ class _StaffRowState extends State<_StaffRow> {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  ADD STAFF DIALOG  (pick portal → pick role)
+//  ADD STAFF DIALOG
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _AddStaffDialog extends StatefulWidget {
   final List<String> existingEmails;
-  final void Function(_StaffEntry entry) onInvite;
-  final String today;
+  final Future<void> Function(String email, _Portal portal, String roleStr)
+  onInvite;
 
-  const _AddStaffDialog({
-    required this.existingEmails,
-    required this.onInvite,
-    required this.today,
-  });
+  const _AddStaffDialog({required this.existingEmails, required this.onInvite});
 
   @override
   State<_AddStaffDialog> createState() => _AddStaffDialogState();
@@ -690,8 +685,9 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
   IssuerRole _issuerRole = IssuerRole.staff;
   VerifierRole _verifierRole = VerifierRole.verifier;
   List<String> _suggestions = [];
+  bool _isInviting = false;
 
-  bool get _canInvite => _emailCtrl.text.trim().isNotEmpty;
+  bool get _canInvite => _emailCtrl.text.trim().isNotEmpty && !_isInviting;
 
   void _onEmailChanged(String v) {
     final q = v.trim().toLowerCase();
@@ -714,31 +710,13 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
     setState(() => _suggestions = []);
   }
 
-  void _doInvite() {
-    final email = _emailCtrl.text.trim();
-    final entry = _portal == _Portal.issuer
-        ? _StaffEntry.issuer(
-            StaffMember(
-              id: 'STF-${DateTime.now().millisecondsSinceEpoch}',
-              name: email.split('@').first,
-              email: email,
-              role: _issuerRole,
-              addedDate: widget.today,
-              status: StaffStatus.invited,
-            ),
-          )
-        : _StaffEntry.verifier(
-            VerifierStaffMember(
-              id: 'VST-${DateTime.now().millisecondsSinceEpoch}',
-              name: email.split('@').first,
-              email: email,
-              role: _verifierRole,
-              addedDate: widget.today,
-              status: StaffStatus.invited,
-            ),
-          );
-    widget.onInvite(entry);
-    Navigator.pop(context);
+  void _doInvite() async {
+    setState(() => _isInviting = true);
+    final roleStr = _portal == _Portal.issuer
+        ? _issuerRole.name
+        : _verifierRole.name;
+    await widget.onInvite(_emailCtrl.text.trim(), _portal, roleStr);
+    if (mounted) Navigator.pop(context);
   }
 
   @override
@@ -765,7 +743,6 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
             Row(
               children: [
                 Container(
@@ -793,7 +770,6 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
             ),
             const SizedBox(height: 22),
 
-            // Portal picker
             _DlgLabel('Portal'),
             const SizedBox(height: 8),
             Row(
@@ -805,7 +781,9 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
                     active: _portal == _Portal.issuer,
                     accent: AppColors.issuingAccent,
                     light: AppColors.issuingLight,
-                    onTap: () => setState(() => _portal = _Portal.issuer),
+                    onTap: _isInviting
+                        ? () {}
+                        : () => setState(() => _portal = _Portal.issuer),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -816,14 +794,15 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
                     active: _portal == _Portal.verifier,
                     accent: AppColors.verifyingAccent,
                     light: AppColors.verifyingLight,
-                    onTap: () => setState(() => _portal = _Portal.verifier),
+                    onTap: _isInviting
+                        ? () {}
+                        : () => setState(() => _portal = _Portal.verifier),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
 
-            // Email
             _DlgLabel('Email Address'),
             const SizedBox(height: 6),
             _DlgInput(
@@ -831,8 +810,9 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
               hint: 'staff@organisation.ae',
               accent: _portal.accent,
               onChanged: _onEmailChanged,
+              enabled: !_isInviting,
             ),
-            if (_suggestions.isNotEmpty) ...[
+            if (_suggestions.isNotEmpty && !_isInviting) ...[
               const SizedBox(height: 4),
               Container(
                 decoration: BoxDecoration(
@@ -856,12 +836,12 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
             ],
             const SizedBox(height: 16),
 
-            // Role
             _DlgLabel('Role'),
             const SizedBox(height: 6),
             if (_portal == _Portal.issuer)
               _IssuerRoleDropdown(
                 value: _issuerRole,
+                enabled: !_isInviting,
                 onChanged: (r) {
                   if (r != null) setState(() => _issuerRole = r);
                 },
@@ -869,26 +849,27 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
             else
               _VerifierRoleDropdown(
                 value: _verifierRole,
+                enabled: !_isInviting,
                 onChanged: (r) {
                   if (r != null) setState(() => _verifierRole = r);
                 },
               ),
             const SizedBox(height: 24),
 
-            // Buttons
             Row(
               children: [
                 AppButton(
                   label: 'Cancel',
-                  onTap: () => Navigator.pop(context),
+                  onTap: _isInviting ? () {} : () => Navigator.pop(context),
                   showBorder: true,
                   borderColor: AppColors.border,
                   hoverColor: AppColors.surfaceHover,
+                  enabled: !_isInviting,
                 ),
                 const SizedBox(width: 10),
                 AppButton(
-                  label: 'Invite',
-                  icon: Icons.send_outlined,
+                  label: _isInviting ? 'Inviting...' : 'Invite',
+                  icon: _isInviting ? null : Icons.send_outlined,
                   backgroundColor: AppColors.adminAccent,
                   hoverColor: AppColors.adminAccent.withOpacity(0.82),
                   enabled: _canInvite,
@@ -916,14 +897,8 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
 
 class _EditStaffDialog extends StatefulWidget {
   final _StaffEntry entry;
-  final void Function(
-    String email,
-    _Portal portal,
-    IssuerRole? issuerRole,
-    VerifierRole? verifierRole,
-  )
-  onSave;
-  final VoidCallback onDelete;
+  final Future<void> Function(_Portal portal, String roleStr) onSave;
+  final Future<void> Function() onDelete;
 
   const _EditStaffDialog({
     required this.entry,
@@ -936,22 +911,23 @@ class _EditStaffDialog extends StatefulWidget {
 }
 
 class _EditStaffDialogState extends State<_EditStaffDialog> {
-  late TextEditingController _emailCtrl;
   late _Portal _portal;
   IssuerRole? _issuerRole;
   VerifierRole? _verifierRole;
 
+  bool _isSaving = false;
+  bool _isDeleting = false;
+
   @override
   void initState() {
     super.initState();
-    _emailCtrl = TextEditingController(text: widget.entry.email);
     _portal = widget.entry.portal;
     _issuerRole = widget.entry.issuerRole;
     _verifierRole = widget.entry.verifierRole;
   }
 
   void _onPortalChanged(_Portal p) {
-    if (p == _portal) return;
+    if (p == _portal || _isSaving || _isDeleting) return;
     setState(() {
       _portal = p;
       if (p == _Portal.issuer) {
@@ -969,6 +945,7 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
     final e = widget.entry;
     final accent = _portal.accent;
     final portalChanged = _portal != e.portal;
+    final bool isBusy = _isSaving || _isDeleting;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -992,7 +969,6 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
             Row(
               children: [
                 Container(
@@ -1049,7 +1025,6 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
             ),
             const SizedBox(height: 22),
 
-            // Portal picker
             _DlgLabel('Portal'),
             const SizedBox(height: 8),
             Row(
@@ -1081,10 +1056,17 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
 
             _DlgLabel('Email Address'),
             const SizedBox(height: 6),
-            _DlgInput(
-              controller: _emailCtrl,
-              hint: 'staff@organisation.ae',
-              accent: accent,
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Text(
+                e.email,
+                style: const TextStyle(fontSize: 13, color: AppColors.textDim),
+              ),
             ),
             const SizedBox(height: 16),
 
@@ -1093,6 +1075,7 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
             if (_portal == _Portal.issuer)
               _IssuerRoleDropdown(
                 value: _issuerRole ?? IssuerRole.staff,
+                enabled: !isBusy,
                 onChanged: (r) {
                   if (r != null) setState(() => _issuerRole = r);
                 },
@@ -1100,6 +1083,7 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
             else
               _VerifierRoleDropdown(
                 value: _verifierRole ?? VerifierRole.verifier,
+                enabled: !isBusy,
                 onChanged: (r) {
                   if (r != null) setState(() => _verifierRole = r);
                 },
@@ -1111,38 +1095,41 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
               children: [
                 AppButton(
                   label: 'Cancel',
-                  onTap: () => Navigator.pop(context),
+                  onTap: isBusy ? () {} : () => Navigator.pop(context),
                   showBorder: true,
                   borderColor: AppColors.border,
                   hoverColor: AppColors.surfaceHover,
+                  enabled: !isBusy,
                 ),
                 const SizedBox(width: 8),
                 AppButton(
-                  label: 'Delete',
-                  icon: Icons.delete_outline_rounded,
+                  label: _isDeleting ? 'Deleting...' : 'Delete',
+                  icon: _isDeleting ? null : Icons.delete_outline_rounded,
                   showBorder: true,
                   borderColor: AppColors.revoked,
                   textColor: AppColors.revoked,
                   hoverColor: AppColors.surfaceHover,
-                  onTap: () {
-                    widget.onDelete();
-                    Navigator.pop(context);
+                  enabled: !isBusy,
+                  onTap: () async {
+                    setState(() => _isDeleting = true);
+                    await widget.onDelete();
+                    if (mounted) Navigator.pop(context);
                   },
                 ),
                 const SizedBox(width: 8),
                 AppButton(
-                  label: 'Save',
-                  icon: Icons.check_rounded,
-                  backgroundColor: accent,
-                  hoverColor: accent.withOpacity(0.82),
-                  onTap: () {
-                    widget.onSave(
-                      _emailCtrl.text.trim(),
-                      _portal,
-                      _issuerRole,
-                      _verifierRole,
-                    );
-                    Navigator.pop(context);
+                  label: _isSaving ? 'Saving...' : 'Save',
+                  icon: _isSaving ? null : Icons.check_rounded,
+                  backgroundColor: AppColors.adminAccent,
+                  hoverColor: AppColors.adminAccent.withOpacity(0.82),
+                  enabled: !isBusy,
+                  onTap: () async {
+                    setState(() => _isSaving = true);
+                    final roleStr = _portal == _Portal.issuer
+                        ? _issuerRole!.name
+                        : _verifierRole!.name;
+                    await widget.onSave(_portal, roleStr);
+                    if (mounted) Navigator.pop(context);
                   },
                 ),
               ],
@@ -1152,12 +1139,6 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
       ),
     );
   }
-
-  @override
-  void dispose() {
-    _emailCtrl.dispose();
-    super.dispose();
-  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1166,37 +1147,62 @@ class _EditStaffDialogState extends State<_EditStaffDialog> {
 
 class _IssuerRoleDropdown extends StatelessWidget {
   final IssuerRole value;
+  final bool enabled;
   final void Function(IssuerRole?) onChanged;
-  const _IssuerRoleDropdown({required this.value, required this.onChanged});
+  const _IssuerRoleDropdown({
+    required this.value,
+    this.enabled = true,
+    required this.onChanged,
+  });
 
   @override
-  Widget build(BuildContext context) => _DropdownShell<IssuerRole>(
-    value: value,
-    items: IssuerRole.values,
-    label: (r) => r.label,
-    subtitle: (r) => (_kIssuerRolePerms[r] ?? []).join(),
-    onChanged: onChanged,
-  );
+  Widget build(BuildContext context) {
+    final items = IssuerRole.values
+        .where((r) => r != IssuerRole.admin)
+        .toList();
+    final safeValue = items.contains(value) ? value : IssuerRole.staff;
+    return _DropdownShell<IssuerRole>(
+      value: safeValue,
+      items: items,
+      enabled: enabled,
+      label: (r) => r.label,
+      subtitle: (r) => (_kIssuerRolePerms[r] ?? []).join(),
+      onChanged: onChanged,
+    );
+  }
 }
 
 class _VerifierRoleDropdown extends StatelessWidget {
   final VerifierRole value;
+  final bool enabled;
   final void Function(VerifierRole?) onChanged;
-  const _VerifierRoleDropdown({required this.value, required this.onChanged});
+  const _VerifierRoleDropdown({
+    required this.value,
+    this.enabled = true,
+    required this.onChanged,
+  });
 
   @override
-  Widget build(BuildContext context) => _DropdownShell<VerifierRole>(
-    value: value,
-    items: VerifierRole.values,
-    label: (r) => r.label,
-    subtitle: (r) => (_kVerifierRolePerms[r] ?? []).join(),
-    onChanged: onChanged,
-  );
+  Widget build(BuildContext context) {
+    final items = VerifierRole.values
+        .where((r) => r != VerifierRole.admin)
+        .toList();
+    final safeValue = items.contains(value) ? value : VerifierRole.verifier;
+    return _DropdownShell<VerifierRole>(
+      value: safeValue,
+      items: items,
+      enabled: enabled,
+      label: (r) => r.label,
+      subtitle: (r) => (_kVerifierRolePerms[r] ?? []).join(),
+      onChanged: onChanged,
+    );
+  }
 }
 
 class _DropdownShell<T> extends StatelessWidget {
   final T value;
   final List<T> items;
+  final bool enabled;
   final String Function(T) label;
   final String Function(T) subtitle;
   final void Function(T?) onChanged;
@@ -1204,6 +1210,7 @@ class _DropdownShell<T> extends StatelessWidget {
   const _DropdownShell({
     required this.value,
     required this.items,
+    this.enabled = true,
     required this.label,
     required this.subtitle,
     required this.onChanged,
@@ -1213,7 +1220,7 @@ class _DropdownShell<T> extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12),
     decoration: BoxDecoration(
-      color: AppColors.surfaceHover,
+      color: enabled ? AppColors.surfaceHover : AppColors.surface,
       borderRadius: BorderRadius.circular(7),
       border: Border.all(color: AppColors.border),
     ),
@@ -1222,8 +1229,11 @@ class _DropdownShell<T> extends StatelessWidget {
         value: value,
         isExpanded: true,
         dropdownColor: const Color(0xFF1E1E1E),
-        iconEnabledColor: AppColors.textDim,
-        style: const TextStyle(fontSize: 13, color: AppColors.text),
+        iconEnabledColor: enabled ? AppColors.textDim : AppColors.border,
+        style: TextStyle(
+          fontSize: 13,
+          color: enabled ? AppColors.text : AppColors.textMuted,
+        ),
         items: items
             .map(
               (r) => DropdownMenuItem<T>(
@@ -1235,10 +1245,10 @@ class _DropdownShell<T> extends StatelessWidget {
                   children: [
                     Text(
                       label(r),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: AppColors.text,
+                        color: enabled ? AppColors.text : AppColors.textMuted,
                       ),
                     ),
                     const SizedBox(height: 3),
@@ -1246,7 +1256,7 @@ class _DropdownShell<T> extends StatelessWidget {
                       subtitle(r),
                       style: AppTextStyles.bodyTiny.copyWith(
                         fontSize: 10,
-                        color: AppColors.textDim,
+                        color: enabled ? AppColors.textDim : AppColors.border,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1255,7 +1265,7 @@ class _DropdownShell<T> extends StatelessWidget {
               ),
             )
             .toList(),
-        onChanged: onChanged,
+        onChanged: enabled ? onChanged : null,
       ),
     ),
   );
@@ -1264,8 +1274,6 @@ class _DropdownShell<T> extends StatelessWidget {
 // ═════════════════════════════════════════════════════════════════════════════
 //  SMALL WIDGETS
 // ═════════════════════════════════════════════════════════════════════════════
-
-// ─── PORTAL BADGE ─────────────────────────────────────────────────────────────
 
 class _PortalBadge extends StatelessWidget {
   final _Portal portal;
@@ -1290,35 +1298,6 @@ class _PortalBadge extends StatelessWidget {
     ),
   );
 }
-
-// ─── PORTAL CHIP (toolbar count) ──────────────────────────────────────────────
-
-class _PortalChip extends StatelessWidget {
-  final String label;
-  final Color color;
-  final Color light;
-  const _PortalChip({
-    required this.label,
-    required this.color,
-    required this.light,
-  });
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-    decoration: BoxDecoration(
-      color: color.withOpacity(0.10),
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: color.withOpacity(0.25)),
-    ),
-    child: Text(
-      label,
-      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: light),
-    ),
-  );
-}
-
-// ─── PORTAL PICKER BUTTON (add dialog) ───────────────────────────────────────
 
 class _PortalPickerBtn extends StatefulWidget {
   final String label;
@@ -1394,31 +1373,6 @@ class _PortalPickerBtnState extends State<_PortalPickerBtn> {
   );
 }
 
-// ─── ROLE CHIP ────────────────────────────────────────────────────────────────
-
-class _RoleChip extends StatelessWidget {
-  final String label;
-  final Color color;
-  const _RoleChip({required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    decoration: BoxDecoration(
-      color: color.withOpacity(0.10),
-      borderRadius: BorderRadius.circular(5),
-      border: Border.all(color: color.withOpacity(0.30)),
-    ),
-    child: Text(
-      label,
-      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
-      overflow: TextOverflow.ellipsis,
-    ),
-  );
-}
-
-// ─── STATUS BADGE ─────────────────────────────────────────────────────────────
-
 class _StatusBadge extends StatelessWidget {
   final StaffStatus status;
   const _StatusBadge({required this.status});
@@ -1473,8 +1427,6 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-// ─── DIALOG LABEL ─────────────────────────────────────────────────────────────
-
 class _DlgLabel extends StatelessWidget {
   final String text;
   const _DlgLabel(this.text);
@@ -1491,20 +1443,18 @@ class _DlgLabel extends StatelessWidget {
   );
 }
 
-// ─── DIALOG INPUT ─────────────────────────────────────────────────────────────
-
 class _DlgInput extends StatefulWidget {
   final TextEditingController controller;
   final String hint;
   final Color accent;
-  final int maxLines;
+  final bool enabled;
   final void Function(String)? onChanged;
 
   const _DlgInput({
     required this.controller,
     required this.hint,
     required this.accent,
-    this.maxLines = 1,
+    this.enabled = true,
     this.onChanged,
   });
 
@@ -1521,7 +1471,7 @@ class _DlgInputState extends State<_DlgInput> {
     child: AnimatedContainer(
       duration: const Duration(milliseconds: 160),
       decoration: BoxDecoration(
-        color: AppColors.surfaceHover,
+        color: widget.enabled ? AppColors.surfaceHover : AppColors.surface,
         borderRadius: BorderRadius.circular(7),
         border: Border.all(
           color: _focused ? widget.accent.withOpacity(0.6) : AppColors.border,
@@ -1530,8 +1480,11 @@ class _DlgInputState extends State<_DlgInput> {
       ),
       child: TextField(
         controller: widget.controller,
-        maxLines: widget.maxLines,
-        style: const TextStyle(fontSize: 13, color: AppColors.text),
+        enabled: widget.enabled,
+        style: TextStyle(
+          fontSize: 13,
+          color: widget.enabled ? AppColors.text : AppColors.textDim,
+        ),
         onChanged: widget.onChanged,
         decoration: InputDecoration(
           isDense: true,
@@ -1551,8 +1504,6 @@ class _DlgInputState extends State<_DlgInput> {
   );
 }
 
-// ─── COLUMN HEADER CELL ───────────────────────────────────────────────────────
-
 Widget _CH(String label, {int flex = 1}) => Expanded(
   flex: flex,
   child: Text(
@@ -1566,50 +1517,46 @@ Widget _CH(String label, {int flex = 1}) => Expanded(
   ),
 );
 
-// ─── ICON BUTTON ──────────────────────────────────────────────────────────────
+// class _IconBtn extends StatefulWidget {
+//   final IconData icon;
+//   final String tooltip;
+//   final VoidCallback onTap;
+//   const _IconBtn({
+//     required this.icon,
+//     required this.tooltip,
+//     required this.onTap,
+//   });
+//   @override
+//   State<_IconBtn> createState() => _IconBtnState();
+// }
 
-class _IconBtn extends StatefulWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-  const _IconBtn({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
-  @override
-  State<_IconBtn> createState() => _IconBtnState();
-}
-
-class _IconBtnState extends State<_IconBtn> {
-  bool _h = false;
-  @override
-  Widget build(BuildContext context) => Tooltip(
-    message: widget.tooltip,
-    child: MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _h = true),
-      onExit: (_) => setState(() => _h = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 130),
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: _h ? AppColors.surfaceHover : Colors.transparent,
-            borderRadius: BorderRadius.circular(7),
-            border: Border.all(
-              color: _h ? AppColors.borderLight : AppColors.border,
-            ),
-          ),
-          child: Icon(widget.icon, size: 16, color: AppColors.textMuted),
-        ),
-      ),
-    ),
-  );
-}
-
-// ─── SUGGESTION TILE ──────────────────────────────────────────────────────────
+// class _IconBtnState extends State<_IconBtn> {
+//   bool _h = false;
+//   @override
+//   Widget build(BuildContext context) => Tooltip(
+//     message: widget.tooltip,
+//     child: MouseRegion(
+//       cursor: SystemMouseCursors.click,
+//       onEnter: (_) => setState(() => _h = true),
+//       onExit: (_) => setState(() => _h = false),
+//       child: GestureDetector(
+//         onTap: widget.onTap,
+//         child: AnimatedContainer(
+//           duration: const Duration(milliseconds: 130),
+//           padding: const EdgeInsets.all(8),
+//           decoration: BoxDecoration(
+//             color: _h ? AppColors.surfaceHover : Colors.transparent,
+//             borderRadius: BorderRadius.circular(7),
+//             border: Border.all(
+//               color: _h ? AppColors.borderLight : AppColors.border,
+//             ),
+//           ),
+//           child: Icon(widget.icon, size: 16, color: AppColors.textMuted),
+//         ),
+//       ),
+//     ),
+//   );
+// }
 
 class _SuggestionTile extends StatefulWidget {
   final String email;
@@ -1658,10 +1605,6 @@ class _SuggestionTileState extends State<_SuggestionTile> {
     ),
   );
 }
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  INVITE TOAST
-// ═════════════════════════════════════════════════════════════════════════════
 
 class _InviteToast extends StatefulWidget {
   final String email;
@@ -1747,7 +1690,7 @@ class _InviteToastState extends State<_InviteToast>
                       color: AppColors.adminAccent.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(7),
                     ),
-                    child: Icon(
+                    child: const Icon(
                       Icons.send_rounded,
                       size: 14,
                       color: AppColors.adminAccent,

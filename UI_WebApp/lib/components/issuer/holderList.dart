@@ -6,7 +6,7 @@ class HolderRow extends StatefulWidget {
   final HolderRecord holder;
   final bool isSelected;
   final VoidCallback onToggle;
-  const HolderRow({
+  const HolderRow({super.key, 
     required this.holder,
     required this.isSelected,
     required this.onToggle,
@@ -132,7 +132,7 @@ class HolderRowState extends State<HolderRow> {
 
 class HolderAvatar extends StatelessWidget {
   final HolderRecord holder;
-  const HolderAvatar({required this.holder});
+  const HolderAvatar({super.key, required this.holder});
   @override
   Widget build(BuildContext context) => CircleAvatar(
     radius: 16,
