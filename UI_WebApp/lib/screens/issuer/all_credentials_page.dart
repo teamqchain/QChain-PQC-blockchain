@@ -11,10 +11,13 @@
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
+import 'package:qportal_webapp/components/connection_error.dart';
 import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/screens/issuer/suspend_revoke_page.dart';
 import 'package:qportal_webapp/services/api_service.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
+import 'package:qportal_webapp/components/countChip.dart';
 
 // ─── PAGE ────────────────────────────────────────────────────────────────────
 
@@ -33,6 +36,7 @@ class _AllCredentialsPageState extends State<AllCredentialsPage> {
   List<CredentialRecord> _allRows = [];
   List<CredentialRecord> _filtered = [];
   bool _isLoading = true;
+  bool _hasError = false;
 
   // ── selection ──────────────────────────────────────────────────────────────
   final Set<String> _selected = {}; // credential IDs
@@ -51,7 +55,7 @@ class _AllCredentialsPageState extends State<AllCredentialsPage> {
   // @override
   // void initState() {
   //   super.initState();
-    // _allRows = List<CredentialRecord>.from(IssuingMockData.credentials);
+  // _allRows = List<CredentialRecord>.from(IssuingMockData.credentials);
   //   _applyFilter();
   // }
 
@@ -62,13 +66,25 @@ class _AllCredentialsPageState extends State<AllCredentialsPage> {
   }
 
   Future<void> _loadCredentials() async {
-    final data = await ApiService.getAllCredentials();
-    if (!mounted) return;
     setState(() {
-      _allRows = data;
-      _applyFilter();
-      _isLoading = false;
+      _isLoading = true;
+      _hasError = false;
     });
+    try {
+      final data = await ApiService.getAllCredentials();
+      if (!mounted) return;
+      setState(() {
+        _allRows = data;
+        _applyFilter();
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+      });
+    }
   }
 
   void _applyFilter() {
@@ -164,6 +180,8 @@ class _AllCredentialsPageState extends State<AllCredentialsPage> {
           Expanded(
             child: _CredentialTable(
               isLoading: _isLoading,
+              hasError: _hasError,
+              onRetry: _loadCredentials,
               rows: _pageRows,
               selected: _selected,
               selectAll: _selectAll,
@@ -228,6 +246,8 @@ class _AllCredentialsPageState extends State<AllCredentialsPage> {
 
 class _CredentialTable extends StatelessWidget {
   final bool isLoading;
+  final bool hasError;
+  final VoidCallback onRetry;
   final List<CredentialRecord> rows;
   final Set<String> selected;
   final bool selectAll;
@@ -241,6 +261,8 @@ class _CredentialTable extends StatelessWidget {
 
   const _CredentialTable({
     required this.isLoading,
+    required this.hasError,
+    required this.onRetry,
     required this.rows,
     required this.selected,
     required this.selectAll,
@@ -274,26 +296,32 @@ class _CredentialTable extends StatelessWidget {
 
           // ── Data rows ────────────────────────────────────────────────────
           Expanded(
-            child: isLoading
+            child: hasError
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 80.0),
+                      child: ConnectionErrorWidget(onRetry: onRetry),
+                    ),
+                  )
+                : isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : rows.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No credentials match your search.',
-                          style:
-                              TextStyle(color: AppColors.textDim, fontSize: 12),
-                        ),
-                      )
-                    : ListView.separated(
-                        itemCount: rows.length,
-                        separatorBuilder: (_, __) =>
-                            Container(height: 1, color: AppColors.border),
-                        itemBuilder: (_, i) => _CredentialRow(
-                          record: rows[i],
-                          isSelected: selected.contains(rows[i].id),
-                          onToggle: () => onToggleRow(rows[i].id),
-                        ),
-                      ),
+                ? const Center(
+                    child: Text(
+                      'No credentials match your search.',
+                      style: TextStyle(color: AppColors.textDim, fontSize: 12),
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: rows.length,
+                    separatorBuilder: (_, __) =>
+                        Container(height: 1, color: AppColors.border),
+                    itemBuilder: (_, i) => _CredentialRow(
+                      record: rows[i],
+                      isSelected: selected.contains(rows[i].id),
+                      onToggle: () => onToggleRow(rows[i].id),
+                    ),
+                  ),
           ),
         ],
       ),
@@ -308,19 +336,12 @@ class _CredentialTable extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          // Row count / selection info
-          Expanded(
-            child: Text(
-              selCount > 0
-                  ? '$selCount of $totalFiltered selected'
-                  : '$totalFiltered credentials',
-              style: AppTextStyles.bodyTiny.copyWith(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: selCount > 0 ? AppColors.issuingAccent : Colors.white,
-              ),
-            ),
+          CountChip(
+            count: (selCount > 0) ? selCount : totalFiltered,
+            label: (selCount > 0) ? 'selected' : 'credential',
+            pluralLabel: (selCount > 1) ? 'selected' : 'credential',
           ),
+          const Spacer(),
 
           // Filter icon
           ToolbarIconBtn(
@@ -499,7 +520,7 @@ class _CredentialRowState extends State<_CredentialRow> {
               Expanded(
                 flex: 2,
                 child: Text(
-                  r.issueDate,
+                  formatDateString(r.issueDate),
                   style: AppTextStyles.bodyTiny.copyWith(
                     fontSize: 11,
                     color: AppColors.textDim,
@@ -512,7 +533,7 @@ class _CredentialRowState extends State<_CredentialRow> {
               Expanded(
                 flex: 2,
                 child: Text(
-                  r.expiryDate ?? 'No Expiry',
+                  formatDateString(r.expiryDate ?? 'No Expiry'),
                   style: AppTextStyles.bodyTiny.copyWith(
                     fontSize: 11,
                     color: r.expiryDate != null
@@ -633,7 +654,9 @@ class _PaginationBar extends StatelessWidget {
 
     final start = (currentPage - 2).clamp(2, totalPages - 1);
     final end = (currentPage + 2).clamp(2, totalPages - 1);
-    for (int i = start; i <= end; i++) result.add(i);
+    for (int i = start; i <= end; i++) {
+      result.add(i);
+    }
 
     if (currentPage < totalPages - 3) result.add(null); // right ellipsis
 
@@ -655,9 +678,9 @@ class _PaginationBar extends StatelessWidget {
           children: [
             // Prev arrow
             _PageBtn(
-              child: const Icon(Icons.chevron_left, size: 16),
               enabled: currentPage > 1,
               onTap: () => onPageChanged(currentPage - 1),
+              child: const Icon(Icons.chevron_left, size: 16),
             ),
             const SizedBox(width: 4),
 
@@ -699,9 +722,9 @@ class _PaginationBar extends StatelessWidget {
             const SizedBox(width: 4),
             // Next arrow
             _PageBtn(
-              child: const Icon(Icons.chevron_right, size: 16),
               enabled: currentPage < totalPages,
               onTap: () => onPageChanged(currentPage + 1),
+              child: const Icon(Icons.chevron_right, size: 16),
             ),
           ],
         ),
@@ -1011,5 +1034,3 @@ class _ActionButtonState extends State<_ActionButton> {
 }
 
 // ─── TOOLBAR ICON BUTTON ──────────────────────────────────────────────────────
-
-

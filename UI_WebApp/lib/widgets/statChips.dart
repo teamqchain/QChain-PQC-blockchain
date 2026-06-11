@@ -18,7 +18,8 @@ class StatChipsRow extends StatelessWidget {
         if (variant.canIssue) ...[
           StatChip(
             label: 'Issued Today',
-            value: stats['totalIssued'] ?? 0,
+            // value: stats['totalIssued'] ?? 0,
+            value: stats['issuedToday'] ?? 0,
             accent: AppColors.issuingAccent,
           ),
           StatChip(
@@ -34,7 +35,8 @@ class StatChipsRow extends StatelessWidget {
         ] else if (variant.canVerify) ...[
           StatChip(
             label: 'Verified Today',
-            value: stats['totalVerified'] ?? 0,
+            value: stats['verifiedToday'] ?? 0,
+            // value: stats['totalVerified'] ?? 0,
             accent: AppColors.verifyingAccent,
           ),
           StatChip(

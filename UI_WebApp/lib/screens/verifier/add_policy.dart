@@ -29,7 +29,7 @@ import 'package:qportal_webapp/models/verifiying_models.dart';
 import 'package:qportal_webapp/screens/verifier/policies_page.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
 
 const int _kMaxPolicies = 3;
 

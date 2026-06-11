@@ -23,7 +23,7 @@
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
 
 // ─── MOCK DATA ────────────────────────────────────────────────────────────────
 
@@ -487,7 +487,7 @@ class _LogoUpload extends StatefulWidget {
 }
 
 class _LogoUploadState extends State<_LogoUpload> {
-  bool _dragging = false;
+  final bool _dragging = false;
 
   @override
   Widget build(BuildContext context) {

@@ -20,8 +20,10 @@ import 'package:qportal_webapp/components/searchBar.dart';
 import 'package:qportal_webapp/models/issuing_models.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
 import 'package:qportal_webapp/services/api_service.dart';
+import 'package:qportal_webapp/components/countChip.dart';
+import 'package:qportal_webapp/components/connection_error.dart';
 
 // ─── MOCK CURRENT USER ────────────────────────────────────────────────────────
 
@@ -49,6 +51,19 @@ const _kSuspendReasons = <String>[
   'Other',
 ];
 
+// ─── DATE FORMATTER ───────────────────────────────────────────────────────────
+
+String formatDateString(String dateStr) {
+  if (dateStr.isEmpty) return 'No Expiry';
+  final dt = DateTime.tryParse(dateStr);
+  if (dt == null) return dateStr;
+  const m = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+  return '${dt.day.toString().padLeft(2, '0')} ${m[dt.month - 1]} ${dt.year}';
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 //  PAGE
 // ═════════════════════════════════════════════════════════════════════════════
@@ -68,10 +83,15 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
   List<CredentialRecord> _rows = [];
   List<CredentialRecord> _filtered = [];
   bool _isLoading = true;
+  bool _hasError = false;
 
   String _query = '';
   final _searchCtrl = TextEditingController();
   final Set<String> _selectedIds = {};
+
+  // ── pagination ─────────────────────────────────────────────────────────────
+  int _rowsPerPage = 25;
+  int _currentPage = 1;
 
   // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -89,13 +109,25 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
   }
 
   Future<void> _loadCredentials() async {
-    final data = await ApiService.getAllCredentials();
-    if (!mounted) return;
     setState(() {
-      _rows = data;
-      _applyFilter();
-      _isLoading = false;
+      _isLoading = true;
+      _hasError = false;
     });
+    try {
+      final data = await ApiService.getAllCredentials();
+      if (!mounted) return;
+      setState(() {
+        _rows = data;
+        _applyFilter();
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+      });
+    }
   }
 
   void _applyFilter() {
@@ -109,6 +141,10 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
                 r.issuedBy.toLowerCase().contains(q) ||
                 r.status.label.toLowerCase().contains(q);
           }).toList();
+
+    if (_currentPage > _totalPages) {
+      _currentPage = _totalPages;
+    }
   }
 
   List<CredentialRecord> get _selRecords =>
@@ -128,6 +164,17 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
   bool get _canRestore =>
       _hasSelection && (_selStatus == CredentialStatus.suspended);
 
+  List<CredentialRecord> get _pageRows {
+    final start = (_currentPage - 1) * _rowsPerPage;
+    final end = (start + _rowsPerPage).clamp(0, _filtered.length);
+    return _filtered.sublist(start, end);
+  }
+
+  int get _totalPages =>
+      (_filtered.length / _rowsPerPage).ceil().clamp(1, 99999);
+
+  int get _filteredCount => _filtered.length;
+
   void _toggleSelection(String id) {
     setState(() {
       if (_selectedIds.contains(id)) {
@@ -140,6 +187,21 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
       // Enforce max 10
       if (_selectedIds.length >= 10) return;
       _selectedIds.add(id);
+    });
+  }
+
+  void _goToPage(int page) {
+    if (page < 1 || page > _totalPages) return;
+    setState(() {
+      _currentPage = page;
+    });
+  }
+
+  void _changeRowsPerPage(int rowsPerPage) {
+    setState(() {
+      _rowsPerPage = rowsPerPage;
+      _currentPage = 1;
+      _applyFilter();
     });
   }
 
@@ -354,6 +416,17 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
 
           const SizedBox(height: 16),
 
+          _PaginationBar(
+            currentPage: _currentPage,
+            totalPages: _totalPages,
+            rowsPerPage: _rowsPerPage,
+            totalRows: _filteredCount,
+            onPageChanged: _goToPage,
+            onRowsPerPageChanged: _changeRowsPerPage,
+          ),
+
+          const SizedBox(height: 16),
+
           // ── Action buttons ─────────────────────────────────────────────────
           _buildActionBar(),
         ],
@@ -364,6 +437,7 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
   // ─── TOOLBAR ───────────────────────────────────────────────────────────────
 
   Widget _buildToolbar() {
+    final selCount = _selectedIds.length;
     return Container(
       decoration: const BoxDecoration(
         color: Color(0xFF161616),
@@ -372,6 +446,11 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       child: Row(
         children: [
+          CountChip(
+            count: (selCount > 0) ? selCount : _filteredCount,
+            label: (selCount > 0) ? 'selected' : 'credential',
+            pluralLabel: (selCount > 1) ? 'selected' : 'credential',
+          ),
           // Search
           const Spacer(),
           ToolbarIconBtn(
@@ -418,7 +497,7 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
           _ColHead('CREDENTIAL ID', flex: 3),
           _ColHead('HOLDER NAME', flex: 3),
           _ColHead('CREDENTIAL TYPE', flex: 4),
-          _ColHead('ISSUED BY', flex: 2),
+          _ColHead('ISSUED BY', flex: 3),
           _ColHead('ISSUE DATE', flex: 2),
           _ColHead('EXPIRY DATE', flex: 2),
           _ColHead('STATUS', flex: 2),
@@ -430,9 +509,17 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
   // ─── DATA ROWS ─────────────────────────────────────────────────────────────
 
   Widget _buildRows() {
+    if (_hasError) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 80.0),
+        child: ConnectionErrorWidget(onRetry: _loadCredentials),
+      );
+    }
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
+
+    final pageRows = _pageRows;
 
     if (_filtered.isEmpty) {
       return Center(
@@ -459,12 +546,21 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
       );
     }
 
+    if (pageRows.isEmpty) {
+      return const Center(
+        child: Text(
+          'No credentials on this page.',
+          style: TextStyle(color: AppColors.textDim, fontSize: 12),
+        ),
+      );
+    }
+
     return ListView.separated(
-      itemCount: _filtered.length,
+      itemCount: pageRows.length,
       separatorBuilder: (_, __) =>
           Container(height: 1, color: AppColors.border),
       itemBuilder: (_, i) {
-        final rec = _filtered[i];
+        final rec = pageRows[i];
         // Dim rows whose status differs from the current selection
         final canSelect = _selectedIds.isEmpty || rec.status == _selStatus;
         return _CredRow(
@@ -488,27 +584,27 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         // ── Selection count chip ─────────────────────────────────────────
-        if (count > 0) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.issuingAccent.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: AppColors.issuingAccent.withOpacity(0.35),
-              ),
-            ),
-            child: Text(
-              '$count selected',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: AppColors.issuingAccent,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-        ],
+        // if (count > 0) ...[
+        //   Container(
+        //     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        //     decoration: BoxDecoration(
+        //       color: AppColors.issuingAccent.withOpacity(0.12),
+        //       borderRadius: BorderRadius.circular(6),
+        //       border: Border.all(
+        //         color: AppColors.issuingAccent.withOpacity(0.35),
+        //       ),
+        //     ),
+        //     child: Text(
+        //       '$count selected',
+        //       style: TextStyle(
+        //         fontSize: 11,
+        //         fontWeight: FontWeight.w700,
+        //         color: AppColors.issuingAccent,
+        //       ),
+        //     ),
+        //   ),
+        //   const SizedBox(width: 10),
+        // ],
 
         // ── Revoke ──────────────────────────────────────────────────────────
         AppButton(
@@ -555,7 +651,7 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
           tooltip: !_hasSelection
               ? 'Select a credential first'
               : !_canRestore
-              ? 'Only revoked or suspended credentials can be restored'
+              ? 'Only suspended credentials can be restored'
               : null,
           disabledTextColor: AppColors.textDim,
         ),
@@ -719,7 +815,7 @@ class _CredRowState extends State<_CredRow> {
 
                 // Issued By
                 Expanded(
-                  flex: 2,
+                  flex: 3,
                   child: Text(
                     r.issuedBy,
                     style: AppTextStyles.bodyTiny.copyWith(
@@ -734,7 +830,7 @@ class _CredRowState extends State<_CredRow> {
                 Expanded(
                   flex: 2,
                   child: Text(
-                    r.issueDate,
+                    formatDateString(r.issueDate),
                     style: AppTextStyles.bodyTiny.copyWith(
                       fontSize: 11,
                       color: AppColors.textDim,
@@ -747,7 +843,7 @@ class _CredRowState extends State<_CredRow> {
                 Expanded(
                   flex: 2,
                   child: Text(
-                    r.expiryDate ?? '—',
+                    r.expiryDate != null ? formatDateString(r.expiryDate!) : 'No Expiry',
                     style: AppTextStyles.bodyTiny.copyWith(
                       fontSize: 11,
                       color: r.expiryDate != null
@@ -1789,7 +1885,7 @@ class _CredSummary extends StatelessWidget {
             _row('Credential ID', c.id, mono: true),
             _row('Holder Name', c.holderName),
             _row('Credential Type', c.credentialType),
-            _row('Issue Date', c.issueDate),
+            _row('Issue Date', formatDateString(c.issueDate)),
             _rowWidget('Current Status', _StatusBadge(status: c.status)),
           ],
         ),
@@ -2285,6 +2381,256 @@ class _StatusBadge extends StatelessWidget {
           ),
         ),
       ],
+    ),
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PAGINATION BAR
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _PaginationBar extends StatelessWidget {
+  final int currentPage;
+  final int totalPages;
+  final int rowsPerPage;
+  final int totalRows;
+  final void Function(int) onPageChanged;
+  final void Function(int) onRowsPerPageChanged;
+
+  const _PaginationBar({
+    required this.currentPage,
+    required this.totalPages,
+    required this.rowsPerPage,
+    required this.totalRows,
+    required this.onPageChanged,
+    required this.onRowsPerPageChanged,
+  });
+
+  List<int?> get _pageNumbers {
+    if (totalPages <= 7) return List.generate(totalPages, (i) => i + 1);
+
+    final result = <int?>[];
+    result.add(1);
+
+    if (currentPage > 4) result.add(null);
+
+    final start = (currentPage - 2).clamp(2, totalPages - 1);
+    final end = (currentPage + 2).clamp(2, totalPages - 1);
+    for (int i = start; i <= end; i++) {
+      result.add(i);
+    }
+
+    if (currentPage < totalPages - 3) result.add(null);
+
+    result.add(totalPages);
+    return result;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final start = totalRows == 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
+    final end = (currentPage * rowsPerPage).clamp(0, totalRows);
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _PageBtn(
+              enabled: currentPage > 1,
+              onTap: () => onPageChanged(currentPage - 1),
+              child: const Icon(Icons.chevron_left, size: 16),
+            ),
+            const SizedBox(width: 4),
+            ..._pageNumbers.map((p) {
+              if (p == null) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: Text(
+                    '…',
+                    style: AppTextStyles.bodyTiny.copyWith(
+                      fontSize: 12,
+                      color: AppColors.textDim,
+                    ),
+                  ),
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: _PageBtn(
+                  active: p == currentPage,
+                  child: Text(
+                    '$p',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: p == currentPage
+                          ? FontWeight.w700
+                          : FontWeight.w400,
+                      color: p == currentPage
+                          ? Colors.white
+                          : AppColors.textDim,
+                    ),
+                  ),
+                  onTap: () => onPageChanged(p),
+                ),
+              );
+            }),
+            const SizedBox(width: 4),
+            _PageBtn(
+              enabled: currentPage < totalPages,
+              onTap: () => onPageChanged(currentPage + 1),
+              child: const Icon(Icons.chevron_right, size: 16),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 10),
+
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              totalRows == 0 ? 'No results' : 'Showing $start–$end of $totalRows',
+              style: AppTextStyles.bodyTiny.copyWith(
+                fontSize: 11,
+                color: AppColors.textDim,
+              ),
+            ),
+            const SizedBox(width: 20),
+            Text(
+              'Rows per page:',
+              style: AppTextStyles.bodyTiny.copyWith(
+                fontSize: 11,
+                color: AppColors.textDim,
+              ),
+            ),
+            const SizedBox(width: 8),
+            ...[25, 50, 100].map(
+              (n) => Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: _RowsPerPageChip(
+                  value: n,
+                  selected: n == rowsPerPage,
+                  onTap: () => onRowsPerPageChanged(n),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _PageBtn extends StatefulWidget {
+  final Widget child;
+  final bool active;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _PageBtn({
+    required this.child,
+    required this.onTap,
+    this.active = false,
+    this.enabled = true,
+  });
+
+  @override
+  State<_PageBtn> createState() => _PageBtnState();
+}
+
+class _PageBtnState extends State<_PageBtn> {
+  bool _h = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = widget.active;
+    final isEnabled = widget.enabled;
+
+    return MouseRegion(
+      cursor: isEnabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _h = true),
+      onExit: (_) => setState(() => _h = false),
+      child: GestureDetector(
+        onTap: isEnabled ? widget.onTap : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isActive
+                ? AppColors.issuingAccent
+                : _h && isEnabled
+                    ? AppColors.surfaceHover
+                    : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            border: isActive
+                ? null
+                : Border.all(
+                    color: _h && isEnabled
+                        ? AppColors.border
+                        : Colors.transparent,
+                  ),
+          ),
+          child: Opacity(opacity: isEnabled ? 1.0 : 0.3, child: widget.child),
+        ),
+      ),
+    );
+  }
+}
+
+class _RowsPerPageChip extends StatefulWidget {
+  final int value;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _RowsPerPageChip({
+    required this.value,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  State<_RowsPerPageChip> createState() => _RowsPerPageChipState();
+}
+
+class _RowsPerPageChipState extends State<_RowsPerPageChip> {
+  bool _h = false;
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+    cursor: SystemMouseCursors.click,
+    onEnter: (_) => setState(() => _h = true),
+    onExit: (_) => setState(() => _h = false),
+    child: GestureDetector(
+      onTap: widget.onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: widget.selected
+              ? AppColors.issuingAccent.withOpacity(0.18)
+              : _h
+                  ? AppColors.surfaceHover
+                  : Colors.transparent,
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(
+            color: widget.selected
+                ? AppColors.issuingAccent.withOpacity(0.5)
+                : AppColors.border,
+          ),
+        ),
+        child: Text(
+          '${widget.value}',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: widget.selected ? FontWeight.w700 : FontWeight.w400,
+            color: widget.selected ? AppColors.issuingLight : AppColors.textDim,
+          ),
+        ),
+      ),
     ),
   );
 }

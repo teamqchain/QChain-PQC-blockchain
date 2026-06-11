@@ -1,33 +1,11 @@
-// view/issuing/credential_detail_page.dart
-//
-// Credential Details — full info for one credential selected from the
-// All Credentials table.
-//
-// ── Integration in app_shell.dart ───────────────────────────────────────────
-//
-// Add route constant:
-//   static const credentialDetail = '/issue/credential-detail';
-//
-// In _buildPage():
-//   case RouteName.allCredentials:
-//     return AllCredentialsPage(
-//       onViewCredential: (id) => _handleNavigate(RouteName.credentialDetail),
-//     );
-//
-//   case RouteName.credentialDetail:
-//     final cred = IssuingMockData.credentials.first; // replace with selected
-//     return CredentialDetailPage(
-//       credential: cred,
-//       onClose: () => _handleNavigate(RouteName.allCredentials),
-//       onReissue: (_) => _handleNavigate(RouteName.issueSingle),
-//     );
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/services/api_service.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
+import 'package:qportal_webapp/components/connection_error.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
 // PAGE
@@ -53,8 +31,13 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
   // ── mode flags ──────────────────────────────────────────────────────────
   bool _editing = false;
   bool _dirty = false;
+  bool _saving = false;
   bool _showHistory = false;
-  bool _cryptoExpanded = false;
+
+  // ── detail fetch state ──────────────────────────────────────────────────
+  CredentialRecord? _detailRecord;
+  bool _loadingDetail = true;
+  bool _hasError = false;
 
   // ── controllers for editable fields ─────────────────────────────────────
   late TextEditingController _emailCtrl;
@@ -64,15 +47,44 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
   // ── clipboard toast overlay ──────────────────────────────────────────────
   OverlayEntry? _toastEntry;
 
+  // ── convenience getter: always use the fetched record if available ───────
+  CredentialRecord get _current => _detailRecord ?? widget.credential;
+
+  // ─── INIT ─────────────────────────────────────────────────────────────────
+
   @override
   void initState() {
     super.initState();
     _resetControllers();
+    _fetchDetail();
   }
 
-  void _resetControllers() {
-    final c = widget.credential;
+  Future<void> _fetchDetail() async {
+    setState(() {
+      _loadingDetail = true;
+      _hasError = false;
+    });
+    try {
+      final full = await ApiService.getCredentialDetail(widget.credential.id);
+      if (!mounted) return;
+      setState(() {
+        _detailRecord = full ?? widget.credential;
+        _loadingDetail = false;
+      });
+      _resetControllers();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loadingDetail = false;
+        _hasError = true;
+      });
+    }
+  }
 
+  // ─── CONTROLLERS ──────────────────────────────────────────────────────────
+
+  void _resetControllers() {
+    final c = _current;
     _disposeControllers();
     _emailCtrl = TextEditingController(text: c.holderEmail)
       ..addListener(_checkDirty);
@@ -89,14 +101,14 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
   }
 
   void _checkDirty() {
-    final c = widget.credential;
-
+    final c = _current;
     final changed =
         _emailCtrl.text != c.holderEmail ||
         _expiryCtrl.text != (c.expiryDate ?? '');
-
     if (changed != _dirty) setState(() => _dirty = changed);
   }
+
+  // ─── EDIT ACTIONS ─────────────────────────────────────────────────────────
 
   void _startEdit() => setState(() => _editing = true);
 
@@ -108,16 +120,65 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
     });
   }
 
+  Future<void> _saveEdit() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+
+    final c = _current;
+    final ok = await ApiService.updateCredential(
+      credentialID: c.id,
+      holderEmail: _emailCtrl.text.trim(),
+      expiryDate: _expiryCtrl.text.trim().isEmpty
+          ? null
+          : _expiryCtrl.text.trim(),
+    );
+
+    if (!mounted) return;
+
+    if (ok) {
+      // Mirror the saved values into the local record so the UI stays accurate
+      // without a second network round-trip.
+      _detailRecord = CredentialRecord(
+        id: c.id,
+        holderName: c.holderName,
+        holderEmail: _emailCtrl.text.trim(),
+        holderId: c.holderId,
+        holderEmiratesID: c.holderEmiratesID,
+        credentialType: c.credentialType,
+        issuedBy: c.issuedBy,
+        issueDate: c.issueDate,
+        expiryDate: _expiryCtrl.text.trim().isEmpty
+            ? null
+            : _expiryCtrl.text.trim(),
+        status: c.status,
+        auditTrail: c.auditTrail,
+        attributes: c.attributes,
+      );
+      setState(() {
+        _editing = false;
+        _dirty = false;
+        _saving = false;
+      });
+      _showToast('Changes saved');
+    } else {
+      setState(() => _saving = false);
+      _showToast('Save failed — check connection', success: false);
+    }
+  }
+
+  // ─── CLIPBOARD ────────────────────────────────────────────────────────────
+
   void _copyToClipboard(String value, String label) {
     Clipboard.setData(ClipboardData(text: value));
     _showToast('$label copied');
   }
 
-  void _showToast(String message) {
+  void _showToast(String message, {bool success = true}) {
     _toastEntry?.remove();
     _toastEntry = OverlayEntry(
       builder: (_) => _Toast(
         message: message,
+        success: success,
         onDone: () {
           _toastEntry?.remove();
           _toastEntry = null;
@@ -127,7 +188,7 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
     Overlay.of(context).insert(_toastEntry!);
   }
 
-  // ─── BUILD ─────────────────────────────────────────────────────────────
+  // ─── BUILD ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -146,7 +207,16 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
           const SizedBox(height: 18),
 
           Expanded(
-            child: _showHistory ? _buildHistoryPanel() : _buildDetailCard(),
+            child: _hasError
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 80.0),
+                      child: ConnectionErrorWidget(onRetry: _fetchDetail),
+                    ),
+                  )
+                : _loadingDetail
+                ? _buildLoadingShimmer()
+                : (_showHistory ? _buildHistoryPanel() : _buildDetailCard()),
           ),
 
           const SizedBox(height: 18),
@@ -156,12 +226,35 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
     );
   }
 
+  // ─── LOADING SHIMMER ──────────────────────────────────────────────────────
+
+  Widget _buildLoadingShimmer() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFF111111),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: const Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: AppColors.issuingAccent,
+          ),
+        ),
+      ),
+    );
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // DETAIL CARD
   // ══════════════════════════════════════════════════════════════════════════
 
   Widget _buildDetailCard() {
-    final c = widget.credential;
+    final c = _current;
 
     return Container(
       width: double.infinity,
@@ -277,30 +370,6 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
                 const Expanded(child: SizedBox()),
               ],
             ),
-
-            // if (_editing) ...[
-            //   const SizedBox(height: 10),
-            //   GestureDetector(
-            //     onTap: _cancelEdit,
-            //     child: MouseRegion(
-            //       cursor: SystemMouseCursors.click,
-            //       child: Text(
-            //         'Cancel editing',
-            //         style: TextStyle(
-            //           fontSize: 11,
-            //           color: AppColors.textDim,
-            //           decoration: TextDecoration.underline,
-            //           decorationColor: AppColors.textDim,
-            //         ),
-            //       ),
-            //     ),
-            //   ),
-            // ],
-
-            const SizedBox(height: 24),
-
-            // ── Cryptographic section ──────────────────────────────────
-            _buildCryptoSection(c),
           ],
         ),
       ),
@@ -342,10 +411,7 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
                   ),
                 ),
               ),
-              if (trailing != null) ...[
-                const SizedBox(width: 6),
-                trailing,
-              ],
+              if (trailing != null) ...[const SizedBox(width: 6), trailing],
             ],
           ),
         ),
@@ -391,9 +457,9 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
           child: TextField(
             controller: ctrl,
             enabled: en,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 12,
-              color:  Colors.white ,
+              color: Colors.white,
               fontWeight: FontWeight.w500,
             ),
             decoration: InputDecoration(
@@ -415,247 +481,10 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
     );
   }
 
-  // ─── CRYPTOGRAPHIC SECTION ────────────────────────────────────────────────
-
-  Widget _buildCryptoSection(CredentialRecord c) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceHover,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        children: [
-          // Toggle header
-          GestureDetector(
-            onTap: () => setState(() => _cryptoExpanded = !_cryptoExpanded),
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: AppColors.issuingAccent.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Icon(
-                        Icons.lock_outline_rounded,
-                        size: 14,
-                        color: AppColors.issuingAccent,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Cryptographic Information',
-                            style: AppTextStyles.navLabelActive.copyWith(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          Text(
-                            'Signature, chain anchor, and IPFS reference',
-                            style: AppTextStyles.bodyTiny.copyWith(
-                              fontSize: 10,
-                              color: AppColors.textDim,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        Text(
-                          _cryptoExpanded ? 'Collapse' : 'Expand',
-                          style: AppTextStyles.bodyTiny.copyWith(
-                            fontSize: 10,
-                            color: AppColors.textDim,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        AnimatedRotation(
-                          turns: _cryptoExpanded ? 0.5 : 0,
-                          duration: const Duration(milliseconds: 200),
-                          child: const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            size: 18,
-                            color: AppColors.textDim,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Body
-          AnimatedSize(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeInOut,
-            child: _cryptoExpanded
-                ? Container(
-                    decoration: const BoxDecoration(
-                      border: Border(top: BorderSide(color: AppColors.border)),
-                    ),
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      children: [
-                        // Signing algorithm
-                        _cryptoRow(
-                          icon: Icons.verified_user_outlined,
-                          label: 'Signing Algorithm',
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  c.signingAlgorithm,
-                                  style: AppTextStyles.bodyTiny.copyWith(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                              _QsBadge(),
-                            ],
-                          ),
-                        ),
-                        _cryptoDivider(),
-
-                        // Signature hash
-                        _cryptoRow(
-                          icon: Icons.fingerprint_rounded,
-                          label: 'Signature Hash',
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  c.signatureHash,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.issuingLight,
-                                    fontFamily: 'monospace',
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              _CopyIconBtn(
-                                onTap: () => _copyToClipboard(
-                                  c.signatureHash,
-                                  'Signature hash',
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        _cryptoDivider(),
-
-                        // Blockchain TX
-                        _cryptoRow(
-                          icon: Icons.link_rounded,
-                          label: 'Blockchain TX ID',
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  c.blockchainTxId,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.issuingLight,
-                                    fontFamily: 'monospace',
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              _CopyIconBtn(
-                                onTap: () => _copyToClipboard(
-                                  c.blockchainTxId,
-                                  'Transaction ID',
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        _cryptoDivider(),
-
-                        // IPFS reference
-                        _cryptoRow(
-                          icon: Icons.cloud_outlined,
-                          label: 'IPFS Reference',
-                          child: MouseRegion(
-                            cursor: SystemMouseCursors.click,
-                            child: Text(
-                              c.ipfsReference,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: AppColors.issuingLight,
-                                decoration: TextDecoration.underline,
-                                decorationColor: AppColors.issuingLight,
-                                fontFamily: 'monospace',
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : const SizedBox.shrink(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _cryptoRow({
-    required IconData icon,
-    required String label,
-    required Widget child,
-  }) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Icon(icon, size: 13, color: AppColors.textDim),
-        const SizedBox(width: 10),
-        SizedBox(
-          width: 148,
-          child: Text(
-            label,
-            style: AppTextStyles.bodyTiny.copyWith(
-              fontSize: 10,
-              color: AppColors.textDim,
-            ),
-          ),
-        ),
-        Expanded(child: child),
-      ],
-    ),
-  );
-
-  Widget _cryptoDivider() => Container(
-    height: 1,
-    color: AppColors.border.withOpacity(0.5),
-    margin: const EdgeInsets.symmetric(vertical: 2),
-  );
-
   // ─── ACTION BUTTONS ───────────────────────────────────────────────────────
 
   Widget _buildActionButtons() {
-    final c = widget.credential;
+    final c = _current;
 
     return Row(
       children: [
@@ -668,18 +497,23 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
         ),
         const SizedBox(width: 10),
 
-        // 2 — Edit (same style as Back)
+        // 2 — Edit / Save
         AppButton(
-          icon: _editing ? Icons.save : Icons.edit_outlined,
-          label: _editing ? 'Save' : 'Edit',
-          enabled: !_showHistory,
-          onTap: _editing ? _cancelEdit : _startEdit,
+          icon: _saving
+              ? Icons.hourglass_top_rounded
+              : (_editing ? Icons.save : Icons.edit_outlined),
+          label: _saving ? 'Saving…' : (_editing ? 'Save' : 'Edit'),
+          enabled: !_showHistory && !_saving,
+          onTap: _editing ? _saveEdit : _startEdit,
           textColor: AppColors.white,
           showBorder: true,
           borderColor: _editing ? AppColors.valid : AppColors.textDim,
-          hoverColor: _editing? AppColors.verifyingAccent:AppColors.surfaceHover,
+          hoverColor: _editing
+              ? AppColors.verifyingAccent
+              : AppColors.surfaceHover,
           disabledTextColor: AppColors.textDim,
         ),
+
         const SizedBox(width: 10),
 
         // 3 — Reissue (enabled only when dirty)
@@ -692,11 +526,11 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
           onTap: () {
             if (widget.onReissue == null) return;
             final updated = CredentialRecord(
-              holderEmiratesID: c.holderEmiratesID,
               id: c.id,
               holderName: c.holderName,
               holderEmail: _emailCtrl.text.trim(),
               holderId: c.holderId,
+              holderEmiratesID: c.holderEmiratesID,
               credentialType: c.credentialType,
               issuedBy: c.issuedBy,
               issueDate: c.issueDate,
@@ -706,10 +540,6 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
               status: c.status,
               auditTrail: c.auditTrail,
               attributes: c.attributes,
-              signingAlgorithm: c.signingAlgorithm,
-              signatureHash: c.signatureHash,
-              blockchainTxId: c.blockchainTxId,
-              ipfsReference: c.ipfsReference,
             );
             widget.onReissue!(updated);
           },
@@ -719,10 +549,13 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
         // 4 — Close (filled red)
         AppButton(
           icon: Icons.close_rounded,
-          label: 'Close',
-          backgroundColor: AppColors.revoked,
+          label: _editing ? 'Cancel without saving' : 'Close',
+          backgroundColor: _editing? Colors.transparent: AppColors.revoked,
           hoverColor: AppColors.revoked.withOpacity(0.82),
-          onTap: widget.onClose,
+          onTap: _editing ? _cancelEdit : widget.onClose,
+          showBorder: true,
+          borderColor: _editing ? AppColors.revoked : Colors.transparent
+
         ),
       ],
     );
@@ -733,7 +566,7 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
   // ══════════════════════════════════════════════════════════════════════════
 
   Widget _buildHistoryPanel() {
-    final c = widget.credential;
+    final c = _current;
     final entries = c.auditTrail;
 
     return Container(
@@ -806,17 +639,42 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
 
           // Timeline scroll area
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(28, 28, 28, 28),
-              child: Column(
-                children: List.generate(
-                  entries.length,
-                  (i) => _TimelineNode(
-                    entry: entries[i],
-                    isLast: i == entries.length - 1,
+            child: entries.isEmpty
+                ? _buildEmptyHistory()
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(28, 28, 28, 28),
+                    child: Column(
+                      children: List.generate(
+                        entries.length,
+                        (i) => _TimelineNode(
+                          entry: entries[i],
+                          isLast: i == entries.length - 1,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyHistory() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.history_rounded,
+            size: 32,
+            color: AppColors.textDim.withOpacity(0.4),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'No history events yet',
+            style: AppTextStyles.bodyTiny.copyWith(
+              fontSize: 12,
+              color: AppColors.textDim,
             ),
           ),
         ],
@@ -849,7 +707,6 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
     ],
   );
 
-  // Returns the divider as a widget for use inside a Row
   Widget _sectionDividerInline(String label) => Expanded(
     child: Row(
       children: [
@@ -903,13 +760,14 @@ class _TimelineNodeState extends State<_TimelineNode> {
     final a = widget.entry.action.toLowerCase();
     if (a.contains('revok')) return AppColors.revoked;
     if (a.contains('suspend')) return AppColors.suspended;
-    return AppColors.issuingAccent; // issued / reissued
+    return AppColors.issuingAccent;
   }
 
   IconData get _nodeIcon {
     final a = widget.entry.action.toLowerCase();
     if (a.contains('revok')) return Icons.cancel_outlined;
     if (a.contains('suspend')) return Icons.pause_circle_outline_rounded;
+    if (a.contains('restore')) return Icons.play_circle_outline_rounded;
     if (a.contains('reissued')) return Icons.refresh_rounded;
     return Icons.verified_outlined;
   }
@@ -918,6 +776,7 @@ class _TimelineNodeState extends State<_TimelineNode> {
     final a = widget.entry.action.toLowerCase();
     if (a.contains('revok')) return 'Revoked';
     if (a.contains('suspend')) return 'Suspended';
+    if (a.contains('restore')) return 'Restored';
     if (a.contains('reissued')) return 'Reissued';
     return 'Issued';
   }
@@ -927,162 +786,161 @@ class _TimelineNodeState extends State<_TimelineNode> {
     final color = _accentColor;
 
     return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Spine column ────────────────────────────────────────────
-          SizedBox(
-            width: 42,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Spine column ──────────────────────────────────────────────
+        SizedBox(
+          width: 42,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color.withOpacity(0.13),
+                  border: Border.all(
+                    color: color.withOpacity(0.45),
+                    width: 1.5,
+                  ),
+                ),
+                child: Icon(_nodeIcon, size: 16, color: color),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+
+        // ── Content ───────────────────────────────────────────────────
+        Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(bottom: widget.isLast ? 0 : 28),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: color.withOpacity(0.13),
-                    border: Border.all(
-                      color: color.withOpacity(0.45),
-                      width: 1.5,
+                // Date
+                Text(
+                  widget.entry.date,
+                  style: AppTextStyles.bodyTiny.copyWith(
+                    fontSize: 10,
+                    color: AppColors.textDim,
+                  ),
+                ),
+                const SizedBox(height: 3),
+
+                // Action title
+                Text(
+                  'Credential ${widget.entry.action}',
+                  style: AppTextStyles.navLabelActive.copyWith(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+
+                // Performed by
+                Text(
+                  '$_performedVerb by: ${widget.entry.performedBy}',
+                  style: AppTextStyles.bodyTiny.copyWith(
+                    fontSize: 11,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+
+                // Clickable reason (only revoke / suspend)
+                if (_isClickable) ...[
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () =>
+                        setState(() => _reasonVisible = !_reasonVisible),
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _reasonVisible ? 'Hide reason' : 'Show reason',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: color,
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          AnimatedRotation(
+                            turns: _reasonVisible ? 0.5 : 0,
+                            duration: const Duration(milliseconds: 180),
+                            child: Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              size: 14,
+                              color: color,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  child: Icon(_nodeIcon, size: 16, color: color),
-                ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeInOut,
+                    child: _reasonVisible
+                        ? Container(
+                            margin: const EdgeInsets.only(top: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: color.withOpacity(0.06),
+                              borderRadius: BorderRadius.circular(7),
+                              border: Border.all(
+                                color: color.withOpacity(0.25),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  size: 13,
+                                  color: color.withOpacity(0.65),
+                                ),
+                                const SizedBox(width: 9),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'REASON',
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.8,
+                                          color: color.withOpacity(0.6),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        widget.entry.note!,
+                                        style: AppTextStyles.bodyTiny.copyWith(
+                                          fontSize: 11,
+                                          height: 1.5,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
               ],
             ),
           ),
-          const SizedBox(width: 16),
-
-          // ── Content ─────────────────────────────────────────────────
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(bottom: widget.isLast ? 0 : 28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Date
-                  Text(
-                    widget.entry.date,
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 10,
-                      color: AppColors.textDim,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-
-                  // Action title
-                  Text(
-                    'Credential ${widget.entry.action}',
-                    style: AppTextStyles.navLabelActive.copyWith(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-
-                  // Performed by
-                  Text(
-                    '$_performedVerb by: ${widget.entry.performedBy}',
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 11,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-
-                  // Clickable reason (only revoke / suspend)
-                  if (_isClickable) ...[
-                    const SizedBox(height: 8),
-                    GestureDetector(
-                      onTap: () =>
-                          setState(() => _reasonVisible = !_reasonVisible),
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _reasonVisible ? 'Hide reason' : 'Show reason',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: color,
-                              ),
-                            ),
-                            const SizedBox(width: 3),
-                            AnimatedRotation(
-                              turns: _reasonVisible ? 0.5 : 0,
-                              duration: const Duration(milliseconds: 180),
-                              child: Icon(
-                                Icons.keyboard_arrow_down_rounded,
-                                size: 14,
-                                color: color,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeInOut,
-                      child: _reasonVisible
-                          ? Container(
-                              margin: const EdgeInsets.only(top: 8),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: color.withOpacity(0.06),
-                                borderRadius: BorderRadius.circular(7),
-                                border: Border.all(
-                                  color: color.withOpacity(0.25),
-                                ),
-                              ),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Icon(
-                                    Icons.info_outline,
-                                    size: 13,
-                                    color: color.withOpacity(0.65),
-                                  ),
-                                  const SizedBox(width: 9),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'REASON',
-                                          style: TextStyle(
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.w800,
-                                            letterSpacing: 0.8,
-                                            color: color.withOpacity(0.6),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          widget.entry.note!,
-                                          style: AppTextStyles.bodyTiny
-                                              .copyWith(
-                                                fontSize: 11,
-                                                height: 1.5,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
+        ),
+      ],
     );
   }
 }
@@ -1189,29 +1047,6 @@ class _CopyIconBtnState extends State<_CopyIconBtn> {
   );
 }
 
-// ─── QUANTUM-SAFE BADGE ───────────────────────────────────────────────────────
-
-class _QsBadge extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-    decoration: BoxDecoration(
-      color: AppColors.verifyingAccent.withOpacity(0.12),
-      borderRadius: BorderRadius.circular(4),
-      border: Border.all(color: AppColors.verifyingAccent.withOpacity(0.35)),
-    ),
-    child: const Text(
-      'Quantum-Safe',
-      style: TextStyle(
-        fontSize: 9,
-        fontWeight: FontWeight.w700,
-        color: AppColors.verifyingAccent,
-        letterSpacing: 0.3,
-      ),
-    ),
-  );
-}
-
 // ─── "EDITING" CHIP ───────────────────────────────────────────────────────────
 
 class _EditingChip extends StatelessWidget {
@@ -1270,6 +1105,7 @@ class _OutlinedAccentBtn extends StatefulWidget {
 
 class _OutlinedAccentBtnState extends State<_OutlinedAccentBtn> {
   bool _h = false;
+
   @override
   Widget build(BuildContext context) => MouseRegion(
     cursor: SystemMouseCursors.click,
@@ -1310,14 +1146,14 @@ class _OutlinedAccentBtnState extends State<_OutlinedAccentBtn> {
   );
 }
 
-
-
 // ─── CLIPBOARD TOAST ─────────────────────────────────────────────────────────
 
 class _Toast extends StatefulWidget {
   final String message;
   final VoidCallback onDone;
-  const _Toast({required this.message, required this.onDone});
+  final bool success;
+
+  const _Toast({required this.message, required this.onDone, this.success = true});
 
   @override
   State<_Toast> createState() => _ToastState();
@@ -1350,8 +1186,8 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) => Positioned(
-    bottom: 40,
-    left: 0,
+    bottom: 50,
+    left: 150,
     right: 0,
     child: Center(
       child: FadeTransition(
@@ -1375,10 +1211,10 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.check_circle,
+                 Icon(
+                  (widget.success ? Icons.check_circle_rounded : Icons.error_outline_rounded),
                   size: 14,
-                  color: AppColors.valid,
+                  color: widget.success ? AppColors.valid : AppColors.revoked,
                 ),
                 const SizedBox(width: 8),
                 Text(

@@ -21,11 +21,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qportal_webapp/components/connection_error.dart';
 import 'package:qportal_webapp/components/label.dart';
 import 'package:qportal_webapp/models/verifiying_models.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
 import 'package:qportal_webapp/services/api_service.dart';
 
 // ─── VERIFICATION MODE ────────────────────────────────────────────────────────
@@ -86,6 +87,7 @@ class ManualVerifyPage extends StatefulWidget {
 class _ManualVerifyPageState extends State<ManualVerifyPage> {
   _VerifyMode _mode = _VerifyMode.credentialId;
   bool _verifying = false;
+  bool _hasConnectionError = false;
 
   // ── Mode 1 ────────────────────────────────────────────────────────────────
   final _credIdCtrl = TextEditingController();
@@ -94,6 +96,7 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
   // ── Mode 2 ────────────────────────────────────────────────────────────────
   final _otpCtrl = TextEditingController();
   bool _otpError = false;
+  String _otpErrorMessage = 'Please enter the OTP code.'; // Dynamic error msg
 
   // ── Mode 3 ────────────────────────────────────────────────────────────────
   bool _fileUploaded = false;
@@ -106,7 +109,7 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
 
   // ── Verify ────────────────────────────────────────────────────────────────
 
-  void _verify() {
+  void _verify() async {
     if (_mode == _VerifyMode.document) {
       if (!_fileUploaded) {
         setState(() => _fileError = true);
@@ -117,31 +120,83 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
     }
 
     switch (_mode) {
+      // ─── CREDENTIAL ID LOGIC ──────────────────────────────────────────────
       case _VerifyMode.credentialId:
         final credID = _credIdCtrl.text.trim();
         if (credID.isEmpty) {
           setState(() => _credIdError = true);
           return;
         }
-        setState(() => _verifying = true);
-        ApiService.verifyCredential(credID).then((result) {
+        setState(() {
+          _verifying = true;
+          _hasConnectionError = false;
+        });
+        try {
+          final result = await ApiService.verifyCredential(credID);
           if (!mounted) return;
           setState(() => _verifying = false);
           widget.onVerify(result);
-        });
-        return; // ← was: break. return exits _verify() entirely.
+        } catch (e) {
+          if (!mounted) return;
+          setState(() {
+            _verifying = false;
+            _hasConnectionError = true;
+          });
+        }
+        return;
 
+      // ─── OTP LOGIC ────────────────────────────────────────────────────────
       case _VerifyMode.otp:
-        if (_otpCtrl.text.trim().isEmpty) {
-          setState(() => _otpError = true);
+        final otpCode = _otpCtrl.text.trim();
+
+        // 1. Length validation before hitting the network
+        if (otpCode.isEmpty) {
+          setState(() {
+            _otpError = true;
+            _otpErrorMessage = 'Please enter the 6-digit OTP.';
+          });
           return;
         }
-        break;
+        if (otpCode.length != 6) {
+          setState(() {
+            _otpError = true;
+            _otpErrorMessage = 'OTP must be exactly 6 digits.';
+          });
+          return;
+        }
+
+        // 2. Start loading
+        setState(() {
+          _verifying = true;
+          _hasConnectionError = false;
+          _otpError = false;
+        });
+
+        // 3. API Call
+        try {
+          // Prepend OTP- so the backend finds the session
+          final result = await ApiService.resolveSession('OTP-$otpCode');
+
+          if (!mounted) return;
+          setState(() => _verifying = false);
+
+          // Route to success page
+          widget.onVerify(result);
+        } catch (e) {
+          if (!mounted) return;
+          setState(() {
+            _verifying = false;
+            _otpError = true;
+            // Clean up the exception text to display nicely to the user
+            _otpErrorMessage = e.toString().replaceAll('Exception: ', '');
+          });
+        }
+        return;
+
       default:
         break;
     }
 
-    // Only OTP and document modes reach here (mock path)
     widget.onVerify(VerifyingMockData.suspended());
   }
 
@@ -214,7 +269,11 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
           // Tab switcher
           _ModeSelector(
             selected: _mode,
-            onSelect: (m) => setState(() => _mode = m),
+            onSelect: (m) => setState(() {
+              _mode = m;
+              _otpError = false;
+              _credIdError = false;
+            }),
           ),
           const SizedBox(height: 14),
 
@@ -297,6 +356,15 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
   }
 
   Widget _buildContent() {
+    if (_hasConnectionError) {
+      return ConnectionErrorWidget(
+        onRetry: () {
+          setState(() => _hasConnectionError = false);
+          _verify();
+        },
+      );
+    }
+
     switch (_mode) {
       case _VerifyMode.credentialId:
         return _buildCredentialIdMode();
@@ -318,26 +386,31 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Input section
-          Label(text: 'Enter Credential ID', required: true,),
+          Label(text: 'Enter Credential ID', required: true),
           const SizedBox(height: 8),
           _InputField(
             controller: _credIdCtrl,
-            hint: 'e.g. QC-2025-007192',
+            hint: 'e.g. CRED-0000',
             hasError: _credIdError,
             onChanged: (_) => setState(() => _credIdError = false),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9\-]')),
+              LengthLimitingTextInputFormatter(9),
+            ],
+
           ),
           if (_credIdError) ...[
             const SizedBox(height: 5),
-            _ErrorRow('Please enter a Credential ID.'),
+            const _ErrorRow('Please enter a Credential ID.'),
           ],
           const SizedBox(height: 28),
 
           // Instructions
-          _InstructionCard(
+          const _InstructionCard(
             title: 'How to find the Credential ID',
             subtitle:
                 'Guide the credential holder to locate the Credential ID using these steps:',
-            steps: const [
+            steps: [
               'Open the QWallet app',
               'Go to the Wallet tab',
               'Locate the credential based on its category',
@@ -360,7 +433,7 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Input section
-          Label(text: 'Enter OTP', required: true,),
+          Label(text: 'Enter OTP', required: true),
           const SizedBox(height: 8),
           _InputField(
             controller: _otpCtrl,
@@ -369,22 +442,22 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
             keyboardType: TextInputType.number,
             inputFormatters: [
               FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(6),
+              LengthLimitingTextInputFormatter(6), // Strictly limits to 6 chars
             ],
             onChanged: (_) => setState(() => _otpError = false),
           ),
           if (_otpError) ...[
             const SizedBox(height: 5),
-            _ErrorRow('Please enter the OTP code.'),
+            _ErrorRow(_otpErrorMessage), // Uses dynamic error message
           ],
           const SizedBox(height: 28),
 
           // Instructions
-          _InstructionCard(
+          const _InstructionCard(
             title: 'How to generate an OTP',
             subtitle:
                 'Ask the credential holder to generate a one-time password using these steps:',
-            steps: const [
+            steps: [
               'Open the QWallet app',
               'Go to the Wallet tab',
               'Locate the credential based on its category',
@@ -417,10 +490,7 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
       child: _fileUploaded
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildUploadedFile(),
-                _buildUploadedFileActions(),
-              ],
+              children: [_buildUploadedFile(), _buildUploadedFileActions()],
             )
           : _buildDropZone(),
     );
@@ -469,9 +539,7 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: AppColors.revoked.withOpacity(0.12),
-                border: Border.all(
-                  color: AppColors.revoked.withOpacity(0.35),
-                ),
+                border: Border.all(color: AppColors.revoked.withOpacity(0.35)),
               ),
               child: const Icon(
                 Icons.error_outline_rounded,
@@ -575,7 +643,7 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
         ),
         if (_fileError) ...[
           const SizedBox(height: 6),
-          _ErrorRow('Please upload a credential document to verify.'),
+          const _ErrorRow('Please upload a credential document to verify.'),
         ],
         const SizedBox(height: 16),
         Row(
@@ -927,22 +995,6 @@ class _InstructionCard extends StatelessWidget {
 // ═════════════════════════════════════════════════════════════════════════════
 //  SHARED SMALL WIDGETS
 // ═════════════════════════════════════════════════════════════════════════════
-
-// class _FieldLabel extends StatelessWidget {
-//   final String text;
-//   const _FieldLabel(this.text);
-
-//   @override
-//   Widget build(BuildContext context) => Text(
-//     text,
-//     style: AppTextStyles.bodyTiny.copyWith(
-//       fontSize: 11,
-//       fontWeight: FontWeight.w700,
-//       letterSpacing: 0.2,
-//       color: AppColors.textMuted,
-//     ),
-//   );
-// }
 
 class _InputField extends StatefulWidget {
   final TextEditingController controller;

@@ -26,7 +26,7 @@ import 'package:qportal_webapp/components/stepper.dart';
 import 'package:qportal_webapp/models/issuing_models.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -234,7 +234,7 @@ class _BatchVerifyPageState extends State<BatchVerifyPage> {
 
   // ── step 4 ────────────────────────────────────────────────────────────────
   List<_VerifyResult> _results = [];
-  _ResultFilter _filter = _ResultFilter.all;
+  final _ResultFilter _filter = _ResultFilter.all;
   String _resultSearch = '';
 
   // ── helpers ───────────────────────────────────────────────────────────────

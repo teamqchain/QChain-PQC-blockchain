@@ -28,7 +28,7 @@ import 'package:flutter/material.dart';
 import 'package:qportal_webapp/models/issuing_models.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
 
 const _kCreatedBy = 'Mohammed A.';
 

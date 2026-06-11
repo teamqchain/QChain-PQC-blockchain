@@ -10,11 +10,13 @@
 //     );
 
 import 'package:flutter/material.dart';
+import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
 import 'package:qportal_webapp/models/issuing_models.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
+import 'package:qportal_webapp/components/countChip.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  PAGE
@@ -244,26 +246,16 @@ class _SchemasPageState extends State<SchemasPage> {
       child: Row(
         children: [
           // Schema count chip
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.issuingAccent.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: AppColors.issuingAccent.withOpacity(0.25),
-              ),
-            ),
-            child: Text(
-              '${_schemas.length} schema${_schemas.length == 1 ? '' : 's'}',
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: AppColors.issuingLight,
-              ),
-            ),
-          ),
+          CountChip(count: _schemas.length, label: 'schema'),
 
           const Spacer(),
+
+          ToolbarIconBtn(
+            icon: Icons.filter_list_rounded,
+            tooltip: 'Filter',
+            onTap: () {},
+          ),
+          const SizedBox(width: 6),
 
           // Search bar
           QSearchBar(
@@ -450,6 +442,8 @@ class _SchemasPageState extends State<SchemasPage> {
     super.dispose();
   }
 }
+
+
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  SCHEMA LIST ROW

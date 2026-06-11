@@ -37,6 +37,7 @@ dependencies:
   font_awesome_flutter: ^10.12.0
   get: ^4.7.3
   http: ^1.6.0
+  mobile_scanner: ^7.2.0
 
 dev_dependencies:
   flutter_lints: ^5.0.0

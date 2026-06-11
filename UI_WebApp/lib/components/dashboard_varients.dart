@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:qportal_webapp/models/dashboard_Model.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/utils/app_shell.dart';
+import 'package:qportal_webapp/utils/webApp_shell.dart';
 import 'package:qportal_webapp/view/responsive_layout.dart';
 import 'package:qportal_webapp/widgets/dashboard_widgets.dart';
 
@@ -329,7 +329,9 @@ class VariantIssuerContent extends StatelessWidget {
     final expiryWarningsList = (stats['expiryWarnings'] as List? ?? [])
         .map((e) => ExpiryItem.fromJson(e as Map<String, dynamic>))
         .toList();
-    final weeklyIssuedList = (stats['weeklyIssued'] as List? ?? [])
+
+    // 🔄 CHANGED: Now looking for 'dailyIssued' instead of 'weeklyIssued'
+    final dailyIssuedList = (stats['dailyIssued'] as List? ?? [])
         .map((e) => BarDataPoint.fromJson(e as Map<String, dynamic>))
         .toList();
 
@@ -412,13 +414,15 @@ class VariantIssuerContent extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // 🔄 CHANGED: Updated the title to match the 7-day layout
                     const SectionHeader(
-                      title: 'Credentials Issued — Last 4 Weeks',
+                      title: 'Credentials Issued — Last 7 Days',
                       accent: AppColors.issuingAccent,
                     ),
                     const SizedBox(height: 10),
                     MiniBarChart(
-                      data: weeklyIssuedList,
+                      // 🔄 CHANGED: Passing the daily list here
+                      data: dailyIssuedList,
                       accent: AppColors.issuingAccent,
                     ),
                   ],
@@ -556,99 +560,70 @@ class VariantITAdminContent extends StatelessWidget {
   final Map<String, dynamic> stats;
   const VariantITAdminContent({super.key, required this.stats});
 
-  static const Color _accent = AppColors.adminAccent;
-  static const Color _light = AppColors.adminLight;
-
   @override
   Widget build(BuildContext context) {
-    // Retains existing structure; receives 'stats' to satisfy DashboardScreen widget build map
+    // ── Parse Live Data ──
+    final totalStaff = stats['adminTotalStaff'] ?? 0;
+    final activeStaff = stats['adminActiveStaff'] ?? 0;
+    final invitedStaff = stats['adminInvitedStaff'] ?? 0;
+    final issuerStaffCount = stats['issuerStaffCount'] ?? 0;
+    final verifierStaffCount = stats['verifierStaffCount'] ?? 0;
+
+    final recentAudit = (stats['recentAudit'] as List? ?? [])
+        .map((e) => AdminAuditItem.fromJson(e as Map<String, dynamic>))
+        .take(3)
+        .toList();
+
+    final issuerRoles = (stats['issuerRoles'] as List? ?? [])
+        .map((e) => AdminRoleSplit.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+    final verifierRoles = (stats['verifierRoles'] as List? ?? [])
+        .map((e) => AdminRoleSplit.fromJson(e as Map<String, dynamic>))
+        .toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _StatTileRow(),
+        _StatTileRow(
+          totalStaff: totalStaff,
+          activeStaff: activeStaff,
+          invitedStaff: invitedStaff,
+          issuerStaffCount: issuerStaffCount,
+          verifierStaffCount: verifierStaffCount,
+        ),
         const SizedBox(height: 16),
-        ResponsiveColumns(left: _OrgProfileCard(), right: _RecentAuditCard()),
+        ResponsiveColumns(
+          left: _OrgProfileCard(), // Retained as mock per request
+          right: _RecentAuditCard(auditLogs: recentAudit),
+        ),
         const SizedBox(height: 14),
         ResponsiveColumns(
-          left: _StaffBreakdownCard(),
-          right: _CapabilityRequestsCard(),
+          left: _StaffBreakdownCard(
+            totalStaff: totalStaff,
+            activeStaff: activeStaff,
+            invitedStaff: invitedStaff,
+            issuerTotal: issuerStaffCount,
+            verifierTotal: verifierStaffCount,
+            issuerRoles: issuerRoles,
+            verifierRoles: verifierRoles,
+          ),
+          right: _CapabilityRequestsCard(), // Retained as mock per request
         ),
       ],
     );
   }
 }
 
-// ─── VARIANT D: IT ADMIN ──────────────────────────────────────────────────────
-//
-// No quick actions — all features are accessible via the sidebar only.
-// Dashboard shows informational cards:
-//   • Stat tiles  — total staff, active members, pending requests, crypto algo
-//   • Organisation profile summary
-//   • Recent audit activity (last 5 entries)
-//   • Staff breakdown (issuer vs verifier, role distribution)
-//   • Capability requests with status
-
-// ── MOCK DATA (mirrors the real data sources) ─────────────────────────────────
+// ── MOCK DATA (Retained for Org Profile & Capabilities ONLY) ──────────────────
 
 class _AdminMock {
-  // Staff counts (IssuingMockData.staff = 6, kMockVerifierStaff = 6)
-  static const int totalStaff = 12;
-  static const int activeStaff = 10;
-  static const int invitedStaff = 2;
-  static const int issuerStaffCount = 6;
-  static const int verifierStaffCount = 6;
-
   // Org profile (from ManageProfilePage mock)
   static const String orgName = 'University of Sharjah';
   static const String orgType = 'University';
   static const String orgCountry = 'United Arab Emirates';
   static const String orgDid = 'did:qportal:uae:uos-2024-001';
   static const String orgSince = '01 Jan 2024';
-
-  // Crypto (from CryptoSettingsPage mock)
-  static const String cryptoAlgo = 'Dilithium (CRYSTALS-Dilithium3)';
-  static const String cryptoStatus = 'Active';
-  static const String keyFingerprint = 'MIIBIjANBgkq…AQAB';
-  static const String lastRotated = '15 Jan 2026';
-
-  // Recent audit entries (abbreviated from kMockAuditLog)
-  static const recentAudit = [
-    _AuditSummary(
-      'Staff member Omar Nasser invited (Issuer Staff)',
-      'Issuer Admin',
-      '05 Mar 2026  09:14',
-      Icons.person_add_outlined,
-      Color(0xFF818CF8),
-    ),
-    _AuditSummary(
-      'Credential QC-2025-001821 issued to Khalid Hassan',
-      'Issuer Staff',
-      '04 Mar 2026  16:47',
-      Icons.badge_outlined,
-      Color(0xFF3B82F6),
-    ),
-    _AuditSummary(
-      'Verification performed — credential valid',
-      'Verifier Staff',
-      '04 Mar 2026  14:22',
-      Icons.verified_outlined,
-      Color(0xFF22C55E),
-    ),
-    _AuditSummary(
-      'Credential QC-2025-007192 revoked — disciplinary',
-      'Issuer Admin',
-      '03 Mar 2026  11:05',
-      Icons.block_outlined,
-      Color(0xFFEF4444),
-    ),
-    _AuditSummary(
-      'Policy POL-003 activated by policy manager',
-      'Policy Manager',
-      '02 Mar 2026  08:33',
-      Icons.policy_outlined,
-      Color(0xFFF59E0B),
-    ),
-  ];
 
   // Capability requests (from RequestCapabilitiesPage mock)
   static const capRequests = [
@@ -674,37 +649,6 @@ class _AdminMock {
       _CapStatus.pending,
     ),
   ];
-
-  // Issuer role breakdown
-  static const issuerRoles = [
-    _RoleSplit('Admin', 1, Color(0xFF2563EB)),
-    _RoleSplit('Staff', 4, Color(0xFF8B5CF6)),
-    _RoleSplit('Schema Manager', 1, Color(0xFF06B6D4)),
-  ];
-
-  // Verifier role breakdown
-  static const verifierRoles = [
-    _RoleSplit('Admin', 1, Color(0xFF16A34A)),
-    _RoleSplit('Verifier Staff', 4, Color(0xFF818CF8)),
-    _RoleSplit('Policy Manager', 1, Color(0xFFF59E0B)),
-  ];
-}
-
-// ── TINY IMMUTABLE DATA CLASSES ───────────────────────────────────────────────
-
-class _AuditSummary {
-  final String details;
-  final String role;
-  final String timestamp;
-  final IconData icon;
-  final Color color;
-  const _AuditSummary(
-    this.details,
-    this.role,
-    this.timestamp,
-    this.icon,
-    this.color,
-  );
 }
 
 class _CapSummary {
@@ -724,52 +668,25 @@ class _CapSummary {
 
 enum _CapStatus { accepted, rejected, pending }
 
-class _RoleSplit {
-  final String label;
-  final int count;
-  final Color color;
-  const _RoleSplit(this.label, this.count, this.color);
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  VARIANT D WIDGET
-// ═════════════════════════════════════════════════════════════════════════════
-
-// class VariantITAdminContent extends StatelessWidget {
-//   const VariantITAdminContent({super.key, required Map<String, dynamic> stats});
-
-//   // Convenience getter — the accent used everywhere in IT Admin pages
-//   static const Color _accent = AppColors.adminAccent;
-//   static const Color _light = AppColors.adminLight;
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return Column(
-//       crossAxisAlignment: CrossAxisAlignment.start,
-//       children: [
-//         // ── Row 1: Stat tiles ─────────────────────────────────────────────
-//         _StatTileRow(),
-//         const SizedBox(height: 16),
-
-//         // ── Row 2: Org profile  +  Recent audit ───────────────────────────
-//         ResponsiveColumns(left: _OrgProfileCard(), right: _RecentAuditCard()),
-//         const SizedBox(height: 14),
-
-//         // ── Row 3: Staff breakdown  +  Capability requests ────────────────
-//         ResponsiveColumns(
-//           left: _StaffBreakdownCard(),
-//           right: _CapabilityRequestsCard(),
-//         ),
-//       ],
-//     );
-//   }
-// }
-
 // ═════════════════════════════════════════════════════════════════════════════
 //  STAT TILE ROW
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _StatTileRow extends StatelessWidget {
+  final int totalStaff;
+  final int activeStaff;
+  final int invitedStaff;
+  final int issuerStaffCount;
+  final int verifierStaffCount;
+
+  const _StatTileRow({
+    required this.totalStaff,
+    required this.activeStaff,
+    required this.invitedStaff,
+    required this.issuerStaffCount,
+    required this.verifierStaffCount,
+  });
+
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -777,9 +694,8 @@ class _StatTileRow extends StatelessWidget {
         _StatTile(
           icon: Icons.group_outlined,
           label: 'Total Staff',
-          value: '${_AdminMock.totalStaff}',
-          sub:
-              '${_AdminMock.issuerStaffCount} issuer · ${_AdminMock.verifierStaffCount} verifier',
+          value: '$totalStaff',
+          sub: '$issuerStaffCount issuer · $verifierStaffCount verifier',
           color: AppColors.adminAccent,
           light: AppColors.adminLight,
         ),
@@ -787,8 +703,8 @@ class _StatTileRow extends StatelessWidget {
         _StatTile(
           icon: Icons.check_circle_outline_rounded,
           label: 'Active Members',
-          value: '${_AdminMock.activeStaff}',
-          sub: '${_AdminMock.invitedStaff} pending invitation',
+          value: '$activeStaff',
+          sub: '$invitedStaff pending invitation',
           color: AppColors.verifyingAccent,
           light: AppColors.verifyingLight,
         ),
@@ -915,7 +831,7 @@ class _StatTileState extends State<_StatTile> {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  ORGANISATION PROFILE CARD
+//  ORGANISATION PROFILE CARD (MOCKED)
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _OrgProfileCard extends StatelessWidget {
@@ -946,14 +862,6 @@ class _OrgProfileCard extends StatelessWidget {
                   ),
                 ),
                 child: Center(
-                  // child: Text(
-                  //   'UoS',
-                  //   style: TextStyle(
-                  //     fontSize: 13,
-                  //     fontWeight: FontWeight.w800,
-                  //     color: AppColors.adminLight,
-                  //   ),
-                  // ),
                   child: Image.asset(
                     'assets/images/unilogo_short.png',
                     fit: BoxFit.contain,
@@ -964,9 +872,9 @@ class _OrgProfileCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  const Text(
                     _AdminMock.orgName,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: AppColors.text,
@@ -994,21 +902,16 @@ class _OrgProfileCard extends StatelessWidget {
             label: 'Country',
             value: _AdminMock.orgCountry,
           ),
-          _OrgInfoRow(
+          const _OrgInfoRow(
             icon: Icons.fingerprint_rounded,
             label: 'DID',
             value: _AdminMock.orgDid,
             mono: true,
           ),
-          _OrgInfoRow(
+          const _OrgInfoRow(
             icon: Icons.calendar_today_outlined,
             label: 'Registered',
             value: _AdminMock.orgSince,
-          ),
-          _OrgInfoRow(
-            icon: Icons.shield_outlined,
-            label: 'Key last rotated',
-            value: _AdminMock.lastRotated,
           ),
 
           const SizedBox(height: 14),
@@ -1029,7 +932,7 @@ class _OrgProfileCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Crypto: ${_AdminMock.cryptoAlgo}',
+                  'Crypto: Dilithium (CRYSTALS-Dilithium3)',
                   style: AppTextStyles.bodyTiny.copyWith(
                     fontSize: 11,
                     color: AppColors.textMuted,
@@ -1096,10 +999,13 @@ class _OrgInfoRow extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  RECENT AUDIT ACTIVITY CARD
+//  RECENT AUDIT ACTIVITY CARD (LIVE)
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _RecentAuditCard extends StatelessWidget {
+  final List<AdminAuditItem> auditLogs;
+  const _RecentAuditCard({required this.auditLogs});
+
   @override
   Widget build(BuildContext context) {
     return DashCard(
@@ -1112,7 +1018,13 @@ class _RecentAuditCard extends StatelessWidget {
             linkText: 'View Full Log',
           ),
           const SizedBox(height: 4),
-          ..._AdminMock.recentAudit.map((e) => _AuditRow(entry: e)),
+          if (auditLogs.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text("No recent activity.", style: AppTextStyles.bodyTiny),
+            )
+          else
+            ...auditLogs.map((e) => _AuditRow(entry: e)),
         ],
       ),
     );
@@ -1120,7 +1032,7 @@ class _RecentAuditCard extends StatelessWidget {
 }
 
 class _AuditRow extends StatefulWidget {
-  final _AuditSummary entry;
+  final AdminAuditItem entry;
   const _AuditRow({required this.entry});
 
   @override
@@ -1130,8 +1042,45 @@ class _AuditRow extends StatefulWidget {
 class _AuditRowState extends State<_AuditRow> {
   bool _hovered = false;
 
+  IconData _getIcon(String action) {
+    switch (action.toLowerCase()) {
+      case 'issued':
+        return Icons.badge_outlined;
+      case 'verified':
+        return Icons.verified_outlined;
+      case 'revoked':
+        return Icons.block_outlined;
+      case 'suspended':
+        return Icons.pause_circle_outline;
+      case 'policy_changed':
+        return Icons.policy_outlined;
+      default:
+        return Icons.settings_outlined;
+    }
+  }
+
+  Color _getColor(String action) {
+    switch (action.toLowerCase()) {
+      case 'issued':
+        return const Color(0xFF3B82F6);
+      case 'verified':
+        return const Color(0xFF22C55E);
+      case 'revoked':
+        return const Color(0xFFEF4444);
+      case 'suspended':
+        return AppColors.suspended;
+      case 'policy_changed':
+        return const Color(0xFFF59E0B);
+      default:
+        return const Color(0xFF818CF8);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final color = _getColor(widget.entry.action);
+    final icon = _getIcon(widget.entry.action);
+
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
@@ -1144,7 +1093,7 @@ class _AuditRowState extends State<_AuditRow> {
           color: _hovered ? AppColors.surfaceHover : Colors.transparent,
           border: Border(
             left: BorderSide(
-              color: _hovered ? widget.entry.color : Colors.transparent,
+              color: _hovered ? color : Colors.transparent,
               width: 2,
             ),
           ),
@@ -1153,19 +1102,14 @@ class _AuditRowState extends State<_AuditRow> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Icon
             Container(
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                color: widget.entry.color.withOpacity(0.10),
+                color: color.withOpacity(0.10),
                 borderRadius: BorderRadius.circular(7),
               ),
-              child: Icon(
-                widget.entry.icon,
-                size: 13,
-                color: widget.entry.color,
-              ),
+              child: Icon(icon, size: 13, color: color),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1185,29 +1129,37 @@ class _AuditRowState extends State<_AuditRow> {
                   Row(
                     children: [
                       Text(
+                        widget.entry.performedBy,
+                        style: AppTextStyles.bodyTiny.copyWith(
+                          fontSize: 10,
+                          color: AppColors.textDim,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '-',
+                        style: AppTextStyles.bodyTiny.copyWith(
+                          fontSize: 10,
+                          color: AppColors.textDim,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
                         widget.entry.role,
                         style: AppTextStyles.bodyTiny.copyWith(
                           fontSize: 10,
                           color: AppColors.textDim,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '·',
-                        style: AppTextStyles.bodyTiny.copyWith(
-                          fontSize: 10,
-                          color: AppColors.textDim,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        widget.entry.timestamp,
-                        style: AppTextStyles.bodyTiny.copyWith(
-                          fontSize: 10,
-                          color: AppColors.textDim,
-                        ),
-                      ),
                     ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    widget.entry.timestamp,
+                    style: AppTextStyles.bodyTiny.copyWith(
+                      fontSize: 10,
+                      color: AppColors.textDim,
+                    ),
                   ),
                 ],
               ),
@@ -1220,20 +1172,39 @@ class _AuditRowState extends State<_AuditRow> {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  STAFF BREAKDOWN CARD
+//  STAFF BREAKDOWN CARD (LIVE)
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _StaffBreakdownCard extends StatelessWidget {
+  final int totalStaff;
+  final int activeStaff;
+  final int invitedStaff;
+  final int issuerTotal;
+  final int verifierTotal;
+  final List<AdminRoleSplit> issuerRoles;
+  final List<AdminRoleSplit> verifierRoles;
+
+  const _StaffBreakdownCard({
+    required this.totalStaff,
+    required this.activeStaff,
+    required this.invitedStaff,
+    required this.issuerTotal,
+    required this.verifierTotal,
+    required this.issuerRoles,
+    required this.verifierRoles,
+  });
+
   @override
   Widget build(BuildContext context) {
     return DashCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(
+          SectionHeader(
             title: 'Staff Overview',
             accent: AppColors.adminAccent,
             linkText: 'Manage Staff',
+            onLinkTap: () => ShellNav.push(RouteName.staffAndPermissions),
           ),
           const SizedBox(height: 8),
 
@@ -1242,21 +1213,21 @@ class _StaffBreakdownCard extends StatelessWidget {
             children: [
               _MiniStatBox(
                 label: 'Total',
-                value: '${_AdminMock.totalStaff}',
+                value: '$totalStaff',
                 color: AppColors.adminAccent,
                 light: AppColors.adminLight,
               ),
               const SizedBox(width: 10),
               _MiniStatBox(
                 label: 'Active',
-                value: '${_AdminMock.activeStaff}',
+                value: '$activeStaff',
                 color: AppColors.verifyingAccent,
                 light: AppColors.verifyingLight,
               ),
               const SizedBox(width: 10),
               _MiniStatBox(
                 label: 'Invited',
-                value: '${_AdminMock.invitedStaff}',
+                value: '$invitedStaff',
                 color: AppColors.issuingAccent,
                 light: AppColors.issuingLight,
               ),
@@ -1271,8 +1242,8 @@ class _StaffBreakdownCard extends StatelessWidget {
             portalLabel: 'Issuer Portal',
             portalColor: AppColors.issuingAccent,
             portalLight: AppColors.issuingLight,
-            total: _AdminMock.issuerStaffCount,
-            roles: _AdminMock.issuerRoles,
+            total: issuerTotal,
+            roles: issuerRoles,
           ),
           const SizedBox(height: 14),
           Container(height: 1, color: AppColors.border),
@@ -1283,8 +1254,8 @@ class _StaffBreakdownCard extends StatelessWidget {
             portalLabel: 'Verifier Portal',
             portalColor: AppColors.verifyingAccent,
             portalLight: AppColors.verifyingLight,
-            total: _AdminMock.verifierStaffCount,
-            roles: _AdminMock.verifierRoles,
+            total: verifierTotal,
+            roles: verifierRoles,
           ),
         ],
       ),
@@ -1346,7 +1317,7 @@ class _PortalRoleSection extends StatelessWidget {
   final Color portalColor;
   final Color portalLight;
   final int total;
-  final List<_RoleSplit> roles;
+  final List<AdminRoleSplit> roles;
 
   const _PortalRoleSection({
     required this.portalLabel,
@@ -1355,6 +1326,18 @@ class _PortalRoleSection extends StatelessWidget {
     required this.total,
     required this.roles,
   });
+
+  // Assign distinct colors based on index for the live data mapping
+  Color _getRoleColor(int index) {
+    final colors = [
+      const Color(0xFF8B5CF6),
+      const Color(0xFF06B6D4),
+      const Color(0xFF818CF8),
+      const Color(0xFFF59E0B),
+      const Color(0xFF10B981),
+    ];
+    return colors[index % colors.length];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1390,48 +1373,54 @@ class _PortalRoleSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        ...roles.map(
-          (r) => Padding(
-            padding: const EdgeInsets.only(bottom: 7),
-            child: Row(
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: r.color,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    r.label,
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 11,
-                      color: AppColors.textMuted,
+        if (roles.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Text("No staff data.", style: AppTextStyles.bodyTiny),
+          )
+        else
+          ...roles.asMap().entries.map(
+            (entry) => Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _getRoleColor(entry.key),
                     ),
                   ),
-                ),
-                Text(
-                  '${r.count}',
-                  style: AppTextStyles.bodyTiny.copyWith(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: r.color,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      entry.value.label,
+                      style: AppTextStyles.bodyTiny.copyWith(
+                        fontSize: 11,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                  Text(
+                    '${entry.value.count}',
+                    style: AppTextStyles.bodyTiny.copyWith(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: _getRoleColor(entry.key),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
       ],
     );
   }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  CAPABILITY REQUESTS CARD
+//  CAPABILITY REQUESTS CARD (MOCKED)
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _CapabilityRequestsCard extends StatelessWidget {

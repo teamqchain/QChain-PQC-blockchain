@@ -1,28 +1,12 @@
 // screens/verifier/alerts_page.dart
-//
-// Alerts — shows status-change alerts for all subscribed credentials.
-// Opens when the user clicks the Alert button on the Subscriptions page.
-//
-// Layout contract:
-//   Padding → Column
-//     Title (fixed)
-//     Expanded container (toolbar → alert list with two sections)
-//     SizedBox
-//     Action bar — Back button (fixed)
-//
-// ── Integration in app_shell.dart ───────────────────────────────────────────
-//   case RouteName.subscriptionAlert:
-//     return AlertsPage(
-//       onBack: () => _handleNavigate(RouteName.subscription),
-//     );
 
 import 'package:flutter/material.dart';
-import 'package:qportal_webapp/components/filterButton.dart';
+import 'package:qportal_webapp/services/api_service.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
-import 'package:qportal_webapp/models/verifiying_models.dart';
+import 'package:qportal_webapp/components/connection_error.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
 
 // ─── ALERT SEVERITY (drives icon + accent colour) ────────────────────────────
 
@@ -64,8 +48,6 @@ extension AlertSeverityX on AlertSeverity {
   }
 }
 
-
-
 // ═════════════════════════════════════════════════════════════════════════════
 //  PAGE
 // ═════════════════════════════════════════════════════════════════════════════
@@ -80,16 +62,80 @@ class AlertsPage extends StatefulWidget {
 }
 
 class _AlertsPageState extends State<AlertsPage> {
-  // acknowledged IDs — these move to the archived section
-  final Set<String> _acknowledged = {};
+  // Live State
+  List<LiveAlertRecord> _allAlerts = [];
+  bool _isLoading = true;
+  String? _errorMessage;
 
-  // search
+  // Search
   String _query = '';
   final _searchCtrl = TextEditingController();
 
+  @override
+  void initState() {
+    super.initState();
+    _fetchAlerts();
+  }
+
+  Future<void> _fetchAlerts() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final alerts = await ApiService.getSubscriptionAlerts();
+      if (mounted) {
+        setState(() {
+          _allAlerts = alerts;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage =
+              'Connection Error: Unable to reach the server to fetch alerts.';
+        });
+      }
+    }
+  }
+
+  Future<void> _acknowledge(String id) async {
+    try {
+      final success = await ApiService.acknowledgeAlert(id);
+      if (success && mounted) {
+        setState(() {
+          // Flip acknowledged locally to avoid a full re-fetch
+          final idx = _allAlerts.indexWhere((a) => a.id == id);
+          if (idx != -1) {
+            _allAlerts[idx].acknowledged = true;
+          }
+        });
+      } else if (!success && mounted) {
+        _showErrorSnackbar('Failed to acknowledge alert. Please try again.');
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorSnackbar('Connection Error: Unable to reach the server.');
+      }
+    }
+  }
+
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.revoked,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   // ── derived lists ─────────────────────────────────────────────────────────
 
-  List<AlertRecord> _applySearch(List<AlertRecord> src) {
+  List<LiveAlertRecord> _applySearch(List<LiveAlertRecord> src) {
     final q = _query.toLowerCase().trim();
     if (q.isEmpty) return src;
     return src.where((a) {
@@ -99,17 +145,11 @@ class _AlertsPageState extends State<AlertsPage> {
     }).toList();
   }
 
-  List<AlertRecord> get _activeAlerts => _applySearch(
-    kMockAlerts.where((a) => !_acknowledged.contains(a.id)).toList(),
-  );
+  List<LiveAlertRecord> get _activeAlerts =>
+      _applySearch(_allAlerts.where((a) => !a.acknowledged).toList());
 
-  List<AlertRecord> get _archivedAlerts => _applySearch(
-    kMockAlerts.where((a) => _acknowledged.contains(a.id)).toList(),
-  );
-
-  void _acknowledge(String id) {
-    setState(() => _acknowledged.add(id));
-  }
+  List<LiveAlertRecord> get _archivedAlerts =>
+      _applySearch(_allAlerts.where((a) => a.acknowledged).toList());
 
   // ─── BUILD ────────────────────────────────────────────────────────────────
 
@@ -172,9 +212,7 @@ class _AlertsPageState extends State<AlertsPage> {
   // ─── TOOLBAR ──────────────────────────────────────────────────────────────
 
   Widget _buildToolbar() {
-    final activeCount = kMockAlerts
-        .where((a) => !_acknowledged.contains(a.id))
-        .length;
+    final activeCount = _allAlerts.where((a) => !a.acknowledged).length;
 
     return Container(
       color: const Color(0xFF161616),
@@ -222,7 +260,7 @@ class _AlertsPageState extends State<AlertsPage> {
           const Spacer(),
 
           // Filter
-          ToolbarIconBtn(
+          _ToolbarIconBtn(
             icon: Icons.filter_list_rounded,
             tooltip: 'Filter',
             onTap: () {},
@@ -250,6 +288,19 @@ class _AlertsPageState extends State<AlertsPage> {
   // ─── ALERT LIST ───────────────────────────────────────────────────────────
 
   Widget _buildAlertList() {
+    if (_errorMessage != null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 80.0),
+        child: ConnectionErrorWidget(onRetry: _fetchAlerts),
+      );
+    }
+
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.verifyingAccent),
+      );
+    }
+
     final active = _activeAlerts;
     final archived = _archivedAlerts;
 
@@ -283,7 +334,6 @@ class _AlertsPageState extends State<AlertsPage> {
     return ListView(
       padding: EdgeInsets.zero,
       children: [
-        // ── Active alerts section ──────────────────────────────────────────
         if (active.isNotEmpty) ...[
           _SectionHeader(
             label: 'ACTIVE ALERTS',
@@ -299,7 +349,6 @@ class _AlertsPageState extends State<AlertsPage> {
           ),
         ],
 
-        // ── Divider before archived ────────────────────────────────────────
         if (archived.isNotEmpty) ...[
           Container(height: 1, color: AppColors.border),
           _SectionHeader(
@@ -308,11 +357,8 @@ class _AlertsPageState extends State<AlertsPage> {
             countColor: AppColors.textDim,
           ),
           ...archived.map(
-            (a) => _AlertItem(
-              alert: a,
-              acknowledged: true,
-              onAcknowledge: () {}, // no-op; already acknowledged
-            ),
+            (a) =>
+                _AlertItem(alert: a, acknowledged: true, onAcknowledge: () {}),
           ),
         ],
       ],
@@ -385,7 +431,7 @@ class _SectionHeader extends StatelessWidget {
 // ═════════════════════════════════════════════════════════════════════════════
 
 class _AlertItem extends StatefulWidget {
-  final AlertRecord alert;
+  final LiveAlertRecord alert;
   final bool acknowledged;
   final VoidCallback onAcknowledge;
 
@@ -457,10 +503,8 @@ class _AlertItemState extends State<_AlertItem> {
                                 color: AppColors.text,
                               ),
                             ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 7,
-                              ),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 7),
                               child: Text(
                                 '·',
                                 style: TextStyle(

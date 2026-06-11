@@ -269,6 +269,10 @@ class _AppShellState extends State<_AppShell> {
   VerificationResult? _selectedVerificationResult;
   String _verificationResultReturnRoute = RouteName.scanQR;
 
+  // Stores the verification_log ID selected from the history table.
+  // Used exclusively for the history → verificationDetails navigation.
+  String? _selectedVerificationHistoryId;
+
   String? _selectedPolicyId;
   String _addPolicyReturnRoute = RouteName.manualVerify;
 
@@ -317,12 +321,24 @@ class _AppShellState extends State<_AppShell> {
         );
 
       case RouteName.credentialDetail:
-        final cred = IssuingMockData.credentials.firstWhere(
-          (c) => c.id == (_selectedCredentialId ?? ''),
-          orElse: () => IssuingMockData.credentials.first,
+        final credId = _selectedCredentialId ?? '';
+        // Provide a placeholder credential so the page can mount and read the ID.
+        // CredentialDetailPage will automatically fetch the real live details using this ID.
+        final placeholderCred = CredentialRecord(
+          id: credId,
+          holderEmiratesID: '',
+          holderName: '',
+          holderEmail: '',
+          holderId: '',
+          credentialType: '',
+          issuedBy: '',
+          issueDate: '',
+          status: CredentialStatus.valid,
+          auditTrail: const [],
+          attributes: const {},
         );
         return CredentialDetailPage(
-          credential: cred,
+          credential: placeholderCred,
           onClose: () => _handleNavigate(_credentialDetailReturnRoute),
           onReissue: (updated) =>
               _handleNavigate(RouteName.issueSingle, reissueCred: updated),
@@ -375,8 +391,8 @@ class _AppShellState extends State<_AppShell> {
       case RouteName.scanQR:
         return ScanToValidatePage(
           onBack: () => _handleNavigate(RouteName.dashboard),
-          onScanSuccess: () {
-            _selectedVerificationResult = VerifyingMockData.valid();
+          onScanSuccess: (VerificationResult result) {
+            _selectedVerificationResult = result; // Pass live API result here!
             _verificationResultReturnRoute = RouteName.scanQR;
             _handleNavigate(RouteName.verificationResult);
           },
@@ -415,13 +431,23 @@ class _AppShellState extends State<_AppShell> {
 
       case RouteName.verificationHistory:
         return VerificationHistoryPage(
-          onViewVerification: (id) =>
-              _handleNavigate(RouteName.verificationDetails, arg: id),
+          onViewVerification: (id) {
+            // Store the verification log ID, then navigate to the detail page.
+            // The detail page will call ApiService.getVerificationDetail(id)
+            // on init to fetch all the real data for that event.
+            _selectedVerificationHistoryId = id;
+            _delegate.push(RouteName.verificationDetails);
+            final scaffoldState = _scaffoldKey.currentState;
+            if (scaffoldState != null && scaffoldState.isDrawerOpen) {
+              scaffoldState.closeDrawer();
+            }
+          },
         );
 
       case RouteName.verificationDetails:
+        // Pass the verification log record ID. The page fetches its own data.
         return VerificationDetailPage(
-          result: _selectedVerificationResult ?? VerifyingMockData.tampered(),
+          recordId: _selectedVerificationHistoryId ?? '',
           onBack: () => _handleNavigate(RouteName.verificationHistory),
         );
 

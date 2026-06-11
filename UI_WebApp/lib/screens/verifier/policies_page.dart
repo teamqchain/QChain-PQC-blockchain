@@ -23,7 +23,7 @@ import 'package:qportal_webapp/components/searchBar.dart';
 import 'package:qportal_webapp/models/verifiying_models.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  PAGE
@@ -591,7 +591,7 @@ class _PolicyRowState extends State<_PolicyRow> {
 
 class AppliesToBadge extends StatelessWidget {
   final String label;
-  const AppliesToBadge({required this.label});
+  const AppliesToBadge({super.key, required this.label});
 
   Color _color() {
     final l = label.toLowerCase();
@@ -868,7 +868,9 @@ class _PaginationBar extends StatelessWidget {
     if (currentPage > 4) result.add(null);
     final start = (currentPage - 2).clamp(2, totalPages - 1);
     final end = (currentPage + 2).clamp(2, totalPages - 1);
-    for (int i = start; i <= end; i++) result.add(i);
+    for (int i = start; i <= end; i++) {
+      result.add(i);
+    }
     if (currentPage < totalPages - 3) result.add(null);
     result.add(totalPages);
     return result;
@@ -885,9 +887,9 @@ class _PaginationBar extends StatelessWidget {
         Row(
           children: [
             _PageBtn(
-              child: const Icon(Icons.chevron_left, size: 16),
               enabled: currentPage > 1,
               onTap: () => onPageChanged(currentPage - 1),
+              child: const Icon(Icons.chevron_left, size: 16),
             ),
             const SizedBox(width: 4),
             ..._pageNumbers.map((p) {
@@ -925,9 +927,9 @@ class _PaginationBar extends StatelessWidget {
             }),
             const SizedBox(width: 4),
             _PageBtn(
-              child: const Icon(Icons.chevron_right, size: 16),
               enabled: currentPage < totalPages,
               onTap: () => onPageChanged(currentPage + 1),
+              child: const Icon(Icons.chevron_right, size: 16),
             ),
           ],
         ),

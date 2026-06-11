@@ -16,16 +16,20 @@
 //     );
 
 import 'package:flutter/material.dart';
+import 'package:qportal_webapp/components/connection_error.dart';
+import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/components/issuer/holderList.dart';
 import 'package:qportal_webapp/components/issuer/previewCard.dart';
 import 'package:qportal_webapp/components/issuer/schemeType.dart';
+import 'package:qportal_webapp/components/searchBar.dart';
 import 'package:qportal_webapp/components/stepper.dart';
 import 'package:qportal_webapp/models/issuing_models.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/view/responsive_layout.dart';
+import 'package:qportal_webapp/components/countChip.dart';
 import 'package:qportal_webapp/widgets/datePicker.dart';
-import 'package:qportal_webapp/widgets/app_button.dart';
+import 'package:qportal_webapp/components/appButton.dart';
 import 'dart:convert';
 import 'package:qportal_webapp/services/api_service.dart';
 
@@ -47,14 +51,14 @@ const _kStepLabels = [
 // Map key is fieldId, value is the default string to use.
 const _kSchemaDefaults = <String, Map<String, String>>{
   'SCH-001': {
-    'f1': 'Bachelor of Computer Science',
+    'f1': 'BSc Computer Science',
     'f2': 'College of Computing & Informatics',
     'f3': 'STU-2025-0291',
     'f4': 'Merit',
     'f5': '2025',
   },
   'SCH-002': {
-    'f1': 'Master of Science in Cybersecurity',
+    'f1': 'MSc Cybersecurity',
     'f2': 'College of Computing & Informatics',
     'f3': 'STU-2025-0312',
     'f4': 'Thesis Track',
@@ -120,9 +124,9 @@ class IssueSingleCredentialPage extends StatefulWidget {
 }
 
 class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
-
   List<HolderRecord> _holders = [];
   bool _holdersLoading = false;
+  bool _holdersError = false;
 
   // ── navigation ─────────────────────────────────────────────────────────────
   int _step = 1;
@@ -141,7 +145,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
   final Map<String, String> _fieldValues = {};
   final Map<String, TextEditingController> _fieldCtrl = {};
   DateTime? _expiryDate;
-  bool _noExpiry = false;
+  bool _noExpiry = true;
   bool _step3Error = false;
 
   // ── step 5 ─────────────────────────────────────────────────────────────────
@@ -165,13 +169,14 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
     // 1 — Match schema by name (exact first, then contains)
     final schemas = _activeSchemas;
     _selectedSchema = schemas.cast<SchemaRecord?>().firstWhere(
-          (s) => s!.name == cred.credentialType,
-          orElse: () => schemas.cast<SchemaRecord?>().firstWhere(
-                (s) => cred.credentialType.toLowerCase().contains(s!.name.toLowerCase()) ||
-                    s.name.toLowerCase().contains(cred.credentialType.toLowerCase()),
-                orElse: () => null,
-              ),
-        );
+      (s) => s!.name == cred.credentialType,
+      orElse: () => schemas.cast<SchemaRecord?>().firstWhere(
+        (s) =>
+            cred.credentialType.toLowerCase().contains(s!.name.toLowerCase()) ||
+            s.name.toLowerCase().contains(cred.credentialType.toLowerCase()),
+        orElse: () => null,
+      ),
+    );
 
     // 2 — Match holder by ID (fallback to name)
     // In _bootstrapReissue, replace the IssuingMockData.holders lookup with:
@@ -232,11 +237,13 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
   /// Dispose old field controllers and create fresh ones seeded with
   /// schema-specific dummy defaults.
   void _initFields(SchemaRecord schema) {
-    for (final c in _fieldCtrl.values) c.dispose();
+    for (final c in _fieldCtrl.values) {
+      c.dispose();
+    }
     _fieldCtrl.clear();
     _fieldValues.clear();
-    _expiryDate = DateTime(2028, 6, 30);
-    _noExpiry = false;
+    _expiryDate = null;
+    _noExpiry = true;
 
     final defaults = _kSchemaDefaults[schema.id] ?? {};
 
@@ -260,6 +267,45 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
       }
     }
     return _noExpiry || _expiryDate != null;
+  }
+
+  List<String> _getFilteredDropdownOptions(SchemaField f) {
+    if (f.label == 'Degree Title') {
+      String collegeValue = '';
+      for (final field in _selectedSchema!.fields) {
+        if (field.label == 'College') {
+          collegeValue = _fieldValues[field.id] ?? '';
+          break;
+        }
+      }
+
+      if (collegeValue.isNotEmpty) {
+        return f.dropdownOptions.where((option) {
+          final opt = option.toLowerCase();
+          switch (collegeValue) {
+            case 'College of Computing & Informatics':
+              return opt.contains('computer science') || opt.contains('cybersecurity') || opt.contains('artificial intelligence') || opt.contains('quantum');
+            case 'College of Engineering':
+              return opt.contains('engineering') || opt.contains('architecture');
+            case 'College of Science':
+              return opt.contains('mathematics') || opt.contains('physics') || opt.contains('environmental');
+            case 'College of Business Administration':
+              return opt.contains('business') || opt.contains('finance');
+            case 'College of Pharmacy':
+              return opt.contains('pharmaceutical') || opt.contains('pharmacy');
+            case 'College of Medicine':
+              return opt.contains('nursing') || opt.contains('medicine') || opt.contains('surgery') || opt.contains('pediatrics') || opt.contains('radiology') || opt.contains('psychiatry');
+            case 'College of Arts & Humanities':
+              return opt.contains('arts') || opt.contains('humanities');
+            case 'College of Law':
+              return opt.contains('law');
+            default:
+              return true;
+          }
+        }).toList();
+      }
+    }
+    return f.dropdownOptions;
   }
 
   Future<void> _startIssuing() async {
@@ -362,13 +408,24 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
 
   Future<void> _loadHolders() async {
     if (!mounted) return;
-    setState(() => _holdersLoading = true);
-    final data = await ApiService.getHolders();
-    if (!mounted) return;
     setState(() {
-      _holders = data;
-      _holdersLoading = false;
+      _holdersLoading = true;
+      _holdersError = false;
     });
+    try {
+      final data = await ApiService.getHolders();
+      if (!mounted) return;
+      setState(() {
+        _holders = data;
+        _holdersLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _holdersLoading = false;
+        _holdersError = true;
+      });
+    }
   }
 
   // ─── ROOT BUILD ───────────────────────────────────────────────────────────
@@ -455,9 +512,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
     final schemas = _activeSchemas;
 
     if (_holdersLoading && _holders.isEmpty) {
-      return _card(
-        child: const Center(child: CircularProgressIndicator()),
-      );
+      return _card(child: const Center(child: CircularProgressIndicator()));
     }
 
     if (schemas.isEmpty) {
@@ -755,57 +810,47 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
   // ══════════════════════════════════════════════════════════════════════════
 
   Widget _buildStep2() {
+    if (_holdersLoading && _holders.isEmpty) {
+      return _card(child: const Center(child: CircularProgressIndicator()));
+    }
+    if (_holdersError) {
+      return _card(child: ConnectionErrorWidget(onRetry: _loadHolders));
+    }
+
     final holders = _filteredHolders;
 
     return _card(
       child: Column(
         children: [
-          // ── Search bar ────────────────────────────────────────────────────
+          // ── Toolbar header (filter + search in one row) ─────────────────
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration:  BoxDecoration(
+            decoration: const BoxDecoration(
               border: Border(bottom: BorderSide(color: AppColors.border)),
             ),
             child: Row(
               children: [
-                const Icon(
-                  Icons.search,
-                  size: 15,
-                  color: AppColors.issuingAccent,
+                CountChip(count: _holders.length, label: "holder"),
+                Spacer(),
+                ToolbarIconBtn(
+                  icon: Icons.filter_list_rounded,
+                  tooltip: 'Filter',
+                  onTap: () {},
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: TextField(
+                  child: QSearchBar(
                     controller: _searchCtrl,
-                    style: const TextStyle(fontSize: 12, color: Colors.white),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      border: InputBorder.none,
-                      hintText: 'Search by name, ID, college…',
-                      hintStyle: AppTextStyles.bodyTiny.copyWith(
-                        fontSize: 12,
-                        color: AppColors.white.withOpacity(0.5),
-                      ),
-                    ),
+                    query: _holderSearch,
                     onChanged: (v) => setState(() => _holderSearch = v),
+                    onClear: () => setState(() => _holderSearch = ''),
+                    searchLabel: 'Search holders...',
+                    barWidth: 240,
                   ),
                 ),
-                if (_holderSearch.isNotEmpty)
-                  GestureDetector(
-                    onTap: () {
-                      _searchCtrl.clear();
-                      setState(() => _holderSearch = '');
-                    },
-                    child: const Icon(
-                      Icons.close,
-                      size: 13,
-                      color: AppColors.textDim,
-                    ),
-                  ),
               ],
             ),
           ),
-
           // ── Column headers ────────────────────────────────────────────────
           Container(
             color: AppColors.issuingAccent.withOpacity(0.16),
@@ -838,10 +883,12 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                         Container(height: 1, color: AppColors.border),
                     itemBuilder: (_, i) => HolderRow(
                       holder: holders[i],
-                      isSelected: _selectedHolder?.emiratesID == holders[i].emiratesID,
+                      isSelected:
+                          _selectedHolder?.emiratesID == holders[i].emiratesID,
                       onToggle: () => setState(() {
                         _step2Error = false;
-                        if (_selectedHolder?.emiratesID == holders[i].emiratesID) {
+                        if (_selectedHolder?.emiratesID ==
+                            holders[i].emiratesID) {
                           _selectedHolder = null; // toggle off
                         } else {
                           _selectedHolder = holders[i];
@@ -999,16 +1046,21 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                   : TextInputType.text,
             )
           else if (f.type == SchemaFieldType.dropdown)
-            _StyledDropdown(
-              value: (_fieldValues[f.id] ?? '').isEmpty
-                  ? null
-                  : _fieldValues[f.id],
-              hint: 'Select ${f.label.toLowerCase()}',
-              options: f.dropdownOptions,
-              onChanged: (v) => setState(() {
-                _fieldValues[f.id] = v ?? '';
-                _step3Error = false;
-              }),
+            Builder(
+              builder: (context) {
+                final options = _getFilteredDropdownOptions(f);
+                final currentValue = _fieldValues[f.id] ?? '';
+                final validValue = options.contains(currentValue) ? currentValue : null;
+                return _StyledDropdown(
+                  value: validValue,
+                  hint: 'Select ${f.label.toLowerCase()}',
+                  options: options,
+                  onChanged: (v) => setState(() {
+                    _fieldValues[f.id] = v ?? '';
+                    _step3Error = false;
+                  }),
+                );
+              },
             )
           else if (f.type == SchemaFieldType.yesNo)
             _YesNoToggle(
@@ -1063,16 +1115,15 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
           children: [
             _fieldLabel('No Expiry'),
             const SizedBox(height: 4),
-            Switch(
-              value: _noExpiry,
-              onChanged: (v) => setState(() {
-                _noExpiry = v;
-                if (v) _expiryDate = null;
-              }),
-              activeColor: AppColors.issuingAccent,
-              activeTrackColor: AppColors.issuingAccent.withOpacity(0.22),
-              inactiveThumbColor: AppColors.textDim,
-              inactiveTrackColor: AppColors.surfaceHover,
+            IgnorePointer(
+              child: Switch(
+                value: _noExpiry,
+                onChanged: (v) {},
+                activeThumbColor: AppColors.issuingAccent,
+                activeTrackColor: AppColors.issuingAccent.withOpacity(0.22),
+                inactiveThumbColor: AppColors.textDim,
+                inactiveTrackColor: AppColors.surfaceHover,
+              ),
             ),
           ],
         ),
@@ -1375,7 +1426,14 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
           ),
         if (_step == 1) const SizedBox(width: 10),
         if (_step > 1)
-          AppButton(label: '← Back', onTap: _goBack, width: 80, showBorder: true, borderColor: AppColors.border, hoverColor: AppColors.surfaceHover),
+          AppButton(
+            label: '← Back',
+            onTap: _goBack,
+            width: 80,
+            showBorder: true,
+            borderColor: AppColors.border,
+            hoverColor: AppColors.surfaceHover,
+          ),
         if (_step > 1) const SizedBox(width: 10),
         if (_step == 4)
           AppButton(
@@ -1465,7 +1523,9 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
   @override
   void dispose() {
     _searchCtrl.dispose();
-    for (final c in _fieldCtrl.values) c.dispose();
+    for (final c in _fieldCtrl.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 }
@@ -1522,7 +1582,7 @@ class _StyledDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => DropdownButtonFormField<String>(
-    value: value,
+    initialValue: value,
     isExpanded: true,
     hint: Text(
       hint,
@@ -1605,4 +1665,3 @@ class _YesNoToggle extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-

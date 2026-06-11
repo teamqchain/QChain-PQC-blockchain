@@ -7,7 +7,7 @@ class DatePickerButton extends StatelessWidget {
   final bool disabled;
   final ValueChanged<DateTime> onPick;
 
-  const DatePickerButton({
+  const DatePickerButton({super.key, 
     required this.onPick,
     this.value,
     this.hint = 'Select date…',
@@ -33,8 +33,7 @@ class DatePickerButton extends StatelessWidget {
                       colorScheme: const ColorScheme.dark(
                         primary: AppColors.issuingAccent,
                         surface: Color(0xFF1C1C1C),
-                      ),
-                      dialogBackgroundColor: const Color(0xFF1C1C1C),
+                      ), dialogTheme: DialogThemeData(backgroundColor: const Color(0xFF1C1C1C)),
                     ),
                     child: child!,
                   ),

@@ -207,12 +207,14 @@ class CredentialRecord {
     if (t.contains('bsc') ||
         t.contains('msc') ||
         t.contains('phd') ||
-        t.contains('diploma'))
+        t.contains('diploma')) {
       return 'Academic';
+    }
     if (t.contains('medical') ||
         t.contains('nursing') ||
-        t.contains('pharmaceutical'))
+        t.contains('pharmaceutical')) {
       return 'Medical';
+    }
     if (t.contains('training') || t.contains('certificate')) {
       return 'Professional';
     }
@@ -226,8 +228,9 @@ class CredentialRecord {
     final t = credentialType.toLowerCase();
     if (t.contains('medical') ||
         t.contains('nursing') ||
-        t.contains('pharmaceutical'))
+        t.contains('pharmaceutical')) {
       return 'Ministry of Health';
+    }
     if (t.contains('employee')) return 'Human Resources Dept.';
     if (t.contains('fellowship') || t.contains('research')) {
       return 'Research & Innovation Office';
@@ -397,136 +400,136 @@ class ActionLogEntry {
 
 abstract class IssuingMockData {
   // ── Holders ────────────────────────────────────────────────────────────────
-  static const holders = [
-    HolderRecord(
-      id: 'H-0001',
-      fullName: 'Ahmed Al Mansouri',
-      email: 'ahmed.mansouri@student.uos.ae',
-      type: HolderType.bachelorStudent,
-      college: 'College of Computing & Informatics',
-      walletAddress: 'QW-A1B2C3D4',
-      emiratesID: '784-1990-1234567-1',
-    ),
-    HolderRecord(
-      id: 'H-0002',
-      fullName: 'Sara Al Hashimi',
-      email: 'sara.hashimi@student.uos.ae',
-      type: HolderType.bachelorStudent,
-      college: 'College of Business Administration',
-      walletAddress: 'QW-E5F6A7B8',
-      emiratesID: '784-1995-7654321-2',
-    ),
+  // static const holders = [
+  //   HolderRecord(
+  //     id: 'H-0001',
+  //     fullName: 'Ahmed Al Mansouri',
+  //     email: 'ahmed.mansouri@student.uos.ae',
+  //     type: HolderType.bachelorStudent,
+  //     college: 'College of Computing & Informatics',
+  //     walletAddress: 'QW-A1B2C3D4',
+  //     emiratesID: '784-1990-1234567-1',
+  //   ),
+  //   HolderRecord(
+  //     id: 'H-0002',
+  //     fullName: 'Sara Al Hashimi',
+  //     email: 'sara.hashimi@student.uos.ae',
+  //     type: HolderType.bachelorStudent,
+  //     college: 'College of Business Administration',
+  //     walletAddress: 'QW-E5F6A7B8',
+  //     emiratesID: '784-1995-7654321-2',
+  //   ),
 
-    // HolderRecord(
-    //   id: 'HC-00101',
-    //   fullName: 'Ahmed Al Rashidi',
-    //   email: 'a.rashidi@student.uos.ae',
-    //   type: HolderType.bachelorStudent,
-    //   college: 'College of Engineering',
-    //   walletAddress: 'QW-1A2B3C4D',
-    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-    // ),
-    // HolderRecord(
-    //   id: 'HC-00184',
-    //   fullName: 'Dr. Sara Al Mansoori',
-    //   email: 's.mansoori@uos.ae',
-    //   type: HolderType.medical,
-    //   college: 'College of Medicine',
-    //   walletAddress: 'QW-9F8E7D6C',
-    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-    // ),
-    // HolderRecord(
-    //   id: 'HC-00291',
-    //   fullName: 'Mohammed Ali',
-    //   email: 'm.ali@student.uos.ae',
-    //   type: HolderType.bachelorStudent,
-    //   college: 'College of Computing & Informatics',
-    //   walletAddress: 'QW-2C3D4E5F',
-    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-    // ),
-    // HolderRecord(
-    //   id: 'HC-00312',
-    //   fullName: 'Fatima Al Hashimi',
-    //   email: 'f.hashimi@student.uos.ae',
-    //   type: HolderType.masterStudent,
-    //   college: 'College of Business Administration',
-    //   walletAddress: 'QW-3E4F5A6B',
-    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-    // ),
-    // HolderRecord(
-    //   id: 'HC-00392',
-    //   fullName: 'Khalid Hassan',
-    //   email: 'k.hassan@uos.ae',
-    //   type: HolderType.employee,
-    //   college: 'N/A',
-    //   walletAddress: 'QW-5B6C7D8E',
-    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-    // ),
-    // HolderRecord(
-    //   id: 'HC-00445',
-    //   fullName: 'Mariam Yusuf',
-    //   email: 'm.yusuf@student.uos.ae',
-    //   type: HolderType.phdStudent,
-    //   college: 'College of Science',
-    //   walletAddress: 'QW-6C7D8E9F',
-    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-    // ),
-    // HolderRecord(
-    //   id: 'HC-00547',
-    //   fullName: 'Layla Khalid',
-    //   email: 'l.khalid@student.uos.ae',
-    //   type: HolderType.bachelorStudent,
-    //   college: 'College of Arts & Humanities',
-    //   walletAddress: 'QW-7D8E9F0A',
-    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+  //   // HolderRecord(
+  //   //   id: 'HC-00101',
+  //   //   fullName: 'Ahmed Al Rashidi',
+  //   //   email: 'a.rashidi@student.uos.ae',
+  //   //   type: HolderType.bachelorStudent,
+  //   //   college: 'College of Engineering',
+  //   //   walletAddress: 'QW-1A2B3C4D',
+  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+  //   // ),
+  //   // HolderRecord(
+  //   //   id: 'HC-00184',
+  //   //   fullName: 'Dr. Sara Al Mansoori',
+  //   //   email: 's.mansoori@uos.ae',
+  //   //   type: HolderType.medical,
+  //   //   college: 'College of Medicine',
+  //   //   walletAddress: 'QW-9F8E7D6C',
+  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+  //   // ),
+  //   // HolderRecord(
+  //   //   id: 'HC-00291',
+  //   //   fullName: 'Mohammed Ali',
+  //   //   email: 'm.ali@student.uos.ae',
+  //   //   type: HolderType.bachelorStudent,
+  //   //   college: 'College of Computing & Informatics',
+  //   //   walletAddress: 'QW-2C3D4E5F',
+  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+  //   // ),
+  //   // HolderRecord(
+  //   //   id: 'HC-00312',
+  //   //   fullName: 'Fatima Al Hashimi',
+  //   //   email: 'f.hashimi@student.uos.ae',
+  //   //   type: HolderType.masterStudent,
+  //   //   college: 'College of Business Administration',
+  //   //   walletAddress: 'QW-3E4F5A6B',
+  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+  //   // ),
+  //   // HolderRecord(
+  //   //   id: 'HC-00392',
+  //   //   fullName: 'Khalid Hassan',
+  //   //   email: 'k.hassan@uos.ae',
+  //   //   type: HolderType.employee,
+  //   //   college: 'N/A',
+  //   //   walletAddress: 'QW-5B6C7D8E',
+  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+  //   // ),
+  //   // HolderRecord(
+  //   //   id: 'HC-00445',
+  //   //   fullName: 'Mariam Yusuf',
+  //   //   email: 'm.yusuf@student.uos.ae',
+  //   //   type: HolderType.phdStudent,
+  //   //   college: 'College of Science',
+  //   //   walletAddress: 'QW-6C7D8E9F',
+  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+  //   // ),
+  //   // HolderRecord(
+  //   //   id: 'HC-00547',
+  //   //   fullName: 'Layla Khalid',
+  //   //   email: 'l.khalid@student.uos.ae',
+  //   //   type: HolderType.bachelorStudent,
+  //   //   college: 'College of Arts & Humanities',
+  //   //   walletAddress: 'QW-7D8E9F0A',
+  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
 
-    // ),
-    // HolderRecord(
-    //   id: 'HC-00601',
-    //   fullName: 'Nour Ibrahim',
-    //   email: 'n.ibrahim@student.uos.ae',
-    //   type: HolderType.masterStudent,
-    //   college: 'College of Engineering',
-    //   walletAddress: 'QW-8E9F0A1B',
-    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-    // ),
-    // HolderRecord(
-    //   id: 'HC-00618',
-    //   fullName: 'Omar Saeed',
-    //   email: 'o.saeed@uos.ae',
-    //   type: HolderType.employee,
-    //   college: 'N/A',
-    //   walletAddress: 'QW-9F0A1B2C',
-    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-    // ),
-    // HolderRecord(
-    //   id: 'HC-00724',
-    //   fullName: 'Reem Al Zaabi',
-    //   email: 'r.zaabi@student.uos.ae',
-    //   type: HolderType.phdStudent,
-    //   college: 'College of Law',
-    //   walletAddress: 'QW-0A1B2C3D',
-    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-    // ),
-    // HolderRecord(
-    //   id: 'HC-00801',
-    //   fullName: 'Tariq Al Nasser',
-    //   email: 't.nasser@student.uos.ae',
-    //   type: HolderType.masterStudent,
-    //   college: 'College of Computing & Informatics',
-    //   walletAddress: 'QW-1B2C3D4E',
-    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-    // ),
-    // HolderRecord(
-    //   id: 'HC-00852',
-    //   fullName: 'Hessa Al Mazrouei',
-    //   email: 'h.mazrouei@student.uos.ae',
-    //   type: HolderType.bachelorStudent,
-    //   college: 'College of Pharmacy',
-    //   walletAddress: 'QW-2C3D4E5F',
-    //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-    // ),
-  ];
+  //   // ),
+  //   // HolderRecord(
+  //   //   id: 'HC-00601',
+  //   //   fullName: 'Nour Ibrahim',
+  //   //   email: 'n.ibrahim@student.uos.ae',
+  //   //   type: HolderType.masterStudent,
+  //   //   college: 'College of Engineering',
+  //   //   walletAddress: 'QW-8E9F0A1B',
+  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+  //   // ),
+  //   // HolderRecord(
+  //   //   id: 'HC-00618',
+  //   //   fullName: 'Omar Saeed',
+  //   //   email: 'o.saeed@uos.ae',
+  //   //   type: HolderType.employee,
+  //   //   college: 'N/A',
+  //   //   walletAddress: 'QW-9F0A1B2C',
+  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+  //   // ),
+  //   // HolderRecord(
+  //   //   id: 'HC-00724',
+  //   //   fullName: 'Reem Al Zaabi',
+  //   //   email: 'r.zaabi@student.uos.ae',
+  //   //   type: HolderType.phdStudent,
+  //   //   college: 'College of Law',
+  //   //   walletAddress: 'QW-0A1B2C3D',
+  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+  //   // ),
+  //   // HolderRecord(
+  //   //   id: 'HC-00801',
+  //   //   fullName: 'Tariq Al Nasser',
+  //   //   email: 't.nasser@student.uos.ae',
+  //   //   type: HolderType.masterStudent,
+  //   //   college: 'College of Computing & Informatics',
+  //   //   walletAddress: 'QW-1B2C3D4E',
+  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+  //   // ),
+  //   // HolderRecord(
+  //   //   id: 'HC-00852',
+  //   //   fullName: 'Hessa Al Mazrouei',
+  //   //   email: 'h.mazrouei@student.uos.ae',
+  //   //   type: HolderType.bachelorStudent,
+  //   //   college: 'College of Pharmacy',
+  //   //   walletAddress: 'QW-2C3D4E5F',
+  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
+  //   // ),
+  // ];
 
   // ── Schemas ────────────────────────────────────────────────────────────────
   static final schemas = [
@@ -549,11 +552,6 @@ abstract class IssuingMockData {
       fields: [
         SchemaField(
           id: 'f1',
-          label: 'Degree Title',
-          type: SchemaFieldType.text,
-        ),
-        SchemaField(
-          id: 'f2',
           label: 'College',
           type: SchemaFieldType.dropdown,
           dropdownOptions: [
@@ -565,6 +563,23 @@ abstract class IssuingMockData {
             'College of Law',
             'College of Medicine',
             'College of Pharmacy',
+          ],
+        ),
+        SchemaField(
+          id: 'f2',
+          label: 'Degree Title',
+          type: SchemaFieldType.dropdown,
+          dropdownOptions: [
+            'BSc Computer Science',
+            'BSc Electrical Engineering',
+            'BSc Civil Engineering',
+            'BSc Mathematics',
+            'BSc Physics',
+            'BSc Biomedical Engineering',
+            'BSc Environmental Science',
+            'BSc Nursing',
+            'BSc Pharmaceutical Sciences',
+            'BSc Architecture',
           ],
         ),
         SchemaField(id: 'f3', label: 'Student ID', type: SchemaFieldType.text),
@@ -604,7 +619,15 @@ abstract class IssuingMockData {
         SchemaField(
           id: 'f1',
           label: 'Degree Title',
-          type: SchemaFieldType.text,
+          type: SchemaFieldType.dropdown,
+          dropdownOptions: [
+            'MSc Computer Science',
+            'MSc Cybersecurity',
+            'MSc Artificial Intelligence',
+            'MSc Business Administration',
+            'MSc Mechanical Engineering',
+            'MSc Finance',
+          ],
         ),
         SchemaField(
           id: 'f2',

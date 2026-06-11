@@ -16,10 +16,10 @@ class VariantToggler extends StatelessWidget {
   });
 
   String extractedLabel(label) {
-    String ex_label = label[8];
+    String exLabel = label[8];
     // logDebug(ex_label);
 
-    return ex_label;
+    return exLabel;
   }
 
   @override
