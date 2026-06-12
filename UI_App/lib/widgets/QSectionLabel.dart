@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:qwallet_mobileapp/constants/colors.dart';
+import 'package:qwallet_mobileapp/theme/colors.dart';
 
 class QSectionLabel extends StatelessWidget {
   final String label;

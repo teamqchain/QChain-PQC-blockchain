@@ -5,12 +5,14 @@ import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/components/overlays.dart';
 import 'package:qwallet_mobileapp/model/IdentityDoc.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
+import 'package:qwallet_mobileapp/model/credential_model.dart';
+import 'package:qwallet_mobileapp/screens/selective_screen.dart';
 
 class CardDetailOverlay extends StatefulWidget {
-  final IdentityDoc doc;
+  final CredentialModel doc;
   final VoidCallback onClose;
 
-  const CardDetailOverlay({required this.doc, required this.onClose});
+  const CardDetailOverlay({super.key, required this.doc, required this.onClose});
 
   @override
   State<CardDetailOverlay> createState() => _CardDetailOverlayState();
@@ -107,7 +109,7 @@ class _CardDetailOverlayState extends State<CardDetailOverlay>
                         Positioned(
                           top: -20,
                           right: -100,
-                          child: Container(
+                          child: SizedBox(
                             width: 300,
                             height: 300,
                             child: Image.asset(
@@ -118,13 +120,13 @@ class _CardDetailOverlayState extends State<CardDetailOverlay>
                           ),
                         ),
 
+                        // Replace the internal padding column with this updated layout:
                         Padding(
                           padding: const EdgeInsets.all(28),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Top: icon + close
                               Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
@@ -133,20 +135,14 @@ class _CardDetailOverlayState extends State<CardDetailOverlay>
                                     width: 58,
                                     height: 58,
                                     decoration: BoxDecoration(
-                                      color:
-                                          Colors.white.withOpacity(0.12),
-                                      borderRadius:
-                                          BorderRadius.circular(16),
+                                      color: Colors.white.withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(16),
                                       border: Border.all(
-                                        color: Colors.white
-                                            .withOpacity(0.15),
+                                        color: Colors.white.withOpacity(0.15),
                                       ),
                                     ),
                                     alignment: Alignment.center,
-                                    child: Icon(
-                                      doc.icon,
-                                      size: 30,
-                                    ),
+                                    child: Icon(doc.icon, size: 30),
                                   ),
                                   GestureDetector(
                                     onTap: _close,
@@ -154,12 +150,10 @@ class _CardDetailOverlayState extends State<CardDetailOverlay>
                                       width: 36,
                                       height: 36,
                                       decoration: BoxDecoration(
-                                        color:
-                                            Colors.white.withOpacity(0.12),
+                                        color: Colors.white.withOpacity(0.12),
                                         shape: BoxShape.circle,
                                         border: Border.all(
-                                          color: Colors.white
-                                              .withOpacity(0.2),
+                                          color: Colors.white.withOpacity(0.2),
                                         ),
                                       ),
                                       alignment: Alignment.center,
@@ -172,11 +166,9 @@ class _CardDetailOverlayState extends State<CardDetailOverlay>
                                   ),
                                 ],
                               ),
-
                               const SizedBox(height: 22),
-
                               Text(
-                                doc.title,
+                                doc.credentialType,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 24,
@@ -186,25 +178,21 @@ class _CardDetailOverlayState extends State<CardDetailOverlay>
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                doc.subtitle,
+                                doc.issuedBy,
                                 style: TextStyle(
                                   color: Colors.white.withOpacity(0.5),
                                   fontSize: 12,
                                 ),
                               ),
-
                               const SizedBox(height: 24),
-
                               Divider(
                                 color: Colors.white.withOpacity(0.1),
                                 height: 1,
                               ),
-
                               const SizedBox(height: 24),
-
                               OverlayField(
                                 label: 'DOCUMENT NUMBER',
-                                value: doc.number,
+                                value: doc.credentialID,
                               ),
                               const SizedBox(height: 18),
                               Row(
@@ -212,34 +200,33 @@ class _CardDetailOverlayState extends State<CardDetailOverlay>
                                   Expanded(
                                     child: OverlayField(
                                       label: 'ISSUED',
-                                      value: doc.issued,
+                                      value: doc.formattedIssueDate,
                                     ),
                                   ),
                                   const SizedBox(width: 16),
                                   Expanded(
                                     child: OverlayField(
                                       label: 'EXPIRES',
-                                      value: doc.expires,
+                                      value: doc.formattedExpiryDate,
                                     ),
                                   ),
                                 ],
                               ),
-
                               const SizedBox(height: 24),
-
-                              // Verified badge
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 12,
                                   vertical: 8,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF22C55E)
-                                      .withOpacity(0.12),
+                                  color: const Color(
+                                    0xFF22C55E,
+                                  ).withOpacity(0.12),
                                   borderRadius: BorderRadius.circular(10),
                                   border: Border.all(
-                                    color: const Color(0xFF22C55E)
-                                        .withOpacity(0.3),
+                                    color: const Color(
+                                      0xFF22C55E,
+                                    ).withOpacity(0.3),
                                   ),
                                 ),
                                 child: Row(
@@ -265,25 +252,43 @@ class _CardDetailOverlayState extends State<CardDetailOverlay>
                                   ],
                                 ),
                               ),
-
                               const SizedBox(height: 22),
-
-                              // Action buttons
                               Row(
                                 children: [
+                                  // The QR / Present Button
                                   Expanded(
                                     child: OverlayBtn(
                                       icon: Icons.qr_code_2,
                                       label: 'Present',
                                       onTap: () {
-                                        Get.toNamed(
-                                          Routes.PRESENT,
-                                          arguments: doc,
+                                        Get.to(
+                                          () => SelectiveShareScreen(
+                                            doc: doc,
+                                            mode: ShareMode.qr,
+                                          ),
                                         );
                                         _close();
                                       },
                                     ),
                                   ),
+                                  const SizedBox(width: 12),
+                                  // The OTP Button
+                                  // Expanded(
+                                  //   child: OverlayBtn(
+                                  //     icon: Icons.pin_outlined,
+                                  //     label:
+                                  //         'OTP', // Or 'Generate OTP' depending on your design space
+                                  //     onTap: () {
+                                  //       Get.to(
+                                  //         () => SelectiveShareScreen(
+                                  //           doc: doc,
+                                  //           mode: ShareMode.otp,
+                                  //         ),
+                                  //       );
+                                  //       _close();
+                                  //     },
+                                  //   ),
+                                  // ),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: OverlayBtn(
@@ -302,7 +307,7 @@ class _CardDetailOverlayState extends State<CardDetailOverlay>
                               ),
                             ],
                           ),
-                        ),
+                        )
                       ],
                     ),
                   ),

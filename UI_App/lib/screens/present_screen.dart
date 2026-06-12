@@ -2,9 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:qwallet_mobileapp/model/IdentityDoc.dart';
-import 'package:qwallet_mobileapp/screens/document_detail_screen.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
+import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/screens/selective_screen.dart';
+import 'package:qwallet_mobileapp/services/app_api_service.dart';
+
 
 class PresentScreen extends StatefulWidget {
   const PresentScreen({super.key});
@@ -14,24 +17,164 @@ class PresentScreen extends StatefulWidget {
 }
 
 class _PresentScreenState extends State<PresentScreen> {
-  late final IdentityDoc doc;
+  late CredentialModel doc;
+  late String _presentationID;
+  late List<String> _hiddenFields;
 
-  static const _totalSeconds = 10;  //1 * 60; // 5 minutes
-  late int _secondsLeft;
+  static const int _expiryDuration = 60; // 1 minute
+
+  DateTime? _expiresAt;
+  int _secondsLeft = 0;
+  int _totalSeconds = _expiryDuration;
   Timer? _timer;
   bool _expired = false;
+  bool _isRefreshing = false;
 
   @override
   void initState() {
     super.initState();
-    doc = Get.arguments as IdentityDoc;
-    _secondsLeft = _totalSeconds;
-    _startTimer();
+    final args = Get.arguments;
+
+    // Handle both CredentialModel and Map arguments from new logic
+    if (args is CredentialModel) {
+      doc = args;
+      _presentationID = '';
+      _hiddenFields = [];
+      _expiresAt = null;
+    } else if (args is Map<String, dynamic>) {
+      doc = args['doc'];
+      _presentationID = args['presentationID'] ?? '';
+      _hiddenFields = args['hiddenFields'] ?? [];
+      _expiresAt = DateTime.tryParse(args['expiresAt'] ?? '');
+    } else {
+      throw Exception('Invalid arguments passed to PresentScreen');
+    }
+
+    if (_presentationID.isEmpty) {
+      // If we don't have a presentation yet, generate it
+      _initializePresentation();
+    } else {
+      // If we do, calculate total seconds for the progress bar and start timer
+      if (_expiresAt != null) {
+        final diff = _expiresAt!.difference(DateTime.now().toUtc()).inSeconds;
+        if (diff > 0) _totalSeconds = diff;
+      }
+      _startTimer();
+    }
   }
 
+  Future<void> _initializePresentation() async {
+    setState(() => _isRefreshing = true);
+
+    try {
+      final result = await ApiService.generatePresentation(
+        doc.credentialID,
+        _hiddenFields,
+        _expiryDuration, 
+      );
+
+      setState(() => _isRefreshing = false);
+
+      if (result != null) {
+        setState(() {
+          _presentationID = result['presentationID'];
+          _expiresAt = DateTime.tryParse(result['expiresAt']);
+          if (_expiresAt != null) {
+            final diff = _expiresAt!.difference(DateTime.now().toUtc()).inSeconds;
+            if (diff > 0) _totalSeconds = diff;
+          }
+        });
+        _startTimer();
+      } else {
+        Get.snackbar(
+          'Network Error',
+          'Could not generate presentation. Please try again.',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.redAccent,
+          colorText: Colors.white,
+        );
+      }
+    } catch (e) {
+      setState(() => _isRefreshing = false);
+      Get.snackbar(
+        'Network Error',
+        e.toString(),
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
+    }
+  }
+
+  Future<void> _refreshQR() async {
+    setState(() => _isRefreshing = true);
+
+    try {
+      final result = await ApiService.generatePresentation(
+        doc.credentialID,
+        _hiddenFields,
+        _expiryDuration,
+      );
+
+      setState(() => _isRefreshing = false);
+
+      if (result != null) {
+        setState(() {
+          _presentationID = result['presentationID'];
+          _expiresAt = DateTime.tryParse(result['expiresAt']);
+          if (_expiresAt != null) {
+            final diff = _expiresAt!.difference(DateTime.now().toUtc()).inSeconds;
+            if (diff > 0) _totalSeconds = diff;
+          }
+        });
+        _startTimer();
+      } else {
+        Get.snackbar(
+          'Network Error',
+          'Could not refresh QR code. Check your connection.',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.redAccent,
+          colorText: Colors.white,
+        );
+      }
+    } catch (e) {
+      setState(() => _isRefreshing = false);
+      Get.snackbar(
+        'Network Error',
+        e.toString(),
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.redAccent,
+        colorText: Colors.white,
+      );
+    }
+  }
+
+  // void _startTimer() {
+  //   _expired = false;
+  //   _timer?.cancel();
+
+  //   _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+  //     if (_expiresAt == null) return;
+
+  //     final diff = _expiresAt!.difference(DateTime.now().toUtc()).inSeconds;
+
+  //     if (diff <= 0) {
+  //       t.cancel();
+  //       setState(() {
+  //         _secondsLeft = 0;
+  //         _expired = true;
+  //       });
+  //     } else {
+  //       setState(() => _secondsLeft = diff);
+  //     }
+  //   });
+  // }
   void _startTimer() {
-    _expired = false;
-    _secondsLeft = _totalSeconds;
+    setState(() {
+      _expired = false;
+      _secondsLeft = _totalSeconds;
+    });
+
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (_secondsLeft <= 0) {
@@ -43,7 +186,11 @@ class _PresentScreenState extends State<PresentScreen> {
     });
   }
 
-  void _refresh() => setState(() => _startTimer());
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
 
   String get _timeLabel {
     final m = _secondsLeft ~/ 60;
@@ -51,13 +198,8 @@ class _PresentScreenState extends State<PresentScreen> {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  double get _progress => _secondsLeft / _totalSeconds;
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
+  double get _progress =>
+      _totalSeconds > 0 ? (_secondsLeft / _totalSeconds).clamp(0.0, 1.0) : 0.0;
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +209,12 @@ class _PresentScreenState extends State<PresentScreen> {
       backgroundColor: const Color(0xFFF7F7F7),
       body: Column(
         children: [
-          _PresentHeroBox(doc: doc, expired: _expired),
+          _PresentHeroBox(
+            doc: doc,
+            expired: _expired,
+            presentationID: _presentationID,
+            isRefreshing: _isRefreshing,
+          ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
@@ -81,17 +228,17 @@ class _PresentScreenState extends State<PresentScreen> {
                   const SizedBox(height: 16),
                   _PresentActionBtn(
                     icon: Icons.refresh_rounded,
-                    label: 'Refresh QR Code',
+                    label: _isRefreshing ? 'Refreshing...' : 'Refresh QR Code',
                     bgColor: _expired
                         ? const Color(0xFF111111)
                         : const Color(0xFFCCCCCC),
                     fgColor: Colors.white,
-                    onTap: _expired ? _refresh : null,
+                    onTap: (_expired && !_isRefreshing) ? _refreshQR : null,
                   ),
                   const SizedBox(height: 12),
                   _PresentActionBtn(
-                    icon: Icons.link,
-                    label: 'Share Link Instead',
+                    icon: Icons.password,
+                    label: 'Share via OTP Instead',
                     bgColor: Colors.white,
                     fgColor: const Color(0xFF111111),
                     border: const Color(0xFFDDDDDD),
@@ -100,7 +247,7 @@ class _PresentScreenState extends State<PresentScreen> {
                         MaterialPageRoute(
                           builder: (_) => SelectiveShareScreen(
                             doc: doc,
-                            mode: ShareMode.link,
+                            mode: ShareMode.otp,
                           ),
                         ),
                       );
@@ -123,10 +270,17 @@ class _PresentScreenState extends State<PresentScreen> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _PresentHeroBox extends StatelessWidget {
-  final IdentityDoc doc;
+  final CredentialModel doc;
   final bool expired;
+  final String presentationID;
+  final bool isRefreshing;
 
-  const _PresentHeroBox({required this.doc, required this.expired});
+  const _PresentHeroBox({
+    required this.doc,
+    required this.expired,
+    required this.presentationID,
+    required this.isRefreshing,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -167,43 +321,24 @@ class _PresentHeroBox extends StatelessWidget {
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Present Document',
-                      style: TextStyle(
-                        color: Color(0xFF888888),
-                        fontSize: 13,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      doc.title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.4,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                child: QPageTitle(
+                  mainTitle: doc.credentialType,
+                  subTitle: 'Present Document',
+                  mainFontSize: 22,
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1A1A1A),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF333333)),
-                ),
-                child: Icon(doc.icon, size: 18),
-              ),
+              // Container(
+              //   padding: const EdgeInsets.symmetric(
+              //     horizontal: 10,
+              //     vertical: 5,
+              //   ),
+              //   decoration: BoxDecoration(
+              //     color: const Color(0xFF1A1A1A),
+              //     borderRadius: BorderRadius.circular(10),
+              //     border: Border.all(color: const Color(0xFF333333)),
+              //   ),
+              //   child: const Icon(Icons.badge, size: 18, color: Colors.white),
+              // ),
             ],
           ),
 
@@ -265,14 +400,23 @@ class _PresentHeroBox extends StatelessWidget {
                 : Stack(
                     alignment: Alignment.center,
                     children: [
-                      // Corner brackets for visual framing
-                      const _QrCorners(),
-                      // QR icon placeholder
-                      Icon(
-                        Icons.qr_code_2,
-                        size: 160,
-                        color: const Color(0xFF111111).withOpacity(0.88),
-                      ),
+                      // Live QR Code replacing the static icon
+                      isRefreshing || presentationID.isEmpty
+                          ? const CircularProgressIndicator(color: Colors.black)
+                          : QrImageView(
+                              data: presentationID,
+                              version: QrVersions.auto,
+                              size: 165.0,
+                              padding: EdgeInsets.zero,
+                              eyeStyle: const QrEyeStyle(
+                                eyeShape: QrEyeShape.square,
+                                color: Colors.black,
+                              ),
+                              dataModuleStyle: const QrDataModuleStyle(
+                                dataModuleShape: QrDataModuleShape.square,
+                                color: Colors.black,
+                              ),
+                            ),
                     ],
                   ),
           ),
@@ -281,7 +425,7 @@ class _PresentHeroBox extends StatelessWidget {
 
           // Issuer + doc name label below QR
           Text(
-            doc.title,
+            doc.issuedBy,
             style: const TextStyle(
               color: Colors.white,
               fontSize: 15,
@@ -291,7 +435,7 @@ class _PresentHeroBox extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            doc.subtitle,
+            'ID: ${doc.credentialID}',
             style: TextStyle(
               color: Colors.white.withOpacity(0.45),
               fontSize: 12,
@@ -533,7 +677,7 @@ class _InfoNote extends StatelessWidget {
             child: Text(
               expired
                   ? 'This QR code has expired for security reasons. Tap Refresh to generate a new one-time code.'
-                  : 'Show this QR code to a verifier. It is single-use and expires after 5 minutes for your security.',
+                  : 'Show this QR code to a verifier. It is single-use and expires shortly for your security.',
               style: const TextStyle(
                 color: Color(0xFFAAAAAA),
                 fontSize: 11,

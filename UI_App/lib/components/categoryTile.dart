@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:qwallet_mobileapp/constants/colors.dart';
-import 'package:qwallet_mobileapp/model/wallet_category.dart';
+import 'package:qwallet_mobileapp/theme/colors.dart';
+import 'package:qwallet_mobileapp/widgets/wallet_category.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
 
 /// A single grid tile on the wallet screen.
@@ -9,7 +9,7 @@ import 'package:qwallet_mobileapp/routes/app_routes.dart';
 class CategoryTile extends StatelessWidget {
   final WalletCategory category;
 
-  const CategoryTile({required this.category});
+  const CategoryTile({super.key, required this.category});
 
   @override
   Widget build(BuildContext context) {
@@ -53,20 +53,29 @@ class CategoryTile extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
+                  // padding: const EdgeInsets.symmetric(
+                  //   horizontal: 8,
+                  //   vertical: 3,
+                  // ),
+                  // decoration: BoxDecoration(
+                  //   color: const Color(0xFF000000),
+                  //   borderRadius: BorderRadius.circular(20),
+                  // ),
+                  width: 22,
+                  height: 22,
+                  margin: const EdgeInsets.only(top: 4, right: 4),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF000000),
+                    shape: BoxShape.circle,
                   ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF000000),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${category.count}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
+                  child: Center(
+                    child: Text(
+                      '${category.count}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),

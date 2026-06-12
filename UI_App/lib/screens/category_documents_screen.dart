@@ -3,11 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/Headers/categoryHeader.dart';
 import 'package:qwallet_mobileapp/components/CardDetails.dart';
-import 'package:qwallet_mobileapp/components/card_widgets.dart';
-import 'package:qwallet_mobileapp/model/IdentityDoc.dart';
-import 'package:qwallet_mobileapp/model/wallet_category.dart';
+import 'package:qwallet_mobileapp/model/credential_model.dart';
+import 'package:qwallet_mobileapp/services/logger.dart';
+import 'package:qwallet_mobileapp/widgets/wallet_category.dart';
 import 'package:qwallet_mobileapp/view/listView.dart';
 import 'package:qwallet_mobileapp/view/stackView.dart';
+import 'package:qwallet_mobileapp/services/wallet_controller.dart';
 
 class CategoryDocumentsScreen extends StatefulWidget {
   const CategoryDocumentsScreen({super.key});
@@ -19,27 +20,72 @@ class CategoryDocumentsScreen extends StatefulWidget {
 
 class _CategoryDocumentsScreenState extends State<CategoryDocumentsScreen> {
   bool _isStackView = true;
-  IdentityDoc? _openedDoc;
+  CredentialModel? _openedDoc;
+  final Set<String> _localFavs = {};
 
   late WalletCategory _category;
-  late List<IdentityDoc> _categoryDocs;
+  late List<CredentialModel> _categoryDocs;
+
+  // Set the default filter to 'active' (Valid Only)
+  String _currentFilter = 'active';
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _category = Get.arguments as WalletCategory;
-    _categoryDocs = allDocs
-        .where((doc) => doc.category == _category.id)
-        .toList();
+    _loadLiveDocs();
   }
 
-  void _toggleFav(int index) {
+  void _loadLiveDocs() {
+    final controller = Get.find<WalletController>();
+
+    var baseDocs = controller.credentials
+        .where((c) => c.category == _category.id)
+        .toList();
+
     setState(() {
-      _categoryDocs[index].isFavourite = !_categoryDocs[index].isFavourite;
+      // --- ADD THIS BLOCK to sync initial favorites ---
+      _localFavs.clear();
+      for (var doc in baseDocs) {
+        if (doc.isFavorite) {
+          _localFavs.add(doc.credentialID);
+        }
+      }
+      // ----------------------------------------------
+
+      if (_currentFilter == 'all') {
+        _categoryDocs = baseDocs;
+      } else {
+        _categoryDocs = baseDocs
+            .where((c) => c.status.toLowerCase() == _currentFilter)
+            .toList();
+      }
     });
   }
 
-  void _openCard(IdentityDoc doc) => setState(() => _openedDoc = doc);
+  void _toggleFav(String credId) {
+    // 1. Update the local UI state for instant feedback
+    setState(() {
+      if (_localFavs.contains(credId)) {
+        _localFavs.remove(credId);
+      } else {
+        _localFavs.add(credId);
+      }
+    });
+
+    // 2. Look up the document and trigger the API call in the controller
+    final controller = Get.find<WalletController>();
+    try {
+      final doc = controller.credentials.firstWhere(
+        (c) => c.credentialID == credId,
+      );
+      controller.toggleFavoriteStatus(doc);
+    } catch (e) {
+      logDebug('Error finding document: $e');
+    }
+  }
+
+  void _openCard(CredentialModel doc) => setState(() => _openedDoc = doc);
   void _closeCard() => setState(() => _openedDoc = null);
 
   @override
@@ -57,6 +103,11 @@ class _CategoryDocumentsScreenState extends State<CategoryDocumentsScreen> {
                 isStackView: _isStackView,
                 onToggleView: () =>
                     setState(() => _isStackView = !_isStackView),
+                currentFilter: _currentFilter,
+                onFilterChanged: (newFilter) {
+                  _currentFilter = newFilter;
+                  _loadLiveDocs();
+                },
               ),
               Expanded(
                 child: AnimatedSwitcher(
@@ -73,27 +124,75 @@ class _CategoryDocumentsScreenState extends State<CategoryDocumentsScreen> {
                       child: child,
                     ),
                   ),
-                  child: _isStackView
-                      ? StackView(
-                          key: const ValueKey('stack'),
-                          docs: _categoryDocs,
-                          onFav: _toggleFav,
-                          onTap: _openCard,
-                        )
-                      : DocListView(
-                          key: const ValueKey('list'),
-                          docs: _categoryDocs,
-                          onFav: _toggleFav,
-                          onTap: _openCard,
-                        ),
+                  child: _categoryDocs.isEmpty
+                      ? const _EmptyFilterState()
+                      : (_isStackView
+                            ? StackView(
+                                key: const ValueKey('stack'),
+                                docs: _categoryDocs,
+                                favIds: _localFavs,
+                                onFav: _toggleFav,
+                                onTap: _openCard,
+                              )
+                            : DocListView(
+                                key: const ValueKey('list'),
+                                docs: _categoryDocs,
+                                favIds: _localFavs,
+                                onFav: _toggleFav,
+                                onTap: _openCard,
+                              )),
                 ),
               ),
             ],
           ),
 
-          // ── BLUR + CARD DETAIL OVERLAY ──────────────────────────────────
           if (_openedDoc != null)
             CardDetailOverlay(doc: _openedDoc!, onClose: _closeCard),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── EMPTY STATE (When filters return 0 results) ──────────────────────────────
+
+class _EmptyFilterState extends StatelessWidget {
+  const _EmptyFilterState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE5E5EA),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(
+              Icons.filter_alt_off_rounded,
+              size: 32,
+              color: Color(0xFF888888),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'No documents match this filter',
+            style: TextStyle(
+              color: Color(0xFF111111),
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Try selecting "All Documents"',
+            style: TextStyle(color: Color(0xFF888888), fontSize: 13),
+          ),
         ],
       ),
     );

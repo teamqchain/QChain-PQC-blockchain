@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 // ignore: depend_on_referenced_packages
-import 'package:qwallet_mobileapp/constants/colors.dart';
+import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -61,12 +61,12 @@ class _SplashScreenState extends State<SplashScreen>
                   // Outer glow ring
                   AnimatedBuilder(
                     animation: _pulse,
-                    builder: (_, __) => Container(width: 160, height: 160),
+                    builder: (_, __) => SizedBox(width: 160, height: 160),
                   ),
                   // Middle ring
                   AnimatedBuilder(
                     animation: _pulse,
-                    builder: (_, __) => Container(width: 120, height: 120),
+                    builder: (_, __) => SizedBox(width: 120, height: 120),
                   ),
                   // Core
                   Container(
