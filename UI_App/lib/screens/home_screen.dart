@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:qwallet_mobileapp/constants/colors.dart';
-import 'package:qwallet_mobileapp/constants/data.dart';
+import 'package:qwallet_mobileapp/components/shimmerWave.dart';
+import 'package:qwallet_mobileapp/model/activity_model.dart';
+import 'package:qwallet_mobileapp/model/credential_model.dart';
+import 'package:qwallet_mobileapp/screens/activity_screen.dart';
+import 'package:qwallet_mobileapp/screens/add_document_screen.dart';
+import 'package:qwallet_mobileapp/services/activity_controller.dart';
+import 'package:qwallet_mobileapp/services/add_document_controller.dart';
+import 'package:qwallet_mobileapp/services/logger.dart';
+import 'package:qwallet_mobileapp/services/wallet_controller.dart';
+import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
-import 'package:qwallet_mobileapp/widgets/QBottomNav.dart';
+import 'package:qwallet_mobileapp/routes/main_shell.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,65 +22,175 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _navIndex = 0;
-
-  List<Credential> get _favourites =>
-      dummyCredentials.where((c) => c.status == 'Valid').take(2).toList();
-
-  int get _validCount =>
-      dummyCredentials.where((c) => c.status == 'Valid').length;
-  int get _suspendedCount =>
-      dummyCredentials.where((c) => c.status == 'Suspended').length;
-  int get _revokedCount =>
-      dummyCredentials.where((c) => c.status == 'Revoked').length;
-  int get _expiryCount =>
-      dummyCredentials.where((c) => c.status == 'Expired').length;
+  final WalletController controller = Get.put(WalletController());
+  final ActivityController activityController = Get.put(ActivityController());
+  final AddDocumentController addDocumentController = Get.put(
+    AddDocumentController(),
+  );
 
   @override
   Widget build(BuildContext context) {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
-      body: Column(
-        children: [
-          _HeroBox(
-            validCount: _validCount,
-            suspendedCount: _suspendedCount,
-            revokedCount: _revokedCount,
-            expiryCount: _expiryCount,
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _SectionHeader(title: 'Favourites', onSeeAll: () {}),
-                  const SizedBox(height: 14),
-                  ..._favourites.map(
-                    (cred) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _FavouriteCard(cred: cred),
-                    ),
+      backgroundColor: qBg,
+      body: Obx(() {
+        // Sync loading and error states across both controllers
+        final isLoading =
+            controller.isLoading.value || activityController.isLoading.value;
+        final hasError =
+            controller.errorMessage.isNotEmpty ||
+            activityController.errorMessage.isNotEmpty;
+
+        return Column(
+          children: [
+            isLoading
+                ? const _SkeletonHeroBox()
+                : _HeroBox(
+                    userName: controller.credentials.isNotEmpty
+                        ? controller.credentials.first.holderName
+                        : 'Holder',
+                    validCount: controller.validCount,
+                    suspendedCount: controller.suspendedCount,
+                    revokedCount: controller.revokedCount,
+                    expiryCount: controller.expiryCount,
                   ),
-                  const SizedBox(height: 24),
-                  _SectionHeader(title: 'Recent Activity', onSeeAll: () {}),
-                  const SizedBox(height: 14),
-                  ...dummyActivity
-                      .take(2)
-                      .map(
-                        (item) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _ActivityCard(item: item),
-                        ),
+
+            Expanded(
+              child: hasError && !isLoading
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            controller.errorMessage.value.isNotEmpty
+                                ? controller.errorMessage.value
+                                : activityController.errorMessage.value,
+                            style: const TextStyle(color: qRed),
+                          ),
+                          const SizedBox(height: 12),
+                          FilledButton(
+                            onPressed: () {
+                              controller.fetchMyCredentials();
+                              activityController.fetchActivity();
+                              addDocumentController.loadCatalog();
+                            },
+                            child: const Text(
+                              "Retry",
+                              style: TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        ],
                       ),
-                ],
-              ),
+                    )
+                  : RefreshIndicator(
+                      color: Colors.black,
+                      onRefresh: () async {
+                        // Refresh both on pull-down
+                        await controller.fetchMyCredentials();
+                        await activityController.fetchActivity();
+                        await addDocumentController.loadCatalog();
+
+                        if (controller.errorMessage.value.isNotEmpty ||
+                            activityController.errorMessage.value.isNotEmpty ||
+                            addDocumentController
+                                .errorMessage
+                                .value
+                                .isNotEmpty) {
+                          Get.snackbar(
+                            'Network Error',
+                            controller.errorMessage.value.isNotEmpty
+                                ? controller.errorMessage.value
+                                : activityController
+                                      .errorMessage
+                                      .value
+                                      .isNotEmpty
+                                ? activityController.errorMessage.value
+                                : addDocumentController.errorMessage.value,
+                            snackPosition: SnackPosition.BOTTOM,
+                            backgroundColor: qRed,
+                            colorText: qSecondary,
+                          );
+                        }
+                      },
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                        child: isLoading
+                            ? const _SkeletonList()
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // --- UPDATED RECENT ACTIVITY SECTION ---
+                                  _SectionHeader(
+                                    title: 'Recent Activity', // Changed title
+                                    onSeeAll: () {
+                                      context.findAncestorStateOfType<MainShellState>()?.switchTab(3);
+                                    },
+                                  ),
+                                  const SizedBox(height: 14),
+                                  if (activityController.activities.isEmpty)
+                                    const Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        vertical: 20,
+                                      ),
+                                      child: Text(
+                                        "No recent activity found.",
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
+                                    ),
+                                  // Take strictly the first 2 records from the ActivityController
+                                  ...activityController.activities
+                                      .take(2)
+                                      .map(
+                                        (activity) => Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 10,
+                                          ),
+                                          child: _ActivityCard(
+                                            activity: activity,
+                                          ), // Pass ActivityModel
+                                        ),
+                                      ),
+
+                                  const SizedBox(height: 24),
+                                  _SectionHeader(
+                                    title: 'Favourites',
+                                    onSeeAll: () {},
+                                  ),
+                                  const SizedBox(height: 14),
+                                  if (controller.favourites.isEmpty)
+                                    const Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        vertical: 20,
+                                      ),
+                                      child: Text(
+                                        "No active credentials found.",
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
+                                    ),
+                                  ...controller.favourites.map(
+                                    (cred) => Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 10,
+                                      ),
+                                      child: GestureDetector(
+                                        onTap: () => Get.toNamed(
+                                          Routes.DETAIL,
+                                          arguments: cred,
+                                        ),
+                                        child: _FavouriteCard(cred: cred),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                      ),
+                    ),
             ),
-          ),
-        ],
-      ),
+          ],
+        );
+      }),
     );
   }
 }
@@ -80,12 +198,14 @@ class _HomeScreenState extends State<HomeScreen> {
 // ─── HERO BOX ────────────────────────────────────────────────────────────────
 
 class _HeroBox extends StatefulWidget {
+  final String userName;
   final int validCount;
   final int suspendedCount;
   final int revokedCount;
   final int expiryCount;
 
   const _HeroBox({
+    required this.userName,
     required this.validCount,
     required this.suspendedCount,
     required this.revokedCount,
@@ -96,7 +216,6 @@ class _HeroBox extends StatefulWidget {
   State<_HeroBox> createState() => _HeroBoxState();
 }
 
-// ✅ SingleTickerProviderStateMixin is what was missing
 class _HeroBoxState extends State<_HeroBox>
     with SingleTickerProviderStateMixin {
   late final AnimationController _blink;
@@ -140,12 +259,8 @@ class _HeroBoxState extends State<_HeroBox>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Row: Avatar + Greeting + Bell ──
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Avatar
               Container(
                 width: 70,
                 height: 70,
@@ -155,24 +270,23 @@ class _HeroBoxState extends State<_HeroBox>
                   border: Border.all(color: const Color(0xFF444444), width: 2),
                 ),
                 alignment: Alignment.center,
-                child: const Text(
-                  'A',
-                  style: TextStyle(
+                child: Text(
+                  widget.userName.isNotEmpty
+                      ? widget.userName[0].toUpperCase()
+                      : 'H',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w800,
                     fontSize: 18,
                   ),
                 ),
               ),
-
               const SizedBox(width: 14),
-
-              // Greeting + Name
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       'Good Morning!',
                       style: TextStyle(
                         color: Color(0xFF888888),
@@ -180,10 +294,10 @@ class _HeroBoxState extends State<_HeroBox>
                         letterSpacing: 0.2,
                       ),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
-                      'Ahmed Salih',
-                      style: TextStyle(
+                      widget.userName.split(' ').first,
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
                         fontWeight: FontWeight.w800,
@@ -193,8 +307,6 @@ class _HeroBoxState extends State<_HeroBox>
                   ],
                 ),
               ),
-
-              // Bell Icon
               Stack(
                 children: [
                   Container(
@@ -235,10 +347,7 @@ class _HeroBoxState extends State<_HeroBox>
               ),
             ],
           ),
-
           const SizedBox(height: 20),
-
-          // ── Active Badge with blinking dot ──
           Container(
             width: double.infinity,
             height: 40,
@@ -252,7 +361,6 @@ class _HeroBoxState extends State<_HeroBox>
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 FadeTransition(
                   opacity: _fade,
@@ -277,21 +385,14 @@ class _HeroBoxState extends State<_HeroBox>
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.3,
                   ),
-                  textAlign: TextAlign.center,
                 ),
               ],
             ),
           ),
-
-          // const SizedBox(height: 16),
-
-          // ── Stats 2×2 Grid ──
-          // ── Stats 2×2 Layout (Replaces GridView) ──
           Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Column(
               children: [
-                // Top Row
                 Row(
                   children: [
                     Expanded(
@@ -301,7 +402,7 @@ class _HeroBoxState extends State<_HeroBox>
                         color: Colors.green,
                       ),
                     ),
-                    const SizedBox(width: 10), // Horizontal spacing
+                    const SizedBox(width: 10),
                     Expanded(
                       child: _StatTile(
                         label: 'Suspended',
@@ -311,8 +412,7 @@ class _HeroBoxState extends State<_HeroBox>
                     ),
                   ],
                 ),
-                const SizedBox(height: 10), // Vertical spacing
-                // Bottom Row
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
@@ -322,7 +422,7 @@ class _HeroBoxState extends State<_HeroBox>
                         color: Colors.red,
                       ),
                     ),
-                    const SizedBox(width: 10), // Horizontal spacing
+                    const SizedBox(width: 10),
                     Expanded(
                       child: _StatTile(
                         label: 'Expired',
@@ -363,42 +463,32 @@ class _StatTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFF222222)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '$count',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ),
-              ],
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              '$count',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.2,
+              ),
             ),
           ),
         ],
@@ -432,14 +522,21 @@ class _SectionHeader extends StatelessWidget {
         ),
         GestureDetector(
           onTap: onSeeAll,
-          child: const Text(
-            'See all →',
-            style: TextStyle(
-              color: qSub,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          child:  (title == 'Recent Activity')
+              ? Row(
+                children: [
+                  const Text(
+                      'See all',
+                      style: TextStyle(
+                        color: qSub,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded, color: qSub, size: 16),
+                ],
+              )
+              : const SizedBox.shrink(), // Hide "See all" for Favourites
         ),
       ],
     );
@@ -449,12 +546,15 @@ class _SectionHeader extends StatelessWidget {
 // ─── FAVOURITE CARD ──────────────────────────────────────────────────────────
 
 class _FavouriteCard extends StatelessWidget {
-  final Credential cred;
+  final CredentialModel cred;
 
   const _FavouriteCard({required this.cred});
 
   @override
   Widget build(BuildContext context) {
+    // Find the existing controller
+    final WalletController controller = Get.find<WalletController>();
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -475,12 +575,12 @@ class _FavouriteCard extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: const Color(0xFFF2F2F2),
+              color: cred.cardColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE8E8E8)),
+              border: Border.all(color: cred.cardColor.withOpacity(0.2)),
             ),
             alignment: Alignment.center,
-            child: Icon(cred.icon, size: 22, color: Colors.black,),
+            child: Icon(cred.icon, size: 22, color: cred.cardColor),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -488,7 +588,7 @@ class _FavouriteCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  cred.name,
+                  cred.credentialType,
                   style: const TextStyle(
                     color: Color(0xFF000000),
                     fontSize: 14,
@@ -498,14 +598,26 @@ class _FavouriteCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '${cred.issuer} · ${cred.issued}',
+                  '${cred.issuedBy} · ${cred.formattedIssueDate}',
                   style: const TextStyle(color: qSub, fontSize: 12),
                 ),
               ],
             ),
           ),
           const SizedBox(width: 10),
-          const Icon(Icons.star, color: Colors.amber, size: 20),
+
+          // --- UPDATED: Make the star tappable ---
+          GestureDetector(
+            onTap: () {
+              controller.toggleFavoriteStatus(cred);
+            },
+            // Added a subtle hit-box expansion for easier tapping
+            behavior: HitTestBehavior.opaque,
+            child: const Padding(
+              padding: EdgeInsets.all(4.0),
+              child: Icon(Icons.star, color: Colors.amber, size: 20),
+            ),
+          ),
         ],
       ),
     );
@@ -515,14 +627,12 @@ class _FavouriteCard extends StatelessWidget {
 // ─── ACTIVITY CARD ───────────────────────────────────────────────────────────
 
 class _ActivityCard extends StatelessWidget {
-  final ActivityItem item;
+  final ActivityModel activity;
 
-  const _ActivityCard({required this.item});
+  const _ActivityCard({required this.activity});
 
   @override
   Widget build(BuildContext context) {
-    final isReceived = item.icons == Icons.download;
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -542,13 +652,14 @@ class _ActivityCard extends StatelessWidget {
           Container(
             width: 38,
             height: 38,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Color(0xFF000000),
+              color:
+                  activity.iconBgColor, // Dynamically use activity icon color
             ),
             alignment: Alignment.center,
             child: Icon(
-              isReceived ? Icons.arrow_downward : Icons.arrow_upward,
+              activity.icon, // Dynamically use activity icon
               color: Colors.white,
               size: 16,
             ),
@@ -559,7 +670,7 @@ class _ActivityCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  item.text,
+                  activity.actionText, // E.g., "Issued Bachelor of Science"
                   style: const TextStyle(
                     color: Color(0xFF111111),
                     fontSize: 12,
@@ -569,7 +680,7 @@ class _ActivityCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  item.time,
+                  activity.timeAgo, // E.g., "2 hours ago"
                   style: const TextStyle(
                     color: Color(0xFFAAAAAA),
                     fontSize: 11,
@@ -580,6 +691,207 @@ class _ActivityCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─── SKELETON LOADING WIDGETS ────────────────────────────────────────────────
+
+class _SkeletonHeroBox extends StatelessWidget {
+  const _SkeletonHeroBox();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: Color(0xFF000000), // Background stays solidly black
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(32),
+          bottomRight: Radius.circular(32),
+        ),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        24,
+        MediaQuery.of(context).padding.top + 20,
+        24,
+        28,
+      ),
+      // Wrap the contents in the shimmer wave
+      child: ShimmerWave(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                // Avatar Placeholder
+                Container(
+                  width: 70,
+                  height: 70,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFF222222),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                // Text Placeholders
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 100,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF222222),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: 140,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF222222),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Static Notification Bell
+                Stack(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF1A1A1A),
+                        border: Border.all(
+                          color: const Color(0xFF333333),
+                          width: 1,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.notifications_outlined,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    Positioned(
+                      right: 2,
+                      top: 0,
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.red,
+                          border: Border.all(
+                            color: const Color(0xFF000000),
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            // Identity Pill Placeholder
+            Container(
+              width: double.infinity,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF22C55E).withOpacity(0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: Colors.green,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Container(
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: Colors.orange,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Container(
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: Colors.grey,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SkeletonList extends StatelessWidget {
+  const _SkeletonList();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Headers remain solid, they don't need to shimmer
+        _SectionHeader(title: 'Favourites', onSeeAll: () {}),
+        const SizedBox(height: 14),
+        // Cards get the wave effect
+        ShimmerWave(child: SkeletonIssuerTile(isHome: true)),
+        const SizedBox(height: 10),
+        ShimmerWave(child: SkeletonIssuerTile(isHome: true)),
+        const SizedBox(height: 24),
+
+        _SectionHeader(title: 'Recent Activity', onSeeAll: () {}),
+        const SizedBox(height: 14),
+        ShimmerWave(child: SkeletonActivityTile(myheight: 15)),
+      ],
     );
   }
 }

@@ -12,6 +12,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:qwallet_mobileapp/model/IdentityDoc.dart';
+import 'package:qwallet_mobileapp/model/credential_model.dart';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
@@ -246,15 +247,17 @@ class _CardDecorations extends StatelessWidget {
 // ─── WalletCard ───────────────────────────────────────────────────────────────
 // Used by stackView.dart — slightly larger sizing for the swiper layout.
 
+// ─── WalletCard ───────────────────────────────────────────────────────────────
+
 class WalletCard extends StatelessWidget {
-  final IdentityDoc doc;
-  final int index;
-  final void Function(int) onFav;
+  final CredentialModel doc;
+  final bool isFav;
+  final VoidCallback onFav;
   final VoidCallback onTap;
 
   const WalletCard({
     required this.doc,
-    required this.index,
+    required this.isFav,
     required this.onFav,
     required this.onTap,
     super.key,
@@ -277,23 +280,18 @@ class WalletCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _DocIcon(
-                    icon: doc.icon,
-                    size: 48,
-                    fontSize: 24,
-                    radius: 14,
-                  ),
+                  _DocIcon(icon: doc.icon, size: 48, fontSize: 24, radius: 14),
                   _FavButton(
-                    isFav: doc.isFavourite,
+                    isFav: isFav,
                     size: 36,
                     iconSize: 17,
-                    onTap: () => onFav(index),
+                    onTap: onFav,
                   ),
                 ],
               ),
               const Spacer(),
               Text(
-                doc.title,
+                doc.credentialType,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 20,
@@ -303,7 +301,7 @@ class WalletCard extends StatelessWidget {
               ),
               const SizedBox(height: 3),
               Text(
-                doc.subtitle,
+                doc.issuedBy,
                 style: TextStyle(
                   color: Colors.white.withOpacity(_kWhite50),
                   fontSize: 11,
@@ -311,7 +309,10 @@ class WalletCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 20),
-              _InfoStrip(number: doc.number, expires: doc.expires),
+              _InfoStrip(
+                number: doc.credentialID,
+                expires: doc.formattedExpiryDate,
+              ),
             ],
           ),
         ),
@@ -321,17 +322,17 @@ class WalletCard extends StatelessWidget {
 }
 
 // ─── ListCard ─────────────────────────────────────────────────────────────────
-// Used by listView.dart — slightly smaller sizing for the scrollable list.
 
 class ListCard extends StatelessWidget {
-  final IdentityDoc doc;
-  final int index;
-  final void Function(int) onFav;
-  final void Function(IdentityDoc) onTap;
+  final CredentialModel doc;
+  final bool isFav;
+  final VoidCallback onFav;
+  final VoidCallback onTap;
 
   const ListCard({
+    super.key,
     required this.doc,
-    required this.index,
+    required this.isFav,
     required this.onFav,
     required this.onTap,
   });
@@ -339,7 +340,7 @@ class ListCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => onTap(doc),
+      onTap: onTap,
       child: _CardDecorations(
         color: doc.cardColor,
         borderRadius: 20,
@@ -353,23 +354,18 @@ class ListCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _DocIcon(
-                    icon: doc.icon,
-                    size: 44,
-                    fontSize: 22,
-                    radius: 12,
-                  ),
+                  _DocIcon(icon: doc.icon, size: 44, fontSize: 22, radius: 12),
                   _FavButton(
-                    isFav: doc.isFavourite,
+                    isFav: isFav,
                     size: 34,
                     iconSize: 16,
-                    onTap: () => onFav(index),
+                    onTap: onFav,
                   ),
                 ],
               ),
               const SizedBox(height: 20),
               Text(
-                doc.title,
+                doc.credentialType,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 17,
@@ -379,7 +375,7 @@ class ListCard extends StatelessWidget {
               ),
               const SizedBox(height: 3),
               Text(
-                doc.subtitle,
+                doc.issuedBy,
                 style: TextStyle(
                   color: Colors.white.withOpacity(_kWhite50),
                   fontSize: 11,
@@ -387,7 +383,10 @@ class ListCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              _InfoStrip(number: doc.number, expires: doc.expires),
+              _InfoStrip(
+                number: doc.credentialID,
+                expires: doc.formattedExpiryDate,
+              ),
             ],
           ),
         ),
@@ -400,7 +399,7 @@ class ListCard extends StatelessWidget {
 // Shown by both views when the category has no documents.
 
 class EmptyDocsState extends StatelessWidget {
-  const EmptyDocsState();
+  const EmptyDocsState({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -452,7 +451,7 @@ class StackCounter extends StatelessWidget {
   final int total;
   final Color color;
 
-  const StackCounter({
+  const StackCounter({super.key, 
     required this.current,
     required this.total,
     required this.color,

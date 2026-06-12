@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:qwallet_mobileapp/constants/colors.dart';
+import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
+import 'package:qwallet_mobileapp/theme/colors.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -128,7 +129,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: TextButton(
                   onPressed: () => Navigator.of(context).pop(),
                   style: TextButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E1E1E),
+                    backgroundColor: qSecondary,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -137,8 +138,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: const Text(
                     'Close',
                     style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
+                      color: qPrimary,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -312,7 +313,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           child: Text(
                             title.toUpperCase(),
                             style: const TextStyle(
-                              color: Color(0xFFAAAAAA),
+                              color: qPrimary,
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
                               letterSpacing: 1.2,
@@ -417,24 +418,25 @@ class _SettingsHeroBox extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Screen label
-          const Text(
-            'Settings',
-            style: TextStyle(
-              color: Color(0xFF888888),
-              fontSize: 13,
-              letterSpacing: 0.2,
-            ),
-          ),
-          const SizedBox(height: 2),
-          const Text(
-            'Your Account',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
-            ),
-          ),
+          // const Text(
+          //   'Settings',
+          //   style: TextStyle(
+          //     color: Color(0xFF888888),
+          //     fontSize: 13,
+          //     letterSpacing: 0.2,
+          //   ),
+          // ),
+          // const SizedBox(height: 2),
+          // const Text(
+          //   'Your Account',
+          //   style: TextStyle(
+          //     color: Colors.white,
+          //     fontSize: 24,
+          //     fontWeight: FontWeight.w800,
+          //     letterSpacing: -0.5,
+          //   ),
+          // ),
+          QPageTitle(mainTitle: "Settings", subTitle: "Your Account"),
 
           const SizedBox(height: 22),
 
@@ -581,7 +583,7 @@ class _SettingsTile extends StatelessWidget {
               ),
               const Icon(
                 Icons.chevron_right,
-                color: Color(0xFFCCCCCC),
+                color: qPrimary,
                 size: 18,
               ),
             ],

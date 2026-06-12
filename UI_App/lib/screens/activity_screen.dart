@@ -1,7 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:qwallet_mobileapp/constants/colors.dart';
-import 'package:qwallet_mobileapp/constants/data.dart';
+import 'package:get/get.dart';
+import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
+import 'package:qwallet_mobileapp/components/emptyState.dart';
+import 'package:qwallet_mobileapp/components/shimmerWave.dart';
+import 'package:qwallet_mobileapp/screens/add_document_screen.dart';
+import 'package:qwallet_mobileapp/screens/home_screen.dart';
+import 'package:qwallet_mobileapp/theme/colors.dart';
+import 'package:qwallet_mobileapp/widgets/QSearchBar.dart';
+import 'package:qwallet_mobileapp/model/activity_model.dart';
+import 'package:qwallet_mobileapp/services/activity_controller.dart'; // <-- Import new controller
 
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
@@ -11,46 +19,53 @@ class ActivityScreen extends StatefulWidget {
 }
 
 class _ActivityScreenState extends State<ActivityScreen> {
+  final ActivityController controller = Get.put(ActivityController());
+  final _searchController = TextEditingController();
   String _query = '';
-  final _controller = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _controller.addListener(
-      () => setState(() => _query = _controller.text.toLowerCase().trim()),
+    _searchController.addListener(
+      () =>
+          setState(() => _query = _searchController.text.toLowerCase().trim()),
     );
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
-  List<ActivityItem> get _filtered => _query.isEmpty
-      ? dummyActivity
-      : dummyActivity
-            .where((a) => a.text.toLowerCase().contains(_query))
-            .toList();
+  List<ActivityModel> get _filtered {
+    if (_query.isEmpty) return controller.activities;
+    return controller.activities
+        .where(
+          (a) =>
+              a.actionText.toLowerCase().contains(_query) ||
+              a.credentialName.toLowerCase().contains(_query),
+        )
+        .toList();
+  }
 
-  // Group activity items by date label (uses item.time as the key)
-  Map<String, List<ActivityItem>> get _grouped {
-    final map = <String, List<ActivityItem>>{};
+  Map<String, List<ActivityModel>> get _grouped {
+    final map = <String, List<ActivityModel>>{};
     for (final item in _filtered) {
-      // Derive a simple day-group from the time string
-      final key = _dayLabel(item.time);
+      final key = _dayLabel(item.timestamp);
       map.putIfAbsent(key, () => []).add(item);
     }
     return map;
   }
 
-  String _dayLabel(String time) {
-    if (time.toLowerCase().contains('today')) return 'Today';
-    if (time.toLowerCase().contains('yesterday')) return 'Yesterday';
-    if (time.toLowerCase().contains('min') ||
-        time.toLowerCase().contains('hour'))
-      return 'Today';
+  String _dayLabel(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final dateToCompare = DateTime(date.year, date.month, date.day);
+
+    if (dateToCompare == today) return 'Today';
+    if (dateToCompare == yesterday) return 'Yesterday';
     return 'Earlier';
   }
 
@@ -58,45 +73,74 @@ class _ActivityScreenState extends State<ActivityScreen> {
   Widget build(BuildContext context) {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
-    final grouped = _grouped;
-    final groups = grouped.keys.toList();
-
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
+      backgroundColor: qBg,
       body: Column(
         children: [
-          // ── BLACK HERO BOX ──────────────────────────────────────────
-          _ActivityHeroBox(controller: _controller, query: _query),
-
-          // ── BODY ────────────────────────────────────────────────────
+          _ActivityHeroBox(
+            controller: _searchController,
+            query: _query,
+            onChanged: (v) {},
+          ),
           Expanded(
-            child: _filtered.isEmpty
-                ? _EmptyState(query: _query)
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-                    itemCount: groups.fold<int>(
-                      0,
-                      (sum, g) => sum + 1 + grouped[g]!.length,
-                    ),
-                    itemBuilder: (context, index) {
-                      // Flatten groups into a single list with headers
-                      int cursor = 0;
-                      for (final group in groups) {
-                        if (index == cursor) {
-                          return _GroupHeader(label: group);
-                        }
-                        cursor++;
-                        final items = grouped[group]!;
-                        if (index < cursor + items.length) {
-                          final item = items[index - cursor];
-                          final isLast = index == cursor + items.length - 1;
-                          return _ActivityTile(item: item, isLast: isLast);
-                        }
-                        cursor += items.length;
-                      }
-                      return const SizedBox();
-                    },
+            child: Obx(() {
+              // ─── SKELETON LOADING INJECTION ───
+              if (controller.isLoading.value) {
+                return const _SkeletonActivityList();
+              }
+
+              final grouped = _grouped;
+              final groups = grouped.keys.toList();
+
+              if (_filtered.isEmpty) {
+                return EmptyState(
+                  query: _query,
+                  mainMessage: "No activity yet",
+                  subMessage: "Your credential activity will appear here",
+                  resultMainMessage: "No results found",
+                  resultSubMessage: 'Nothing matches "$_query"',
+                );
+              }
+
+              return RefreshIndicator(
+                color: qPrimary,
+                onRefresh: () async {
+                  await controller.fetchActivity();
+                  if (controller.errorMessage.value.isNotEmpty){
+                    Get.snackbar(
+                      'Network Error',
+                      controller.errorMessage.value,
+                      snackPosition: SnackPosition.BOTTOM,
+                      backgroundColor: qRed,
+                      colorText: qSecondary,
+                    );
+                  }
+                },
+                child: ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+                  itemCount: groups.fold<int>(
+                    0,
+                    (sum, g) => sum + 1 + grouped[g]!.length,
                   ),
+                  itemBuilder: (context, index) {
+                    int cursor = 0;
+                    for (final group in groups) {
+                      if (index == cursor) return _GroupHeader(label: group);
+                      cursor++;
+
+                      final items = grouped[group]!;
+                      if (index < cursor + items.length) {
+                        final item = items[index - cursor];
+                        final isLast = index == cursor + items.length - 1;
+                        return _ActivityTile(item: item, isLast: isLast);
+                      }
+                      cursor += items.length;
+                    }
+                    return const SizedBox();
+                  },
+                ),
+              );
+            }),
           ),
         ],
       ),
@@ -111,8 +155,13 @@ class _ActivityScreenState extends State<ActivityScreen> {
 class _ActivityHeroBox extends StatelessWidget {
   final TextEditingController controller;
   final String query;
+  final ValueChanged<String> onChanged;
 
-  const _ActivityHeroBox({required this.controller, required this.query});
+  const _ActivityHeroBox({
+    required this.controller,
+    required this.query,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -121,7 +170,7 @@ class _ActivityHeroBox extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(
-        color: Color(0xFF000000),
+        color: qPrimary,
         borderRadius: BorderRadius.only(
           bottomLeft: Radius.circular(32),
           bottomRight: Radius.circular(32),
@@ -131,44 +180,19 @@ class _ActivityHeroBox extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title row
           Row(
             children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'History',
-                      style: TextStyle(
-                        color: Color(0xFF888888),
-                        fontSize: 13,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Activity',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -1,
-                      ),
-                    ),
-                  ],
-                ),
+              Expanded(
+                child: QPageTitle(mainTitle: "Activity", subTitle: "History"),
               ),
-              // Filter chip
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
                   vertical: 7,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1A1A1A),
+                  color: qAccent,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF333333)),
                 ),
                 child: Row(
                   children: const [
@@ -187,61 +211,11 @@ class _ActivityHeroBox extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 18),
-
-          // Search bar
-          Container(
-            height: 46,
-            decoration: BoxDecoration(
-              color: qBg,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFF2E2E2E)),
-            ),
-            child: Row(
-              children: [
-                const SizedBox(width: 14),
-                Icon(
-                  Icons.search,
-                  color: Colors.black.withOpacity(0.35),
-                  size: 18,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Search activity…',
-                      hintStyle: TextStyle(
-                        color: Colors.black.withOpacity(0.25),
-                        fontSize: 13,
-                      ),
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    cursorColor: Colors.white,
-                  ),
-                ),
-                if (query.isNotEmpty)
-                  GestureDetector(
-                    onTap: () => controller.clear(),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Icon(
-                        Icons.close,
-                        color: Colors.black.withOpacity(0.4),
-                        size: 16,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+          QSearchBar(
+            controller: controller,
+            onChanged: onChanged,
+            textInside: 'Search activity…',
           ),
         ],
       ),
@@ -279,23 +253,10 @@ class _GroupHeader extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ActivityTile extends StatelessWidget {
-  final ActivityItem item;
+  final ActivityModel item;
   final bool isLast;
 
   const _ActivityTile({required this.item, required this.isLast});
-
-  Color get _iconBg {
-    if (item.icons == Icons.download) return const Color(0xFF16A34A);
-    if (item.icons == Icons.upload) return const Color(0xFF2563EB);
-    if (item.icons == Icons.share) return const Color(0xFF7C3AED);
-    return const Color(0xFF111111);
-  }
-
-  IconData get _dirIcon {
-    if (item.icons == Icons.download) return Icons.arrow_downward;
-    if (item.icons == Icons.upload) return Icons.arrow_upward;
-    return item.icons;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -317,24 +278,23 @@ class _ActivityTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Icon circle
             Container(
               width: 42,
               height: 42,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: _iconBg),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: item.iconBgColor,
+              ),
               alignment: Alignment.center,
-              child: Icon(_dirIcon, color: Colors.white, size: 17),
+              child: Icon(item.icon, color: Colors.white, size: 17),
             ),
-
             const SizedBox(width: 14),
-
-            // Text
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    item.text,
+                    item.actionText,
                     style: const TextStyle(
                       color: Color(0xFF111111),
                       fontSize: 13,
@@ -344,7 +304,7 @@ class _ActivityTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    item.time,
+                    item.timeAgo,
                     style: const TextStyle(
                       color: Color(0xFFAAAAAA),
                       fontSize: 11,
@@ -353,9 +313,6 @@ class _ActivityTile extends StatelessWidget {
                 ],
               ),
             ),
-
-            // Chevron
-            const Icon(Icons.chevron_right, color: Color(0xFFDDDDDD), size: 18),
           ],
         ),
       ),
@@ -363,55 +320,122 @@ class _ActivityTile extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// EMPTY STATE
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── SKELETON LOADING WIDGETS ────────────────────────────────────────────────
 
-class _EmptyState extends StatelessWidget {
-  final String query;
-  const _EmptyState({required this.query});
+// ─── SKELETON LOADING WIDGETS ────────────────────────────────────────────────
+
+/// A custom animation wrapper that creates a left-to-right "wave" (shimmer) effect.
+/// It uses a ShaderMask to add a sweeping highlight over the underlying shapes
+/// while preserving your custom colors.
+
+class _SkeletonActivityList extends StatelessWidget {
+  const _SkeletonActivityList();
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEEEEEE),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              query.isNotEmpty ? '🔍' : '📭',
-              style: const TextStyle(fontSize: 32),
-            ),
+    return ListView(
+      physics:
+          const NeverScrollableScrollPhysics(), // Prevent scrolling while loading
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+      children: const [
+        _SkeletonGroupHeader(),
+        SkeletonActivityTile(),
+        SizedBox(height: 8), // Replaces the 'isLast' padding logic temporarily
+        _SkeletonGroupHeader(),
+        SkeletonActivityTile(),
+        SizedBox(height: 8),
+        _SkeletonGroupHeader(),
+        SkeletonActivityTile(),
+        SkeletonActivityTile(),
+      ],
+    );
+  }
+}
+
+class _SkeletonGroupHeader extends StatelessWidget {
+  const _SkeletonGroupHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10, top: 4, right: 320),
+      // Wrap the header container in ShimmerWave
+      child: ShimmerWave(
+        child: Container(
+          width: 60,
+          height: 15, // Match the visual weight of the 10px text
+          decoration: BoxDecoration(
+            color: qDivider,
+            borderRadius: BorderRadius.circular(4),
           ),
-          const SizedBox(height: 16),
-          Text(
-            query.isNotEmpty ? 'No results found' : 'No activity yet',
-            style: const TextStyle(
-              color: Color(0xFF111111),
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.3,
-            ),
+          // Alignment hack to make it stay on the left like the text
+          alignment: Alignment.centerLeft,
+        ),
+      ),
+    );
+  }
+}
+
+class SkeletonActivityTile extends StatelessWidget {
+  final double myheight; // Made final for best practices
+  const SkeletonActivityTile({super.key, this.myheight = 40});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: qBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: qBorder),
+          boxShadow: const [
+            BoxShadow(color: qShadow, blurRadius: 4, offset: Offset(0, 1)),
+          ],
+        ),
+        // Wrap the inner Row in ShimmerWave so the border stays static
+        child: ShimmerWave(
+          child: Row(
+            children: [
+              // Icon Placeholder
+              Container(
+                width: 42,
+                height: 42,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: qDivider,
+                ),
+              ),
+              const SizedBox(width: 14),
+              // Text placeholders
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      height: myheight,
+                      decoration: BoxDecoration(
+                        color: qDivider,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: 80, // Shorter line representing the "time ago"
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: qDivider,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            query.isNotEmpty
-                ? 'Nothing matches "$query"'
-                : 'Your credential activity will appear here',
-            style: const TextStyle(
-              color: Color(0xFF999999),
-              fontSize: 13,
-              height: 1.5,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

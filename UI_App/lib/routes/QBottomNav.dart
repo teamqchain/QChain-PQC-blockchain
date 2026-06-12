@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
 
 class QBottomNav extends StatelessWidget {
   final int currentIndex;

@@ -5,17 +5,21 @@ import 'package:qwallet_mobileapp/screens/add_document_screen.dart';
 import 'package:qwallet_mobileapp/screens/home_screen.dart';
 import 'package:qwallet_mobileapp/screens/settings_screen.dart';
 import 'package:qwallet_mobileapp/screens/wallet_screen.dart';
-import 'package:qwallet_mobileapp/widgets/QBottomNav.dart';
+import 'package:qwallet_mobileapp/routes/QBottomNav.dart';
 // shell/main_shell.dart
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
   @override
-  State<MainShell> createState() => _MainShellState();
+  State<MainShell> createState() => MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class MainShellState extends State<MainShell> {
   int _index = 0;
+
+  void switchTab(int index) {
+    setState(() => _index = index);
+  }
 
   // All your tab screens live here, pre-built
   static const _screens = [

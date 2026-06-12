@@ -9,19 +9,16 @@ class Onboard2Screen extends StatelessWidget {
   static const _steps = [
     (
       Icons.download_rounded,
-      '📥',
       'Receive',
       'Get credentials issued by universities, governments and banks',
     ),
     (
       Icons.lock_rounded,
-      '🔐',
       'Store Securely',
       'Encrypted on your device — no company or server has access',
     ),
     (
       Icons.qr_code_2,
-      '📲',
       'Present Anywhere',
       'Show a one-time QR code for instant blockchain verification',
     ),
@@ -123,9 +120,14 @@ class Onboard2Screen extends StatelessWidget {
                             border: Border.all(color: const Color(0xFF2E2E2E)),
                           ),
                           alignment: Alignment.center,
-                          child: Text(
-                            step.$2,
-                            style: const TextStyle(fontSize: 22),
+                          // child: Text(
+                          //   step.$2,
+                          //   style: const TextStyle(fontSize: 22),
+                          // ),
+                          child: Icon(
+                            step.$1,
+                            color: Colors.white,
+                            size: 22,
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -134,7 +136,7 @@ class Onboard2Screen extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                step.$3,
+                                step.$2,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
@@ -143,7 +145,7 @@ class Onboard2Screen extends StatelessWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                step.$4,
+                                step.$3,
                                 style: TextStyle(
                                   color: Colors.white.withOpacity(0.4),
                                   fontSize: 12,

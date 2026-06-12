@@ -17,10 +17,11 @@ const Color qSecondary = Color(0xFFFFFFFF); // Pure white — secondary action
 const Color qAccent = Color(0xFF333333); // Dark gray accent
 const Color qGlow = Color(0xFF000000); // Black glow
 const Color qHighlight = Color(0xFFDDDDDD); // Pressed state
+const Color qShadow = Color(0x08000000); // 5% opacity black for shadows
 
 // ── Text ──────────────────────────────────────────────────────────────────────
 const Color qText = Color(0xFF000000); // Primary — black
-const Color qSub = Colors.grey; // Secondary — darker gray
+const Color qSub = Color(0xFF888888); // Secondary — darker gray
 const Color qMuted = Colors.grey; // Muted
 const Color qDimmed = Color(0xFFBBBBBB); // Very muted
 
@@ -46,13 +47,18 @@ const LinearGradient qCardGradient = LinearGradient(
 );
 
 // ── Card Colors ─────────────────────────────────────────────────────
-  const Color qAzureBlue    = Color(0xFF1976D2);
-  const Color qOceanTeal    = Color(0xFF00796B);
-  const Color qLeafGreen    = Color(0xFF2E7D32);
-  const Color qBurntOrange  = Color(0xFFBF360C);
-  const Color qCherryRed    = Color(0xFFD32F2F);
-  const Color qMagentaPink  = Color(0xFFC2185B);
-  const Color qAmethyst     = Color(0xFF7B1FA2);
-  const Color qDeepViolet   = Color(0xFF512DA8);
-  const Color qVibrantIndigo = Color(0xFF303F9F);
-  const Color qSlateBlue    = Color(0xFF546E7A);
+const Color qAzureBlue = Color(0xFF1976D2);
+const Color qOceanTeal = Color(0xFF00796B);
+const Color qLeafGreen = Color(0xFF2E7D32);
+const Color qBurntOrange = Color(0xFFBF360C);
+const Color qCherryRed = Color(0xFFD32F2F);
+const Color qMagentaPink = Color(0xFFC2185B);
+const Color qAmethyst = Color(0xFF7B1FA2);
+const Color qDeepViolet = Color(0xFF512DA8);
+const Color qVibrantIndigo = Color(0xFF303F9F);
+const Color qSlateBlue = Color(0xFF546E7A);
+
+// ── activity screen ─────────────────────────────────────────────────────
+const Color qCredDownload = Color(0xFF2563EB);
+const Color qCredShare = Color(0xFF7C3AED);
+

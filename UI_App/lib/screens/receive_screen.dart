@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:qwallet_mobileapp/constants/colors.dart';
-import 'package:qwallet_mobileapp/routes/app_routes.dart';
+import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/widgets/QOutlineBtn.dart';
 import 'package:qwallet_mobileapp/widgets/QPrimaryBtn.dart';
-import 'package:qwallet_mobileapp/widgets/shared_widgets.dart';
 
 class ReceiveScreen extends StatefulWidget {
   const ReceiveScreen({super.key});

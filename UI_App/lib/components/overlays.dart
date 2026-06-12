@@ -6,7 +6,7 @@ class OverlayField extends StatelessWidget {
   final String label;
   final String value;
 
-  const OverlayField({required this.label, required this.value});
+  const OverlayField({super.key, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +43,7 @@ class OverlayBtn extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  const OverlayBtn({
+  const OverlayBtn({super.key, 
     required this.icon,
     required this.label,
     required this.onTap,
