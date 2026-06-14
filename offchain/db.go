@@ -867,20 +867,20 @@ func recentVerifications(limit int) ([]VerificationDisplayRow, error) {
 	return out, rows.Err()
 }
 
-// statusAlerts returns the latest credentials in non-active states.
+// statusAlerts returns the latest unacknowledged alerts for subscribed
+// credentials (from the alerts table), not every non-active credential.
 func statusAlerts(limit int) ([]StatusAlertRow, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database not configured")
 	}
 	rows, err := db.Query(`
-		SELECT CONCAT_WS(' ', h.first_name, h.last_name) AS name,
-		       c.credential_type AS credential,
-		       UPPER(c.status) AS event,
-		       c.updated_at AS event_time
-		  FROM credentials c
-		  JOIN holders h ON c.holder_id = h.holder_id
-		 WHERE c.status IN ('revoked','suspended','expired')
-		 ORDER BY c.updated_at DESC
+		SELECT COALESCE(holder_name, '') AS name,
+		       COALESCE(credential_name, '') AS credential,
+		       UPPER(severity) AS event,
+		       triggered_at AS event_time
+		  FROM alerts
+		 WHERE acknowledged = 0
+		 ORDER BY triggered_at DESC
 		 LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -1840,12 +1840,12 @@ func getMobileCredentials(emiratesID string) ([]MobileCredentialRow, error) {
 		       COALESCE(c.fabric_cred_id, '') AS fabric_cred_id,
 		       COALESCE(c.ipfs_cid, '') AS ipfs_cid,
 		       COALESCE(c.issuer_public_key, '') AS public_key,
-		       COALESCE(i.full_name, 'Unknown Issuer') AS issuer_name,
+		       COALESCE(org.name, 'Unknown Organization') AS issuer_name,
 		       CONCAT_WS(' ', h.first_name, h.last_name) AS holder_name,
 		       h.emirates_id
 		  FROM credentials c
 		  JOIN holders h ON c.holder_id = h.holder_id
-		  LEFT JOIN issuers i ON c.issuer_id = i.issuer_id
+		  LEFT JOIN catalog_issuers org ON c.org_id = org.id
 		 WHERE h.emirates_id = ?
 		   AND c.in_wallet = 1
 		 ORDER BY c.issued_at DESC`, emiratesID)
@@ -1948,26 +1948,147 @@ func fetchDocumentInDB(holderEID, issuerID, serviceName string) (found bool, alr
 		matchPattern = "%" + serviceName + "%"
 	}
 
-	var credID string
-	var inWallet int
+	// Count ALL credentials matching this holder + org + category. A holder may
+	// hold several credentials of the same category (e.g. two Bachelor degrees);
+	// every one of them should land in the wallet, not just the first.
+	var totalMatching int
 	err = db.QueryRow(`
-		SELECT c.credential_id, c.in_wallet
+		SELECT COUNT(*)
 		  FROM credentials c
 		  JOIN holders h ON c.holder_id = h.holder_id
 		  JOIN issuers iss ON c.issuer_id = iss.issuer_id
 		 WHERE h.emirates_id = ?
 		   AND iss.org_id = ?
-		   AND c.credential_type LIKE ?
-		 LIMIT 1`, holderEID, issuerID, matchPattern).Scan(&credID, &inWallet)
-	if err == sql.ErrNoRows {
-		return false, false, nil
-	}
-	if err != nil {
+		   AND c.credential_type LIKE ?`,
+		holderEID, issuerID, matchPattern).Scan(&totalMatching)
+	if err != nil || totalMatching == 0 {
 		return false, false, err
 	}
-	if inWallet == 1 {
+
+	// Batch-update every matching credential not already in the wallet.
+	result, err := db.Exec(`
+		UPDATE credentials c
+		  JOIN holders h ON c.holder_id = h.holder_id
+		  JOIN issuers iss ON c.issuer_id = iss.issuer_id
+		   SET c.in_wallet = 1
+		 WHERE h.emirates_id = ?
+		   AND iss.org_id = ?
+		   AND c.credential_type LIKE ?
+		   AND c.in_wallet = 0`,
+		holderEID, issuerID, matchPattern)
+	if err != nil {
+		return true, false, err
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	// 0 rows updated means every matching credential was already in the wallet.
+	if rowsAffected == 0 {
 		return true, true, nil
 	}
-	_, err = db.Exec(`UPDATE credentials SET in_wallet = 1 WHERE credential_id = ?`, credID)
-	return true, false, err
+	return true, false, nil
+}
+
+// OrgDirectoryRecord holds a single employee entry from the HR directory.
+type OrgDirectoryRecord struct {
+	Name  string
+	Email string
+}
+
+// getOrgDirectory returns all active employees from the org_directory table.
+// It backs the QPortal Invite Staff dialog, which only lets staff invite
+// emails that exist in this directory.
+func getOrgDirectory() ([]OrgDirectoryRecord, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not configured")
+	}
+	rows, err := db.Query(`
+		SELECT name, email
+		  FROM org_directory
+		 WHERE is_active = TRUE
+		 ORDER BY name ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []OrgDirectoryRecord{}
+	for rows.Next() {
+		var r OrgDirectoryRecord
+		if err := rows.Scan(&r.Name, &r.Email); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// SubscriptionRow holds one subscription request for the QWallet
+// ManageSubscriptions screen.
+type SubscriptionRow struct {
+	SubscriptionID string
+	CredentialType string
+	VerifierName   string
+	Status         string
+	CreatedAt      string
+}
+
+// getMobileSubscriptions returns all subscription requests addressed to the
+// holder identified by their Emirates ID. The stored status 'active' is
+// reported to the wallet as 'approved' so the Flutter SubscriptionModel sees
+// the value it expects.
+func getMobileSubscriptions(emiratesID string) ([]SubscriptionRow, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not configured")
+	}
+	rows, err := db.Query(`
+		SELECT s.subscription_id,
+		       COALESCE(s.credential_type, '') AS credential_type,
+		       COALESCE(v.full_name, 'Unknown Verifier') AS verifier_name,
+		       s.status,
+		       s.created_at
+		  FROM subscriptions s
+		  JOIN holders h   ON s.holder_id   = h.holder_id
+		  JOIN verifiers v ON s.verifier_id = v.verifier_id
+		 WHERE h.emirates_id = ?
+		 ORDER BY s.created_at DESC`, emiratesID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []SubscriptionRow{}
+	for rows.Next() {
+		var r SubscriptionRow
+		if err := rows.Scan(&r.SubscriptionID, &r.CredentialType, &r.VerifierName, &r.Status, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		if r.Status == "active" {
+			r.Status = "approved"
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// updateSubscriptionStatus sets a pending subscription to 'active' (approve) or
+// 'rejected' (reject). It verifies the subscription belongs to the given holder
+// so a holder can never act on someone else's subscription. Returns whether a
+// row was actually updated.
+func updateSubscriptionStatus(subscriptionID, emiratesID, newStatus string) (bool, error) {
+	if db == nil {
+		return false, fmt.Errorf("database not configured")
+	}
+	result, err := db.Exec(`
+		UPDATE subscriptions s
+		  JOIN holders h ON s.holder_id = h.holder_id
+		   SET s.status = ?
+		 WHERE s.subscription_id = ?
+		   AND h.emirates_id     = ?
+		   AND s.status          = 'pending'`,
+		newStatus, subscriptionID, emiratesID)
+	if err != nil {
+		return false, err
+	}
+	affected, _ := result.RowsAffected()
+	return affected > 0, nil
 }

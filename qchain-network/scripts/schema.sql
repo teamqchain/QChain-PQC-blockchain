@@ -313,6 +313,23 @@ CREATE TABLE IF NOT EXISTS staff (
     INDEX idx_staff_status (status)
 );
 
+-- ─── ORG DIRECTORY ────────────────────────────────────────────────────────────
+-- [NOW] Standalone HR mirror of real employees. Backs the QPortal Invite Staff
+-- dialog, which only allows inviting emails that exist here. No foreign keys.
+
+CREATE TABLE IF NOT EXISTS org_directory (
+    id         VARCHAR(20)  PRIMARY KEY,
+    name       VARCHAR(100) NOT NULL,
+    email      VARCHAR(100) NOT NULL UNIQUE,
+    department VARCHAR(100),
+    is_active  BOOLEAN DEFAULT TRUE
+);
+
+INSERT IGNORE INTO org_directory (id, name, email, department) VALUES
+    ('EMP-001', 'Ali Rashidi',    'a.rashidi@org.ae',  'IT'),
+    ('EMP-002', 'Bader Hassan',   'b.hassan@org.ae',   'Admissions'),
+    ('EMP-003', 'Celine Mansoor', 'c.mansoor@org.ae',  'Registrar');
+
 -- ─── MOBILE SESSIONS ──────────────────────────────────────────────────────────
 -- [NOW] OTP / QR selective-disclosure sessions (QWallet). PK `id` is the OTP/PRES token.
 

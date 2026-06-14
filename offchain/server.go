@@ -1982,6 +1982,23 @@ func handleGetStaff(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"staff": out})
 }
 
+// handleGetDirectory returns the org HR employee list for the Invite Staff dialog.
+func handleGetDirectory(w http.ResponseWriter, r *http.Request) {
+	records, err := getOrgDirectory()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	out := make([]map[string]any, 0, len(records))
+	for _, rec := range records {
+		out = append(out, map[string]any{
+			"name":  rec.Name,
+			"email": rec.Email,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"directory": out})
+}
+
 func handleInviteStaff(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Email  string `json:"email"`
@@ -2236,6 +2253,74 @@ func handleGetActivity(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "activity": out})
+}
+
+// handleGetMobileSubscriptions returns subscription requests addressed to a
+// holder for the QWallet ManageSubscriptions screen.
+// GET /mobile/getSubscriptions?emiratesID=XXX
+func handleGetMobileSubscriptions(w http.ResponseWriter, r *http.Request) {
+	emiratesID := r.URL.Query().Get("emiratesID")
+	if emiratesID == "" {
+		writeError(w, http.StatusBadRequest, "emiratesID is required")
+		return
+	}
+	subs, err := getMobileSubscriptions(emiratesID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	out := make([]map[string]any, 0, len(subs))
+	for _, s := range subs {
+		out = append(out, map[string]any{
+			"subscriptionID": s.SubscriptionID,
+			"credentialType": s.CredentialType,
+			"verifierName":   s.VerifierName,
+			"status":         s.Status,
+			"createdAt":      s.CreatedAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":       true,
+		"subscriptions": out,
+	})
+}
+
+// handleApproveSubscription approves a pending subscription (status -> active).
+// POST /mobile/approveSubscription  Body: { subscriptionID, emiratesID }
+func handleApproveSubscription(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		SubscriptionID string `json:"subscriptionID"`
+		EmiratesID     string `json:"emiratesID"`
+	}
+	if err := decodeBody(r, &body); err != nil || body.SubscriptionID == "" || body.EmiratesID == "" {
+		writeError(w, http.StatusBadRequest, "subscriptionID and emiratesID are required")
+		return
+	}
+	ok, err := updateSubscriptionStatus(body.SubscriptionID, body.EmiratesID, "active")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": ok})
+}
+
+// handleRejectSubscription rejects a pending subscription (status -> rejected).
+// POST /mobile/rejectSubscription  Body: { subscriptionID, emiratesID }
+func handleRejectSubscription(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		SubscriptionID string `json:"subscriptionID"`
+		EmiratesID     string `json:"emiratesID"`
+	}
+	if err := decodeBody(r, &body); err != nil || body.SubscriptionID == "" || body.EmiratesID == "" {
+		writeError(w, http.StatusBadRequest, "subscriptionID and emiratesID are required")
+		return
+	}
+	ok, err := updateSubscriptionStatus(body.SubscriptionID, body.EmiratesID, "rejected")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": ok})
 }
 
 func handleGenerateOTP(w http.ResponseWriter, r *http.Request) {
@@ -2514,6 +2599,7 @@ func main() {
 	mux.HandleFunc("POST /acknowledgeAlert", handleAcknowledgeAlert)
 	mux.HandleFunc("GET /getAuditLogs", handleGetAuditLogs)
 	mux.HandleFunc("GET /getStaff", handleGetStaff)
+	mux.HandleFunc("GET /getDirectory", handleGetDirectory)
 	mux.HandleFunc("POST /inviteStaff", handleInviteStaff)
 	mux.HandleFunc("POST /updateStaffRole", handleUpdateStaffRole)
 	mux.HandleFunc("POST /deleteStaff", handleDeleteStaff)
@@ -2526,6 +2612,9 @@ func main() {
 	mux.HandleFunc("POST /mobile/generatePresentation", handleGeneratePresentation)
 	mux.HandleFunc("GET /mobile/getCatalog", handleGetCatalog)
 	mux.HandleFunc("POST /mobile/fetchDocument", handleFetchDocument)
+	mux.HandleFunc("GET /mobile/getSubscriptions", handleGetMobileSubscriptions)
+	mux.HandleFunc("POST /mobile/approveSubscription", handleApproveSubscription)
+	mux.HandleFunc("POST /mobile/rejectSubscription", handleRejectSubscription)
 
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
