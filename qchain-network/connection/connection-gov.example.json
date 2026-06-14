@@ -34,7 +34,7 @@
       "url": "https://ca.government.uae.com:7054",
       "caName": "GovernmentCA",
       "tlsCACerts": {
-        "pem": "<content of fabric-ca/government/ca-cert.pem>"
+        "pem": "-----BEGIN CERTIFICATE-----\n<paste contents of crypto-material/peerOrganizations/government.uae.com/ca/ca.government.uae.com-cert.pem here>\n-----END CERTIFICATE-----"
       },
       "httpOptions": {
         "verify": false

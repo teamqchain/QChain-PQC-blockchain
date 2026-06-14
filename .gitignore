@@ -66,3 +66,20 @@ qchain-network/channel-artifacts/*.zip
 docker-compose.override.yml
 docker-compose.*.override.yml
 docker-compose.*.override.yaml
+
+# VM runtime binaries (downloaded on the VM, not for the repo)
+cloudflared
+backend/
+offchain/kubo/
+offchain/upload-results/
+
+# Phase 2 Fabric source clone (kept on VM, not committed)
+fabric/
+
+# Fabric gateway connection profiles (contain env-specific TLS certs)
+# Copy connection-*.example.json to connection-*.json and fill in your certs
+qchain-network/connection/connection-gen.json
+qchain-network/connection/connection-gov.json
+
+# npm lock file generated on VM
+qchain-network/scripts/package-lock.json
