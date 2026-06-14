@@ -2022,9 +2022,9 @@ func getOrgDirectory() ([]OrgDirectoryRecord, error) {
 	return out, rows.Err()
 }
 
-// SubscriptionRow holds one subscription request for the QWallet
-// ManageSubscriptions screen.
-type SubscriptionRow struct {
+// MobileSubscriptionRow holds one subscription request for the QWallet
+// ManageSubscriptions screen. (Distinct from the portal SubscriptionRow above.)
+type MobileSubscriptionRow struct {
 	SubscriptionID string
 	CredentialType string
 	VerifierName   string
@@ -2036,7 +2036,7 @@ type SubscriptionRow struct {
 // holder identified by their Emirates ID. The stored status 'active' is
 // reported to the wallet as 'approved' so the Flutter SubscriptionModel sees
 // the value it expects.
-func getMobileSubscriptions(emiratesID string) ([]SubscriptionRow, error) {
+func getMobileSubscriptions(emiratesID string) ([]MobileSubscriptionRow, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database not configured")
 	}
@@ -2056,9 +2056,9 @@ func getMobileSubscriptions(emiratesID string) ([]SubscriptionRow, error) {
 	}
 	defer rows.Close()
 
-	out := []SubscriptionRow{}
+	out := []MobileSubscriptionRow{}
 	for rows.Next() {
-		var r SubscriptionRow
+		var r MobileSubscriptionRow
 		if err := rows.Scan(&r.SubscriptionID, &r.CredentialType, &r.VerifierName, &r.Status, &r.CreatedAt); err != nil {
 			return nil, err
 		}
