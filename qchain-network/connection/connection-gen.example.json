@@ -34,7 +34,7 @@
       "url": "https://ca.general.uae.com:8054",
       "caName": "GeneralCA",
       "tlsCACerts": {
-        "pem": "<content of fabric-ca/general/ca-cert.pem>"
+        "pem": "-----BEGIN CERTIFICATE-----\n<paste contents of crypto-material/peerOrganizations/general.uae.com/ca/ca.general.uae.com-cert.pem here>\n-----END CERTIFICATE-----"
       },
       "httpOptions": {
         "verify": false
