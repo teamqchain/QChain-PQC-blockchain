@@ -61,3 +61,8 @@ docker-compose.*.yaml
 *.tar.gz
 *.tar
 *.zip
+
+# Fabric CA server runtime files (generated when the CA starts, not for the repo)
+fabric-ca/*/IssuerPublicKey
+fabric-ca/*/IssuerRevocationPublicKey
+fabric-ca/*/fabric-ca-server.db
