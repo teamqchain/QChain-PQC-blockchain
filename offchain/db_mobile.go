@@ -226,6 +226,7 @@ func toggleFavorite(credentialID, holderEID string) error {
 type MobileActivityRow struct {
 	EventID        int64
 	EventType      string
+	CredentialID   string
 	CredentialType string
 	ActorName      string
 	CreatedAt      time.Time
@@ -237,7 +238,7 @@ func getMobileActivity(emiratesID string) ([]MobileActivityRow, error) {
 		return nil, fmt.Errorf("database not configured")
 	}
 	rows, err := db.Query(`
-		SELECT ce.event_id, ce.event_type,
+		SELECT ce.event_id, ce.event_type, ce.credential_id,
 		       COALESCE(c.credential_type, '') AS credential_type,
 		       COALESCE(ce.actor_name, '') AS actor_name,
 		       ce.created_at
@@ -254,7 +255,7 @@ func getMobileActivity(emiratesID string) ([]MobileActivityRow, error) {
 	out := []MobileActivityRow{}
 	for rows.Next() {
 		var r MobileActivityRow
-		if err := rows.Scan(&r.EventID, &r.EventType, &r.CredentialType, &r.ActorName, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.EventID, &r.EventType, &r.CredentialID, &r.CredentialType, &r.ActorName, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

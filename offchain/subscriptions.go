@@ -69,6 +69,7 @@ func handleGetSubscriptions(w http.ResponseWriter, r *http.Request) {
 	for _, s := range rows {
 		out = append(out, map[string]any{
 			"id":             s.SubscriptionID,
+			"credentialID":   s.CredentialID,
 			"holderName":     s.HolderName,
 			"holderID":       s.HolderID,
 			"credentialType": s.CredentialType,
@@ -158,6 +159,7 @@ func handleGetSubscriptionAlerts(w http.ResponseWriter, r *http.Request) {
 	for _, a := range rows {
 		out = append(out, map[string]any{
 			"id":             a.AlertID,
+			"credentialID":   a.CredentialID,
 			"holderName":     a.HolderName,
 			"credentialName": a.CredentialName,
 			"severity":       a.Severity,

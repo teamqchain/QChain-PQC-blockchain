@@ -108,6 +108,7 @@ func handleGetActivity(w http.ResponseWriter, r *http.Request) {
 		out = append(out, map[string]any{
 			"id":             strconv.FormatInt(a.EventID, 10),
 			"type":           a.EventType,
+			"credentialID":   a.CredentialID,
 			"credentialName": a.CredentialType,
 			"actor":          a.ActorName,
 			"timestamp":      a.CreatedAt.UTC().Format(time.RFC3339),
@@ -134,6 +135,7 @@ func handleGetMobileSubscriptions(w http.ResponseWriter, r *http.Request) {
 	for _, s := range subs {
 		out = append(out, map[string]any{
 			"subscriptionID": s.SubscriptionID,
+			"credentialID":   s.CredentialID,
 			"credentialType": s.CredentialType,
 			"verifierName":   s.VerifierName,
 			"status":         s.Status,
