@@ -28,7 +28,7 @@ ARG API_BASE_URL=http://localhost:3000
 # -----------------------------------------------------------------------------
 # STAGE 1 — Build the QPortal web app (served at "/")
 # -----------------------------------------------------------------------------
-FROM ghcr.io/cirruslabs/flutter:3.27.0 AS portal-build
+FROM ghcr.io/cirruslabs/flutter:3.35.4 AS portal-build
 ARG API_BASE_URL
 WORKDIR /app
 
@@ -47,7 +47,7 @@ RUN flutter build web --release \
 # -----------------------------------------------------------------------------
 # Same steps, but base-href is "/wallet/" so all of the wallet's asset URLs
 # resolve under the /wallet/ sub-path behind the gateway.
-FROM ghcr.io/cirruslabs/flutter:3.27.0 AS wallet-build
+FROM ghcr.io/cirruslabs/flutter:3.35.4 AS wallet-build
 ARG API_BASE_URL
 WORKDIR /app
 
