@@ -2040,15 +2040,19 @@ func getMobileSubscriptions(emiratesID string) ([]MobileSubscriptionRow, error) 
 	if db == nil {
 		return nil, fmt.Errorf("database not configured")
 	}
+	// credential_type is not stored on the subscription row (insertSubscription
+	// leaves it NULL), so derive it from the linked credential — same as the
+	// portal getSubscriptions query. Fall back to the column, then "".
 	rows, err := db.Query(`
 		SELECT s.subscription_id,
-		       COALESCE(s.credential_type, '') AS credential_type,
+		       COALESCE(c.credential_type, s.credential_type, '') AS credential_type,
 		       COALESCE(v.full_name, 'Unknown Verifier') AS verifier_name,
 		       s.status,
 		       s.created_at
 		  FROM subscriptions s
 		  JOIN holders h   ON s.holder_id   = h.holder_id
 		  JOIN verifiers v ON s.verifier_id = v.verifier_id
+		  LEFT JOIN credentials c ON s.credential_id = c.credential_id
 		 WHERE h.emirates_id = ?
 		 ORDER BY s.created_at DESC`, emiratesID)
 	if err != nil {
