@@ -38,7 +38,7 @@ func handleMobileGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) 
 	for _, c := range rows {
 		var expiry any
 		if c.ExpiryDate.Valid {
-			expiry = c.ExpiryDate.Time.UTC().Format(time.RFC3339)
+			expiry = c.ExpiryDate.Time.Format(time.RFC3339)
 		}
 		var attrs map[string]any
 		_ = json.Unmarshal([]byte(c.CredentialData), &attrs)
@@ -48,7 +48,7 @@ func handleMobileGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) 
 			"holderName":     c.HolderName,
 			"holderEID":      c.HolderEID,
 			"issuedBy":       c.IssuerName,
-			"issuedAt":       c.IssuedAt.UTC().Format(time.RFC3339),
+			"issuedAt":       c.IssuedAt.Format(time.RFC3339),
 			"expiryDate":     expiry,
 			"status":         c.Status,
 			"isFavorite":     c.IsFavorite,
@@ -111,7 +111,7 @@ func handleGetActivity(w http.ResponseWriter, r *http.Request) {
 			"credentialID":   a.CredentialID,
 			"credentialName": a.CredentialType,
 			"actor":          a.ActorName,
-			"timestamp":      a.CreatedAt.UTC().Format(time.RFC3339),
+			"timestamp":      a.CreatedAt.Format(time.RFC3339),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "activity": out})
@@ -231,7 +231,7 @@ func handleGenerateOTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
 	}
-	expiresAt := time.Now().UTC().Add(time.Duration(req.ExpiresIn) * time.Second)
+	expiresAt := time.Now().Add(time.Duration(req.ExpiresIn) * time.Second)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":   true,
 		"otp":       otpID[4:],
@@ -285,7 +285,7 @@ func handleGeneratePresentation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
 	}
-	expiresAt := time.Now().UTC().Add(time.Duration(req.ExpiresIn) * time.Second)
+	expiresAt := time.Now().Add(time.Duration(req.ExpiresIn) * time.Second)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":        true,
 		"presentationID": presID,

@@ -15,6 +15,11 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	// Embed the IANA timezone database in the binary so time.LoadLocation
+	// ("Asia/Dubai") works even in a minimal container that has no OS tzdata.
+	// Without this, mustLoadLocation below silently falls back to UTC.
+	_ "time/tzdata"
 )
 
 // ─────────────────────────────────────────────

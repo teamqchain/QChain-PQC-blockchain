@@ -44,14 +44,28 @@ func initDB() {
 		log.Println("MYSQL_DSN not set — database features disabled (holder/credential lookups will fail)")
 		return
 	}
-	// Ensure parseTime=true so MySQL DATETIME columns scan into time.Time.
-	if !strings.Contains(dsn, "parseTime") {
-		if strings.Contains(dsn, "?") {
-			dsn += "&parseTime=true"
-		} else {
-			dsn += "?parseTime=true"
+	// Ensure the connection parses DATETIME/TIMESTAMP into time.Time AND treats
+	// every timestamp as UAE local time (Asia/Dubai, always +04:00), so all times
+	// we read and write are UAE-consistent end to end:
+	//   • parseTime — scan DATETIME/TIMESTAMP columns into time.Time
+	//   • loc       — tag those time.Time values as Asia/Dubai
+	//   • time_zone — pin the MySQL session to +04:00 so TIMESTAMP columns convert
+	//                 consistently regardless of the MySQL server's own timezone
+	// addDSNParam appends a key only if the DSN doesn't already set it, so it is
+	// safe whatever MYSQL_DSN already contains.
+	addDSNParam := func(key, value string) {
+		if strings.Contains(dsn, key+"=") {
+			return
 		}
+		sep := "?"
+		if strings.Contains(dsn, "?") {
+			sep = "&"
+		}
+		dsn += sep + key + "=" + value
 	}
+	addDSNParam("parseTime", "true")
+	addDSNParam("loc", "Asia%2FDubai")
+	addDSNParam("time_zone", "%27%2B04%3A00%27") // time_zone='+04:00'
 
 	var err error
 	db, err = sql.Open("mysql", dsn)
