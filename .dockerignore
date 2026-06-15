@@ -1,0 +1,37 @@
+# =============================================================================
+# ROOT .dockerignore
+# =============================================================================
+# This file is read by Docker for any build whose CONTEXT is the repo root.
+# The only such build is the web-gateway image (web-gateway/Dockerfile), which
+# needs just UI_WebApp/, UI_App/ and web-gateway/. Everything listed here is
+# kept OUT of the build context so the upload to the Docker daemon stays small
+# and so VM-only runtime/secret material (crypto, wallets, .env) is never sent.
+#
+# NOTE: the per-component builds (offchain/, UI_App/, UI_WebApp/) use their own
+# context directories and their own .dockerignore files — this root file does
+# not affect them.
+# =============================================================================
+
+.git
+.gitignore
+
+# Not needed by the web build — and qchain-network holds crypto material and
+# wallets on the VM, which must never enter a build context.
+offchain
+qchain-network
+algo-benchmarking
+assets
+docs
+
+# Top-level docs / license (not copied into the image).
+*.md
+LICENSE
+
+# Local Flutter build artifacts and caches — we build fresh inside the image.
+UI_App/build
+UI_App/.dart_tool
+UI_WebApp/build
+UI_WebApp/.dart_tool
+
+# OS junk
+**/.DS_Store
