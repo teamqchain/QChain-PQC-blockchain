@@ -135,6 +135,10 @@ WORKDIR /app
 
 ENV LD_LIBRARY_PATH="/usr/local/lib"
 ENV SERVER_PORT="3000"
+# Run the process in UAE time so time.Now()/time.Local are Asia/Dubai. Resolved
+# via the tzdata embedded in the binary (see `_ "time/tzdata"` in config.go),
+# so no OS tzdata package is needed.
+ENV TZ="Asia/Dubai"
 
 EXPOSE 3000
 CMD ["/app/qchain-server"]
