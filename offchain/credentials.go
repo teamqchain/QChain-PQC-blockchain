@@ -278,6 +278,14 @@ func handleRevokeCredential(w http.ResponseWriter, r *http.Request) {
 		log.Printf("DB markCredentialRevoked warning: %v", dbErr)
 	}
 
+	// Raise an alert for any verifier subscribed to this credential.
+	if hasSub, _ := activeSubscriptionExists(req.CredentialID); hasSub {
+		if cred, err := getCredentialDetail(req.CredentialID); err == nil {
+			insertAlertForCredential(req.CredentialID, cred.CredentialType, cred.HolderID, cred.HolderName,
+				"revoked", "Credential has been revoked.")
+		}
+	}
+
 	insertCredentialEvent(req.CredentialID, "revoked", "ISS-UOS-0001", "Mohammed Al Issuer", "")
 	insertAuditLog("revoked", fmt.Sprintf("Credential %s revoked", req.CredentialID),
 		"Mohammed Al Issuer", "Issuer Admin", r.RemoteAddr)
@@ -374,6 +382,14 @@ func handleSuspendCredential(w http.ResponseWriter, r *http.Request) {
 
 	if dbErr := markCredentialSuspended(req.CredentialID, req.Reason); dbErr != nil {
 		log.Printf("DB markCredentialSuspended warning: %v", dbErr)
+	}
+	// Raise an alert for any verifier subscribed to this credential, so the
+	// status change surfaces on the verifier's Alerts page / dashboard.
+	if hasSub, _ := activeSubscriptionExists(req.CredentialID); hasSub {
+		if cred, err := getCredentialDetail(req.CredentialID); err == nil {
+			insertAlertForCredential(req.CredentialID, cred.CredentialType, cred.HolderID, cred.HolderName,
+				"suspended", fmt.Sprintf("Credential has been suspended. Reason: %s", req.Reason))
+		}
 	}
 	insertCredentialEvent(req.CredentialID, "suspended", issuerActorID, issuerActorName, req.Reason)
 	insertAuditLog("suspended", fmt.Sprintf("Credential %s suspended. Reason: %s", req.CredentialID, req.Reason),

@@ -18,6 +18,7 @@ import (
 // SubscriptionRow is the portal projection used by /getSubscriptions.
 type SubscriptionRow struct {
 	SubscriptionID string
+	CredentialID   string
 	HolderName     string
 	HolderID       string
 	CredentialType string
@@ -31,6 +32,7 @@ type SubscriptionRow struct {
 // ManageSubscriptions screen. (Distinct from the portal SubscriptionRow above.)
 type MobileSubscriptionRow struct {
 	SubscriptionID string
+	CredentialID   string
 	CredentialType string
 	VerifierName   string
 	Status         string
@@ -40,6 +42,7 @@ type MobileSubscriptionRow struct {
 // AlertRow is the projection used by /getSubscriptionAlerts.
 type AlertRow struct {
 	AlertID        string
+	CredentialID   string
 	HolderName     string
 	CredentialName string
 	Severity       string
@@ -93,6 +96,7 @@ func getSubscriptions(page, limit int) ([]SubscriptionRow, error) {
 	offset := (page - 1) * limit
 	rows, err := db.Query(`
 		SELECT s.subscription_id,
+		       COALESCE(s.credential_id, '') AS credential_id,
 		       CONCAT_WS(' ', h.first_name, h.last_name) AS holder_name,
 		       h.holder_id,
 		       COALESCE(c.credential_type, '') AS credential_type,
@@ -113,7 +117,7 @@ func getSubscriptions(page, limit int) ([]SubscriptionRow, error) {
 	out := []SubscriptionRow{}
 	for rows.Next() {
 		var r SubscriptionRow
-		if err := rows.Scan(&r.SubscriptionID, &r.HolderName, &r.HolderID,
+		if err := rows.Scan(&r.SubscriptionID, &r.CredentialID, &r.HolderName, &r.HolderID,
 			&r.CredentialType, &r.Issuer, &r.SubscribedAt, &r.ExpiryDate, &r.Status); err != nil {
 			return nil, err
 		}
@@ -168,6 +172,7 @@ func getMobileSubscriptions(emiratesID string) ([]MobileSubscriptionRow, error) 
 	// portal getSubscriptions query. Fall back to the column, then "".
 	rows, err := db.Query(`
 		SELECT s.subscription_id,
+		       COALESCE(s.credential_id, '') AS credential_id,
 		       COALESCE(c.credential_type, s.credential_type, '') AS credential_type,
 		       COALESCE(v.full_name, 'Unknown Verifier') AS verifier_name,
 		       s.status,
@@ -186,7 +191,7 @@ func getMobileSubscriptions(emiratesID string) ([]MobileSubscriptionRow, error) 
 	out := []MobileSubscriptionRow{}
 	for rows.Next() {
 		var r MobileSubscriptionRow
-		if err := rows.Scan(&r.SubscriptionID, &r.CredentialType, &r.VerifierName, &r.Status, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.SubscriptionID, &r.CredentialID, &r.CredentialType, &r.VerifierName, &r.Status, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		if r.Status == "active" {
@@ -229,6 +234,7 @@ func getAlerts() ([]AlertRow, error) {
 	}
 	rows, err := db.Query(`
 		SELECT alert_id,
+		       COALESCE(credential_id, '') AS credential_id,
 		       COALESCE(holder_name, '') AS holder_name,
 		       COALESCE(credential_name, '') AS credential_name,
 		       severity,
@@ -245,7 +251,7 @@ func getAlerts() ([]AlertRow, error) {
 	for rows.Next() {
 		var r AlertRow
 		var ack int
-		if err := rows.Scan(&r.AlertID, &r.HolderName, &r.CredentialName,
+		if err := rows.Scan(&r.AlertID, &r.CredentialID, &r.HolderName, &r.CredentialName,
 			&r.Severity, &r.Description, &r.TriggeredAt, &ack); err != nil {
 			return nil, err
 		}
