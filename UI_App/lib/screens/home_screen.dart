@@ -4,11 +4,13 @@ import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/components/shimmerWave.dart';
 import 'package:qwallet_mobileapp/model/activity_model.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
+import 'package:qwallet_mobileapp/model/subscription_model.dart';
 import 'package:qwallet_mobileapp/screens/activity_screen.dart';
 import 'package:qwallet_mobileapp/screens/add_document_screen.dart';
 import 'package:qwallet_mobileapp/services/activity_controller.dart';
 import 'package:qwallet_mobileapp/services/add_document_controller.dart';
 import 'package:qwallet_mobileapp/services/logger.dart';
+import 'package:qwallet_mobileapp/services/manage_subscriptions_controller.dart';
 import 'package:qwallet_mobileapp/services/wallet_controller.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
@@ -27,6 +29,9 @@ class _HomeScreenState extends State<HomeScreen> {
   final AddDocumentController addDocumentController = Get.put(
     AddDocumentController(),
   );
+  final ManageSubscriptionsController subscriptionController = Get.put(
+    ManageSubscriptionsController(),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -37,10 +42,15 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Obx(() {
         // Sync loading and error states across both controllers
         final isLoading =
-            controller.isLoading.value || activityController.isLoading.value;
+            controller.isLoading.value ||
+            activityController.isLoading.value ||
+            addDocumentController.isLoading.value ||
+            subscriptionController.isLoading.value;
         final hasError =
             controller.errorMessage.isNotEmpty ||
-            activityController.errorMessage.isNotEmpty;
+            activityController.errorMessage.isNotEmpty ||
+            addDocumentController.errorMessage.isNotEmpty ||
+            subscriptionController.errorMessage.isNotEmpty;
 
         return Column(
           children: [
@@ -74,6 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               controller.fetchMyCredentials();
                               activityController.fetchActivity();
                               addDocumentController.loadCatalog();
+                              subscriptionController.fetchSubscriptions();
                             },
                             child: const Text(
                               "Retry",
@@ -90,23 +101,24 @@ class _HomeScreenState extends State<HomeScreen> {
                         await controller.fetchMyCredentials();
                         await activityController.fetchActivity();
                         await addDocumentController.loadCatalog();
+                        await subscriptionController.fetchSubscriptions();
 
                         if (controller.errorMessage.value.isNotEmpty ||
                             activityController.errorMessage.value.isNotEmpty ||
                             addDocumentController
                                 .errorMessage
                                 .value
+                                .isNotEmpty ||
+                            subscriptionController
+                                .errorMessage
+                                .value
                                 .isNotEmpty) {
                           Get.snackbar(
                             'Network Error',
-                            controller.errorMessage.value.isNotEmpty
-                                ? controller.errorMessage.value
-                                : activityController
-                                      .errorMessage
-                                      .value
-                                      .isNotEmpty
-                                ? activityController.errorMessage.value
-                                : addDocumentController.errorMessage.value,
+                            controller.errorMessage.value.isNotEmpty ? controller.errorMessage.value
+                                : activityController.errorMessage.value.isNotEmpty? activityController.errorMessage.value
+                                : addDocumentController.errorMessage.value.isNotEmpty ? addDocumentController.errorMessage.value
+                                : subscriptionController.errorMessage.value.isNotEmpty ? subscriptionController.errorMessage.value : 'An unknown error occurred',
                             snackPosition: SnackPosition.BOTTOM,
                             backgroundColor: qRed,
                             colorText: qSecondary,
@@ -125,7 +137,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                   _SectionHeader(
                                     title: 'Recent Activity', // Changed title
                                     onSeeAll: () {
-                                      context.findAncestorStateOfType<MainShellState>()?.switchTab(3);
+                                      context
+                                          .findAncestorStateOfType<
+                                            MainShellState
+                                          >()
+                                          ?.switchTab(3);
                                     },
                                   ),
                                   const SizedBox(height: 14),
@@ -522,10 +538,10 @@ class _SectionHeader extends StatelessWidget {
         ),
         GestureDetector(
           onTap: onSeeAll,
-          child:  (title == 'Recent Activity')
+          child: (title == 'Recent Activity')
               ? Row(
-                children: [
-                  const Text(
+                  children: [
+                    const Text(
                       'See all',
                       style: TextStyle(
                         color: qSub,
@@ -534,8 +550,8 @@ class _SectionHeader extends StatelessWidget {
                       ),
                     ),
                     Icon(Icons.chevron_right_rounded, color: qSub, size: 16),
-                ],
-              )
+                  ],
+                )
               : const SizedBox.shrink(), // Hide "See all" for Favourites
         ),
       ],
@@ -669,6 +685,16 @@ class _ActivityCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text(
+                  activity.credentialID, // E.g., "Issued Bachelor of Science"
+                  style: const TextStyle(
+                    color: Color(0xFF111111),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 4),
                 Text(
                   activity.actionText, // E.g., "Issued Bachelor of Science"
                   style: const TextStyle(

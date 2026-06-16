@@ -56,12 +56,34 @@ class CredentialModel {
   }
 
   Color get cardColor {
+    // 1. Create a list of your vibrant colors from colors.dart
+    final List<Color> palette = [
+      qAzureBlue,
+      qOceanTeal,
+      qLeafGreen,
+      qBurntOrange,
+      qCherryRed,
+      qMagentaPink,
+      qAmethyst,
+      qDeepViolet,
+      qVibrantIndigo,
+      qSlateBlue,
+    ];
+
+    if (credentialID.isEmpty) return qAzureBlue;
+
     final type = credentialType.toLowerCase();
-    if (type.contains('bachelor') || type.contains('science')) return qAmethyst;
-    if (type.contains('health') || type.contains('medical')) return qCherryRed;
-    if (type.contains('visa') || type.contains('residence')) return qLeafGreen;
-    if (type.contains('passport')) return qMagentaPink;
-    return qAzureBlue; // Default
+
+    if (type.contains("bachelor")) {
+      if (type.contains("computer")) {
+        return qSlateBlue;
+      } else if (type.contains("science")) {
+        return qAzureBlue;
+      } else {
+        return qAmethyst;
+      }
+    }
+    return palette[credentialID.hashCode.abs() % palette.length];
   }
 
   String get displayStatus {

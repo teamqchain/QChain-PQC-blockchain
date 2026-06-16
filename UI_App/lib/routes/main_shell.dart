@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:qwallet_mobileapp/screens/activity_screen.dart';
 import 'package:qwallet_mobileapp/screens/add_document_screen.dart';
 import 'package:qwallet_mobileapp/screens/home_screen.dart';
+import 'package:qwallet_mobileapp/screens/manage_subscriptions_screen.dart';
 import 'package:qwallet_mobileapp/screens/settings_screen.dart';
 import 'package:qwallet_mobileapp/screens/wallet_screen.dart';
 import 'package:qwallet_mobileapp/routes/QBottomNav.dart';
@@ -28,6 +29,7 @@ class MainShellState extends State<MainShell> {
     AddDocumentScreen(), 
     ActivityScreen(),
     SettingsScreen(),
+    ManageSubscriptionsScreen(),
   ];
 
   @override
@@ -45,8 +47,8 @@ class MainShellState extends State<MainShell> {
         ),
       ),
       bottomNavigationBar: QBottomNav(
-        currentIndex: _index,
-        onTap: (i) => setState(() => _index = i),
+        currentIndex: _index == 5 ? 3 : _index,
+        onTap: switchTab, // (i) => setState(() => _index = i)
       ),
     );
   }

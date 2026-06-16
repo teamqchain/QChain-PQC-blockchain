@@ -4,6 +4,7 @@ import 'package:qwallet_mobileapp/screens/activity_screen.dart';
 import 'package:qwallet_mobileapp/screens/add_document_screen.dart';
 import 'package:qwallet_mobileapp/screens/category_documents_screen.dart';
 import 'package:qwallet_mobileapp/screens/document_detail_screen.dart';
+import 'package:qwallet_mobileapp/screens/manage_subscriptions_screen.dart';
 import 'package:qwallet_mobileapp/screens/onboard_1_screen.dart';
 import 'package:qwallet_mobileapp/screens/onboard_2_screen.dart';
 import 'package:qwallet_mobileapp/screens/onboard_3_screen.dart';
@@ -31,6 +32,7 @@ abstract class Routes {
   static const RECEIVE = '/receive';
   static const ADD = '/add-document';
   static const ACTIVITY = '/activity';
+  static const SUBSCRIPTION = '/subscription';
 }
 
 // ─── ROUTE PAGES ─────────────────────────────────────────────────────────────
@@ -84,6 +86,12 @@ class AppPages {
     GetPage(
       name: Routes.ACTIVITY,
       page: () => const ActivityScreen(),
+      transition: Transition.rightToLeft,
+      transitionDuration: const Duration(milliseconds: 220),
+    ),
+    GetPage(
+      name: Routes.SUBSCRIPTION,
+      page: () => const ManageSubscriptionsScreen(),
       transition: Transition.rightToLeft,
       transitionDuration: const Duration(milliseconds: 220),
     ),

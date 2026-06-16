@@ -3,6 +3,7 @@ import 'package:qwallet_mobileapp/theme/colors.dart';
 
 class ActivityModel {
   final String id;
+  final String credentialID;
   final String type;
   final String credentialName;
   final String actor;
@@ -10,6 +11,7 @@ class ActivityModel {
 
   ActivityModel({
     required this.id,
+    required this.credentialID,
     required this.type,
     required this.credentialName,
     required this.actor,
@@ -19,6 +21,7 @@ class ActivityModel {
   factory ActivityModel.fromJson(Map<String, dynamic> json) {
     return ActivityModel(
       id: json['id'] ?? '',
+      credentialID: json['credentialID'] ?? '',
       type: json['type']?.toString().toLowerCase() ?? 'unknown',
       credentialName: json['credentialName'] ?? 'Credential',
       actor: json['actor'] ?? 'System',
@@ -77,8 +80,13 @@ class ActivityModel {
     }
   }
 
+  // ActivityModel in activity_model.dart
   String get timeAgo {
     final diff = DateTime.now().difference(timestamp);
+
+    // Safeguard against negative differences (future times)
+    if (diff.isNegative) return 'Negative Time'; // Or handle it however you prefer
+
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes} mins ago';
     if (diff.inHours < 24) return '${diff.inHours} hours ago';

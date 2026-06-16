@@ -6,6 +6,7 @@ class WalletCategory {
   final String subtitle;
   final int count;
   final String id;
+  final Color color;
 
   const WalletCategory({
     required this.id,
@@ -13,5 +14,7 @@ class WalletCategory {
     required this.title,
     required this.subtitle,
     required this.count,
+    required this.color,
+
   });
 }
