@@ -4,8 +4,10 @@ import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
 import 'package:qwallet_mobileapp/components/emptyState.dart';
 import 'package:qwallet_mobileapp/components/shimmerWave.dart';
+import 'package:qwallet_mobileapp/routes/main_shell.dart';
 import 'package:qwallet_mobileapp/screens/add_document_screen.dart';
 import 'package:qwallet_mobileapp/screens/home_screen.dart';
+import 'package:qwallet_mobileapp/screens/manage_subscriptions_screen.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/widgets/QSearchBar.dart';
 import 'package:qwallet_mobileapp/model/activity_model.dart';
@@ -44,7 +46,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
         .where(
           (a) =>
               a.actionText.toLowerCase().contains(_query) ||
-              a.credentialName.toLowerCase().contains(_query),
+              a.credentialName.toLowerCase().contains(_query)||
+              a.credentialID.toLowerCase().contains(_query),
         )
         .toList();
   }
@@ -82,6 +85,117 @@ class _ActivityScreenState extends State<ActivityScreen> {
             query: _query,
             onChanged: (v) {},
           ),
+
+          // ─── NEW: MANAGE SUBSCRIPTIONS BANNER ───
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            child: GestureDetector(
+              onTap: () {
+                final mainShell = context
+                    .findAncestorStateOfType<MainShellState>();
+                if (mainShell != null) {
+                  mainShell.switchTab(5);
+                } else {
+                  Get.to(
+                    () => const ManageSubscriptionsScreen(),
+                  ); // Safe fallback
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111111), // Black container
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Manage\nSubscriptions',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'See all subscription',
+                            style: TextStyle(
+                              color: const Color(0xFFAAAAAA),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Obx(() {
+                      final count = controller.pendingSubscriptionsCount.value;
+                      if (count > 0) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(
+                              0xFFE86924,
+                            ), // Orange action badge
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              Text(
+                                '$count',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              const Text(
+                                'Action\nRequired',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  height: 1.1,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    }),
+                    const SizedBox(width: 14),
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.chevron_right,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // ────────────────────────────────────────
           Expanded(
             child: Obx(() {
               // ─── SKELETON LOADING INJECTION ───
@@ -106,7 +220,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 color: qPrimary,
                 onRefresh: () async {
                   await controller.fetchActivity();
-                  if (controller.errorMessage.value.isNotEmpty){
+                  if (controller.errorMessage.value.isNotEmpty) {
                     Get.snackbar(
                       'Network Error',
                       controller.errorMessage.value,
@@ -293,6 +407,16 @@ class _ActivityTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text(
+                    item.credentialID,
+                    style: const TextStyle(
+                      color: Color(0xFF111111),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
                   Text(
                     item.actionText,
                     style: const TextStyle(

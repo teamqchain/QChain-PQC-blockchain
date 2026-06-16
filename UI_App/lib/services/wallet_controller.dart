@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/routes/app_config.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
+import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/widgets/wallet_category.dart';
 import 'package:qwallet_mobileapp/services/logger.dart'; // Added logger import
 
@@ -156,8 +157,27 @@ class WalletController extends GetxController {
         subtitle: count > 1 ? '$count credentials' : '$count credential',
         count: count,
         icon: _getIconForCategory(catName),
+        color: _getColorForCategory(catName),
       );
     }).toList();
+  }
+
+  Color _getColorForCategory(String category) {
+    final c = category.toLowerCase();
+
+    // Map specific keywords to your colors.dart palette
+    if (c.contains('education') || c.contains('academic')) return qAmethyst;
+    if (c.contains('health') || c.contains('medical')) return qCherryRed;
+    if (c.contains('bank') || c.contains('finance')) return qOceanTeal;
+    if (c.contains('government') || c.contains('official')) return qBurntOrange;
+    if (c.contains('identity') || c.contains('personal')) return qAzureBlue;
+    if (c.contains('travel') || c.contains('visa')) return qLeafGreen;
+    if (c.contains('professional') || c.contains('work')) return qSlateBlue;
+
+    // Fallback: Use the string's hashcode to consistently assign a dynamic color
+    // to unknown categories so they aren't all the same default color.
+    final fallbackColors = [qDeepViolet, qVibrantIndigo, qMagentaPink];
+    return fallbackColors[category.hashCode % fallbackColors.length];
   }
 
   // Helper to assign icons to backend strings

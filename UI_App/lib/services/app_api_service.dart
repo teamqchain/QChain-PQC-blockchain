@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:qwallet_mobileapp/model/activity_model.dart';
 import 'package:qwallet_mobileapp/model/catalog_model.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
+import 'package:qwallet_mobileapp/model/subscription_model.dart';
 import 'package:qwallet_mobileapp/routes/app_config.dart';
 import 'package:qwallet_mobileapp/services/logger.dart';
 
@@ -283,6 +284,68 @@ class ApiService {
     } catch (e) {
       logDebug('[ApiService] fetchDocument exception: $e');
       throw ConnectionException('Network error occurred.');
+    }
+  }
+
+  static Future<List<SubscriptionModel>> getMobileSubscriptions(
+    String emiratesID,
+  ) async {
+    try {
+      final res = await _client
+          .get(
+            Uri.parse(
+              '$kApiBaseUrl/mobile/getSubscriptions?emiratesID=$emiratesID',
+            ),
+          )
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        if (body['success'] == true) {
+          final List<dynamic> subs = body['subscriptions'];
+          return subs.map((s) => SubscriptionModel.fromJson(s)).toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      throw ConnectionException('Failed to load subscriptions.');
+    }
+  }
+
+  static Future<bool> approveSubscription(
+    String subscriptionID,
+    String emiratesID,
+  ) async {
+    try {
+      final res = await _client.post(
+        Uri.parse('$kApiBaseUrl/mobile/approveSubscription'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'subscriptionID': subscriptionID,
+          'emiratesID': emiratesID,
+        }),
+      );
+      return res.statusCode == 200 && jsonDecode(res.body)['success'] == true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<bool> rejectSubscription(
+    String subscriptionID,
+    String emiratesID,
+  ) async {
+    try {
+      final res = await _client.post(
+        Uri.parse('$kApiBaseUrl/mobile/rejectSubscription'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'subscriptionID': subscriptionID,
+          'emiratesID': emiratesID,
+        }),
+      );
+      return res.statusCode == 200 && jsonDecode(res.body)['success'] == true;
+    } catch (e) {
+      return false;
     }
   }
 }

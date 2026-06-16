@@ -573,7 +573,8 @@ class _DetailsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fields = <_DetailRow>[
-      _DetailRow(label: 'Document Type', value: doc.credentialType),
+      _DetailRow(label: 'Credential ID', value: doc.credentialID),
+      _DetailRow(label: 'Credential Type', value: doc.credentialType),
       _DetailRow(label: 'Issued To', value: doc.holderName),
       _DetailRow(label: 'National ID', value: doc.holderEID),
       _DetailRow(label: 'Issuing Authority', value: doc.issuedBy),
