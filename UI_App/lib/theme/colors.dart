@@ -58,6 +58,23 @@ const Color qDeepViolet = Color(0xFF512DA8);
 const Color qVibrantIndigo = Color(0xFF303F9F);
 const Color qSlateBlue = Color(0xFF546E7A);
 
+
+// ── College Colors ─────────────────────────────────────────────────────
+const Color qHealthScience = Color(0xFFD986BA);
+const Color qMedicine = Color(0xFF48A23F); 
+const Color qLaw = Color(0xFF5f259f); 
+const Color qCCI = Color(0xFF009CDE); 
+const Color qBusiness = Color(0xFFC69214); 
+const Color qDental = Color(0xFF994878); 
+const Color qSharia = Color(0xFF71CC98); 
+const Color qArts = Color(0xFFD7C4B7); 
+const Color qCommunication = Color(0xFFBA0C2F); 
+const Color qScience = Color(0xFFFDD757); 
+const Color qPharm = Color(0xFFAC9F3C); 
+const Color qEng = Color(0xFFEA7600); 
+const Color qFineArts = Color(0xFF89532f); 
+const Color qPublicPolicy = Color(0xFF2e8391); 
+
 // ── activity screen ─────────────────────────────────────────────────────
 const Color qCredDownload = Color(0xFF2563EB);
 const Color qCredShare = Color(0xFF7C3AED);

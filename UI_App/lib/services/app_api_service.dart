@@ -4,8 +4,8 @@ import 'package:qwallet_mobileapp/model/activity_model.dart';
 import 'package:qwallet_mobileapp/model/catalog_model.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/model/subscription_model.dart';
-import 'package:qwallet_mobileapp/routes/app_config.dart';
-import 'package:qwallet_mobileapp/services/logger.dart';
+import 'package:qwallet_mobileapp/utils/app_config.dart';
+import 'package:qwallet_mobileapp/utils/logger.dart';
 
 class ConnectionException implements Exception {
   final String message;

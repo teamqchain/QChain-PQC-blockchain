@@ -1,7 +1,7 @@
 import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/model/catalog_model.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
-import 'package:qwallet_mobileapp/services/logger.dart';
+import 'package:qwallet_mobileapp/utils/logger.dart';
 
 class AddDocumentController extends GetxController {
   var categories = <CatalogCategory>[].obs;

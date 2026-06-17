@@ -4,7 +4,7 @@ import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
 import 'package:qwallet_mobileapp/components/emptyState.dart';
 import 'package:qwallet_mobileapp/components/shimmerWave.dart';
-import 'package:qwallet_mobileapp/routes/app_config.dart';
+import 'package:qwallet_mobileapp/utils/app_config.dart';
 import 'package:qwallet_mobileapp/screens/home_screen.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/widgets/QSearchBar.dart';

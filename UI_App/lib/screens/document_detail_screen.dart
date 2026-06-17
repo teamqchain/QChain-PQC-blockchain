@@ -521,7 +521,7 @@ class _ValidBarState extends State<_ValidBar>
   @override
   Widget build(BuildContext context) {
     final isActive = widget.doc.status.toLowerCase() == 'active';
-    final Color statusColor = isActive ? const Color(0xFF22C55E) : Colors.red;
+    final Color statusColor = isActive ? qValid : qRed;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -587,13 +587,6 @@ class _DetailsSection extends StatelessWidget {
         label: 'Expiry Date',
         value: doc.formattedExpiryDate,
         highlight: doc.expiryDate != null,
-      ),
-      _DetailRow(
-        label: 'Current Status',
-        value: doc.displayStatus,
-        statusColor: doc.status.toLowerCase() == 'active'
-            ? const Color(0xFF22C55E)
-            : Colors.red,
       ),
     ];
 

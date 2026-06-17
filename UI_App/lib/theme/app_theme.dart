@@ -10,6 +10,7 @@ ThemeData lightMode = ThemeData(
     onSurface: Color(0xFFFFFFFF),
     onPrimary: Color(0xFF000000),
   ),
+  fontFamily: 'SFPro',
   scaffoldBackgroundColor: const Color(0xFFFFFFFF),
   appBarTheme: const AppBarTheme(
     backgroundColor: Color(0xFF000000),
@@ -43,6 +44,7 @@ ThemeData darkMode = ThemeData(
     onSurface: Color(0xFF000000),
     onPrimary: Color(0xFFFFFFFF),
   ),
+  fontFamily: 'SFPro',
   scaffoldBackgroundColor: const Color(0xFFFFFFFF),
   appBarTheme: const AppBarTheme(
     backgroundColor: Color(0xFFFFFFFF),
