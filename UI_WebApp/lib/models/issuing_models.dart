@@ -470,7 +470,7 @@ abstract class IssuingMockData {
         'Bachelors in Finance',
         'Bachelors in Economics',
       ],
-      'College of Computing & Informatic': [
+      'College of Computing & Informatics': [
         'Bachelors in Computer Science',
         'Bachelors in Information Technology-Multimedia',
         'Bachelors in Business Information System',
@@ -742,51 +742,7 @@ abstract class IssuingMockData {
       createdDate: '01 Nov 2022',
       schemaStatus: SchemaStatus.active,
     ),
-    SchemaRecord(
-      id: 'SCH-006',
-      name: 'Medical License',
-      description:
-          'Professional medical practitioner license issued by an accredited healthcare institution.',
-      category: 'Medical',
-      requirements: [
-        'Valid practitioner registration number',
-        'Verified medical degree on file',
-        'Specialty board certification (if applicable)',
-        'Active standing with professional body',
-      ],
-      fieldsCount: 4,
-      credentialsIssued: 92,
-      isActive: true,
-      fields: [
-        SchemaField(
-          id: 'f1',
-          label: 'License Type',
-          type: SchemaFieldType.text,
-        ),
-        SchemaField(id: 'f2', label: 'License No', type: SchemaFieldType.text),
-        SchemaField(
-          id: 'f3',
-          label: 'Specialty',
-          type: SchemaFieldType.dropdown,
-          dropdownOptions: [
-            'General Practice',
-            'Surgery',
-            'Pediatrics',
-            'Internal Medicine',
-            'Radiology',
-            'Psychiatry',
-          ],
-        ),
-        SchemaField(
-          id: 'f4',
-          label: 'Board Certified',
-          type: SchemaFieldType.yesNo,
-        ),
-      ],
-
-      createdDate: '10 Jan 2023',
-      schemaStatus: SchemaStatus.active,
-    ),
+  
     SchemaRecord(
       id: 'SCH-007',
       name: 'Research Fellowship',

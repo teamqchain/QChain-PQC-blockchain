@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
-import 'package:qportal_webapp/utils/webApp_shell.dart';
+import 'package:qportal_webapp/routes/webApp_shell.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 
 void main() {

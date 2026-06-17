@@ -10,6 +10,7 @@ import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
 import 'package:qportal_webapp/components/countChip.dart';
 import 'package:qportal_webapp/widgets/paginationBar.dart';
+import 'package:qportal_webapp/widgets/statusBadge.dart';
 
 // ─── ACTION EXTENSION (Maps API Enums to UI Colors) ─────────────────────────
 
@@ -28,6 +29,10 @@ extension LiveAuditActionX on LiveAuditAction {
         return 'Policy Change';
       case LiveAuditAction.system:
         return 'System Config';
+      case LiveAuditAction.restore: 
+        return 'Restored';
+      case LiveAuditAction.management:
+        return 'Management';
       case LiveAuditAction.error:
         return 'Error';
     }
@@ -36,17 +41,21 @@ extension LiveAuditActionX on LiveAuditAction {
   Color get colour {
     switch (this) {
       case LiveAuditAction.issued:
-        return AppColors.valid;
+        return AppColors.issuingAccent;
       case LiveAuditAction.revoked:
         return AppColors.revoked;
       case LiveAuditAction.suspended:
         return AppColors.suspended;
       case LiveAuditAction.verified:
-        return AppColors.verifyingLight;
+        return AppColors.verifyingAccent;
       case LiveAuditAction.policy:
         return const Color(0xFFF97316);
       case LiveAuditAction.system:
-        return const Color(0xFF60A5FA);
+        return AppColors.adminAccent;
+      case LiveAuditAction.restore: 
+        return AppColors.expired;
+      case LiveAuditAction.management:
+        return AppColors.adminLight;
       case LiveAuditAction.error:
         return AppColors.revoked;
     }
@@ -455,7 +464,7 @@ class _AuditRowState extends State<_AuditRow> {
                   style: AppTextStyles.bodyTiny.copyWith(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textDim,
+                    color: AppColors.text,
                   ),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -468,7 +477,7 @@ class _AuditRowState extends State<_AuditRow> {
               flex: 2,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: _ActionBadge(label: r.action.label, colour: colour),
+                child: StatusBadge(label: r.action.label, fg: colour),
               ),
             ),
 
@@ -559,49 +568,6 @@ class _AuditRowState extends State<_AuditRow> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ─── ACTION BADGE ─────────────────────────────────────────────────────────────
-
-class _ActionBadge extends StatelessWidget {
-  final String label;
-  final Color colour;
-  const _ActionBadge({required this.label, required this.colour});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: colour.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: colour.withOpacity(0.35)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: colour),
-          ),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: colour,
-                letterSpacing: 0.3,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
       ),
     );
   }
