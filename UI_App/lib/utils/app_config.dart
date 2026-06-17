@@ -1,4 +1,3 @@
-
 // kApiBaseUrl — the QChain backend base URL the app talks to.
 //
 // It is injected at BUILD time via --dart-define, e.g.

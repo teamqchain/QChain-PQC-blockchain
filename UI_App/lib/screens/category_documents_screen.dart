@@ -4,7 +4,7 @@ import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/Headers/categoryHeader.dart';
 import 'package:qwallet_mobileapp/components/CardDetails.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
-import 'package:qwallet_mobileapp/services/logger.dart';
+import 'package:qwallet_mobileapp/utils/logger.dart';
 import 'package:qwallet_mobileapp/widgets/wallet_category.dart';
 import 'package:qwallet_mobileapp/view/listView.dart';
 import 'package:qwallet_mobileapp/view/stackView.dart';

@@ -102,12 +102,18 @@ class _FavButton extends StatelessWidget {
 /// NUMBER / EXPIRES strip — bottom of every card.
 class _InfoStrip extends StatelessWidget {
   final String number;
+  final String status;
   final String expires;
 
-  const _InfoStrip({required this.number, required this.expires});
+  const _InfoStrip({
+    required this.number,
+    required this.status,
+    required this.expires,
+  });
 
   Widget _field(
     String label,
+
     String value, {
     CrossAxisAlignment align = CrossAxisAlignment.start,
   }) {
@@ -149,6 +155,7 @@ class _InfoStrip extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           _field('NUMBER', number),
+          _field('STATUS', status),
           _field('EXPIRES', expires, align: CrossAxisAlignment.end),
         ],
       ),
@@ -298,6 +305,8 @@ class WalletCard extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.5,
                 ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 3),
               Text(
@@ -311,6 +320,7 @@ class WalletCard extends StatelessWidget {
               const SizedBox(height: 20),
               _InfoStrip(
                 number: doc.credentialID,
+                status: doc.displayStatus,
                 expires: doc.formattedExpiryDate,
               ),
             ],
@@ -385,6 +395,7 @@ class ListCard extends StatelessWidget {
               const SizedBox(height: 16),
               _InfoStrip(
                 number: doc.credentialID,
+                status: doc.displayStatus,
                 expires: doc.formattedExpiryDate,
               ),
             ],
@@ -451,7 +462,8 @@ class StackCounter extends StatelessWidget {
   final int total;
   final Color color;
 
-  const StackCounter({super.key, 
+  const StackCounter({
+    super.key,
     required this.current,
     required this.total,
     required this.color,

@@ -30,7 +30,6 @@ class MyApp extends StatelessWidget {
       initialRoute: Routes.SPLASH,
       getPages: AppPages.routes,
 
-      // ✅ Global transition for all routes
       defaultTransition: Transition.cupertino,
       transitionDuration: const Duration(milliseconds: 200),
     );

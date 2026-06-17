@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
-import 'package:qwallet_mobileapp/routes/app_config.dart';
+import 'package:qwallet_mobileapp/utils/app_config.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/widgets/wallet_category.dart';
-import 'package:qwallet_mobileapp/services/logger.dart'; // Added logger import
+import 'package:qwallet_mobileapp/utils/logger.dart'; // Added logger import
 
 class WalletController extends GetxController {
   var credentials = <CredentialModel>[].obs;

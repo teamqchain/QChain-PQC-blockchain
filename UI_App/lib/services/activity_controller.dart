@@ -1,8 +1,8 @@
 import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/model/activity_model.dart';
-import 'package:qwallet_mobileapp/routes/app_config.dart';
+import 'package:qwallet_mobileapp/utils/app_config.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
-import 'package:qwallet_mobileapp/services/logger.dart';
+import 'package:qwallet_mobileapp/utils/logger.dart';
 
 class ActivityController extends GetxController {
   var activities = <ActivityModel>[].obs;

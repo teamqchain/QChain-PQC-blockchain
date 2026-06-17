@@ -9,7 +9,7 @@ import 'package:qwallet_mobileapp/screens/activity_screen.dart';
 import 'package:qwallet_mobileapp/screens/add_document_screen.dart';
 import 'package:qwallet_mobileapp/services/activity_controller.dart';
 import 'package:qwallet_mobileapp/services/add_document_controller.dart';
-import 'package:qwallet_mobileapp/services/logger.dart';
+import 'package:qwallet_mobileapp/utils/logger.dart';
 import 'package:qwallet_mobileapp/services/manage_subscriptions_controller.dart';
 import 'package:qwallet_mobileapp/services/wallet_controller.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
