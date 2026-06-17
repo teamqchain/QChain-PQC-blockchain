@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:qportal_webapp/models/dashboard_Model.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
-import 'package:qportal_webapp/utils/webApp_shell.dart';
+import 'package:qportal_webapp/routes/webApp_shell.dart';
 import 'package:qportal_webapp/view/responsive_layout.dart';
 import 'package:qportal_webapp/widgets/dashboard_widgets.dart';
 

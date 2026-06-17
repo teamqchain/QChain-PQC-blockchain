@@ -53,7 +53,7 @@ class StatChipsRow extends StatelessWidget {
           StatChip(
             label: 'Issuing Staffs',
             value: stats['issuerStaffCount'] ?? 6,
-            accent: AppColors.adminAccent,
+            accent: AppColors.issuingAccent,
           ),
           StatChip(
             label: 'Verifying Staffs',

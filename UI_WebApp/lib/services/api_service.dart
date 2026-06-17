@@ -11,6 +11,7 @@ import 'package:qportal_webapp/utils/logger.dart';
 
 // ─── Exceptions & Results ─────────────────────────────────────────────────────
 
+// TODO - Stay here
 class ConnectionException implements Exception {
   final String message;
   ConnectionException([this.message = 'Unable to connect to the server.']);
@@ -30,6 +31,7 @@ class IssueResult {
   });
 }
 
+// TODO - Verification Detail Model
 class VerificationDetailData {
   final VerificationHistoryRecord historyRecord;
   final VerificationResult result;
@@ -40,7 +42,7 @@ class VerificationDetailData {
   });
 }
 
-// Add this wrapper model for alerts to decouple from mock data
+// TODO - Alert Model
 class LiveAlertRecord {
   final String id;
   final String credentialID;
@@ -63,7 +65,7 @@ class LiveAlertRecord {
   });
 }
 
-// Audit Log Wrappers
+// TODO - Audit Model
 enum LiveAuditAction {
   issued,
   revoked,
@@ -72,8 +74,12 @@ enum LiveAuditAction {
   policy,
   system,
   error,
+  restore,
+  management,
+
 }
 
+// TODO - Audit Model
 class LiveAuditLogRecord {
   final String id;
   final LiveAuditAction action;
@@ -94,9 +100,10 @@ class LiveAuditLogRecord {
   });
 }
 
-// Staff Wrappers
+// TODO - Staff Model
 enum PortalType { issuer, verifier }
 
+// TODO - Staff Model
 class LiveStaffRecord {
   final String id;
   final String name;
@@ -117,6 +124,7 @@ class LiveStaffRecord {
   });
 }
 
+// TODO - Org Directory Model
 class OrgDirectoryRecord {
   final String name;
   final String email;
@@ -132,7 +140,7 @@ class OrgDirectoryRecord {
 }
 
 // ─── API service ──────────────────────────────────────────────────────────────
-
+// TODO - Stay here
 class ApiService {
   static final _client = http.Client();
 
@@ -140,6 +148,7 @@ class ApiService {
   static bool _isConnected = false;
   static DateTime? _lastHealthCheck;
 
+  // TODO - Stay here
   // ─── SHARED DATE FORMATTER ─────────────────────────────────────────────────
   static String formatIsoDate(String? iso) {
     if (iso == null || iso.isEmpty) return '';
@@ -166,6 +175,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   // GET /health
   static Future<bool> checkHealth() async {
     logDebug('[ApiService] checkHealth called');
@@ -191,6 +201,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   static Future<bool> _ensureConnection() async {
     final startTime = DateTime.now();
     while (true) {
@@ -209,6 +220,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   // POST /issueCredential
   static Future<IssueResult> issueCredential({
     required String holderEmiratesID,
@@ -260,6 +272,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   // POST /verifyCredential
   static Future<VerificationResult> verifyCredential(
     String credentialID,
@@ -296,6 +309,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   // POST /resolveSession
   static Future<VerificationResult> resolveSession(String sessionToken) async {
     logDebug(
@@ -340,6 +354,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   // POST /revokeCredential
   static Future<bool> revokeCredential(String credentialID) async {
     logDebug(
@@ -371,6 +386,8 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
+  // GET /getAllCredentials
   static Future<List<CredentialRecord>> getAllCredentials({
     String? status,
     int page = 1,
@@ -414,6 +431,8 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
+  // GET /getCredentialsByHolder
   static Future<List<Map<String, dynamic>>> getCredentialsByHolder(
     String emiratesID,
   ) async {
@@ -461,7 +480,8 @@ class ApiService {
     }
   }
 
-  // suspendCredential
+  // TODO - Stay here
+  // POST /suspendCredential
   static Future<bool> suspendCredential(
     String credentialID, {
     String reason = '',
@@ -497,7 +517,8 @@ class ApiService {
     }
   }
 
-  // restoreCredential
+  // TODO - Stay here
+  // POST /restoreCredential
   static Future<bool> restoreCredential(String credentialID) async {
     logDebug(
       '[ApiService] restoreCredential called for credentialID: $credentialID',
@@ -530,6 +551,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   //getHolderDetails
   static Future<List<HolderRecord>> getHolders({String search = ''}) async {
     logDebug('[ApiService] getHolders called with search term: "$search"');
@@ -562,7 +584,8 @@ class ApiService {
     }
   }
 
-  // verification history
+  // TODO - Stay here
+  // GET /getVerificationHistory
   static Future<List<VerificationHistoryRecord>> getVerificationHistory({
     int page = 1,
     int limit = 25,
@@ -610,6 +633,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   //getDashboardStats
   static Future<Map<String, dynamic>> getDashboardStats() async {
     logDebug('[ApiService] getDashboardStats called');
@@ -636,6 +660,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   //getCredentialDetail
   static Future<CredentialRecord?> getCredentialDetail(
     String credentialID,
@@ -676,6 +701,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   //updateCredential
   static Future<bool> updateCredential({
     required String credentialID,
@@ -714,6 +740,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   //getVerificationDetail
   static Future<VerificationDetailData?> getVerificationDetail(
     String id,
@@ -754,6 +781,8 @@ class ApiService {
 
   // --- SUBSCRIPTIONS ---
 
+  // TODO - Stay here
+  // POST /requestSubscription
   static Future<bool> requestSubscription(String credentialID) async {
     logDebug(
       '[ApiService] requestSubscription called for credentialID: $credentialID',
@@ -785,6 +814,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   // getSubscriptions
   static Future<List<SubscriptionRecord>> getSubscriptions({
     int page = 1,
@@ -819,6 +849,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   // deleteSubscription
   static Future<bool> deleteSubscription(String subscriptionID) async {
     logDebug(
@@ -849,6 +880,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   // unsubscribe
   static Future<bool> unsubscribe(String subscriptionID) async {
     logDebug(
@@ -879,6 +911,8 @@ class ApiService {
 
   // --- ALERTS (NEW) ---
 
+  // TODO - Stay here
+  // getSubscriptionAlerts
   static Future<List<LiveAlertRecord>> getSubscriptionAlerts() async {
     logDebug('[ApiService] getSubscriptionAlerts called');
     if (!await _ensureConnection()) {
@@ -911,6 +945,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   // acknowledgeAlert
   static Future<bool> acknowledgeAlert(String alertID) async {
     logDebug('[ApiService] acknowledgeAlert called for alertID: $alertID');
@@ -941,6 +976,7 @@ class ApiService {
 
   //IT ADMINS
 
+  // TODO - Stay here
   // getAuditLogs
   static Future<List<LiveAuditLogRecord>> getAuditLogs({
     int page = 1,
@@ -973,6 +1009,9 @@ class ApiService {
     }
   }
 
+  // --- STAFF ---
+
+  // TODO - Stay here
   // getStaff
   static Future<List<LiveStaffRecord>> getStaff() async {
     logDebug('[ApiService] getStaff called');
@@ -1000,6 +1039,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   // inviteStaff
   static Future<bool> inviteStaff({
     required String email,
@@ -1032,6 +1072,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   // updateStaffRole
   static Future<bool> updateStaffRole({
     required String id,
@@ -1064,6 +1105,7 @@ class ApiService {
     }
   }
 
+  // TODO - Stay here
   // deleteStaff
   static Future<bool> deleteStaff({
     required String id,
@@ -1115,6 +1157,7 @@ class ApiService {
 
   // ── parsers ───────────────────────────────────────────────────────────────
 
+  // TODO -Alert Model
   static LiveAlertRecord _parseAlertRecord(Map<String, dynamic> e) {
     return LiveAlertRecord(
       id: e['id'] as String? ?? '',
@@ -1128,6 +1171,7 @@ class ApiService {
     );
   }
 
+  // TODO - Alert Model
   static AlertSeverity _parseAlertSeverity(String s) {
     switch (s.toLowerCase()) {
       case 'revoked':
@@ -1147,6 +1191,7 @@ class ApiService {
     }
   }
 
+  // TODO - All credential Model
   static CredentialRecord _parseCredentialRecord(Map<String, dynamic> e) {
 
     final rawExpiry = e['expiryDate'] as String?;
@@ -1170,6 +1215,7 @@ class ApiService {
     );
   }
 
+  // TODO - Holder Model
   static HolderRecord _parseHolderRecord(Map<String, dynamic> e) {
     return HolderRecord(
       id: e['holderID'] as String? ?? '',
@@ -1181,6 +1227,7 @@ class ApiService {
     );
   }
 
+  // TODO - Verification History Model
   static VerificationHistoryRecord _parseVerificationHistoryRecord(
     Map<String, dynamic> e,
   ) {
@@ -1202,6 +1249,7 @@ class ApiService {
     );
   }
 
+  // TODO - Verification Detail Model
   static VerificationDetailData _parseVerificationDetail(
     Map<String, dynamic> e,
   ) {
@@ -1289,6 +1337,7 @@ class ApiService {
     return VerificationDetailData(historyRecord: historyRecord, result: result);
   }
 
+  // Holder Model
   static HolderType _parseHolderType(String s) {
     switch (s) {
       case 'masterStudent':
@@ -1304,6 +1353,7 @@ class ApiService {
     }
   }
 
+  // Verification Detail Model
   static VerifyResult _parseVerifyResult(String s) {
     switch (s) {
       case 'revoked':
@@ -1321,6 +1371,7 @@ class ApiService {
     }
   }
 
+  // Verification Detail Model
   static VerifyMethod _parseVerifyMethod(String s) {
     switch (s) {
       case 'qrScan':
@@ -1334,6 +1385,7 @@ class ApiService {
     }
   }
 
+  // Verification Result Model
   static InvalidReason _parseInvalidReason(
     String resultStr,
     String? reasonStr,
@@ -1554,10 +1606,12 @@ class ApiService {
     final formattedTime =
         '${dt.day.toString().padLeft(2, '0')} ${_monthName(dt.month)} ${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 
+    final detailsStr = e['details'] as String? ?? '';
+
     return LiveAuditLogRecord(
       id: e['id'] as String? ?? '',
-      action: _parseAuditAction(e['action'] as String? ?? ''),
-      details: e['details'] as String? ?? '',
+      action: _parseAuditAction(e['action'] as String? ?? '', detailsStr),
+      details: detailsStr,
       performedBy: e['performedBy'] as String? ?? '',
       performedByRole: e['performedByRole'] as String? ?? '',
       ipAddress: e['ipAddress'] as String? ?? '',
@@ -1565,8 +1619,11 @@ class ApiService {
     );
   }
 
-  static LiveAuditAction _parseAuditAction(String s) {
-    switch (s.toLowerCase()) {
+  static LiveAuditAction _parseAuditAction(String action, String details) {
+    final normalizedAction = action.toLowerCase();
+    final normalizedDetails = details.toLowerCase();
+
+    switch (normalizedAction) {
       case 'issued':
         return LiveAuditAction.issued;
       case 'revoked':
@@ -1580,6 +1637,19 @@ class ApiService {
       case 'system_config':
         return LiveAuditAction.system;
       default:
+        // --- Keyword Fallbacks from Details ---
+        if (normalizedDetails.contains('restored')) {
+          return LiveAuditAction
+              .restore; // Make sure .restore exists in your LiveAuditAction enum!
+        }
+        if (normalizedDetails.contains('invited') ||
+            normalizedDetails.contains('removed')) {
+          return LiveAuditAction
+              .management; // Example of mapping keywords to existing enums
+        }
+        // Add any other specific keyword checks here...
+
+        // Ultimate fallback if no keywords match
         return LiveAuditAction.error;
     }
   }
