@@ -315,7 +315,7 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
               ),
             ),
             _readRow(label: 'Credential Type', value: c.credentialType),
-            _readRow(label: 'Issued By', value: _issuedByWithRole(c.issuedBy)),
+            _readRow(label: 'Issued By', value: c.issuedBy),
             _readRow(label: 'Issue Date', value: c.issueDate),
 
             const SizedBox(height: 24),
@@ -550,12 +550,11 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
         AppButton(
           icon: Icons.close_rounded,
           label: _editing ? 'Cancel without saving' : 'Close',
-          backgroundColor: _editing? Colors.transparent: AppColors.revoked,
+          backgroundColor: _editing ? Colors.transparent : AppColors.revoked,
           hoverColor: AppColors.revoked.withOpacity(0.82),
           onTap: _editing ? _cancelEdit : widget.onClose,
           showBorder: true,
-          borderColor: _editing ? AppColors.revoked : Colors.transparent
-
+          borderColor: _editing ? AppColors.revoked : Colors.transparent,
         ),
       ],
     );
@@ -683,13 +682,6 @@ class _CredentialDetailPageState extends State<CredentialDetailPage> {
   }
 
   // ─── HELPERS ──────────────────────────────────────────────────────────────
-
-  String _issuedByWithRole(String name) {
-    final match = IssuingMockData.staff
-        .where((s) => s.name == name)
-        .firstOrNull;
-    return match == null ? name : '$name  ·  ${match.role.label}';
-  }
 
   Widget _sectionDivider(String label) => Row(
     children: [
@@ -1153,7 +1145,11 @@ class _Toast extends StatefulWidget {
   final VoidCallback onDone;
   final bool success;
 
-  const _Toast({required this.message, required this.onDone, this.success = true});
+  const _Toast({
+    required this.message,
+    required this.onDone,
+    this.success = true,
+  });
 
   @override
   State<_Toast> createState() => _ToastState();
@@ -1211,8 +1207,10 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                 Icon(
-                  (widget.success ? Icons.check_circle_rounded : Icons.error_outline_rounded),
+                Icon(
+                  (widget.success
+                      ? Icons.check_circle_rounded
+                      : Icons.error_outline_rounded),
                   size: 14,
                   color: widget.success ? AppColors.valid : AppColors.revoked,
                 ),

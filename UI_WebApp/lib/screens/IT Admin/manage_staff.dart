@@ -1,6 +1,7 @@
 // screens/issuer/manage_staff_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/services/api_service.dart'; // Ensure correct path
 import 'package:qportal_webapp/components/countChip.dart';
@@ -13,17 +14,6 @@ import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-
-const _kOrgPool = [
-  'a.rashidi@org.ae',
-  'b.hassan@org.ae',
-  'c.mansoor@org.ae',
-  'd.khalil@org.ae',
-  'e.saif@org.ae',
-  'f.nour@org.ae',
-  'g.tariq@org.ae',
-  'h.layla@org.ae',
-];
 
 const _kIssuerRolePerms = <IssuerRole, List<String>>{
   IssuerRole.staff: ['Issue & revoke credentials'],
@@ -154,6 +144,8 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
       ? null
       : _all.where((s) => s.id == _selectedId).firstOrNull;
 
+  List<OrgDirectoryRecord> _directoryPool = [];
+
   @override
   void initState() {
     super.initState();
@@ -168,9 +160,11 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
 
     try {
       final records = await ApiService.getStaff();
+      final directory = await ApiService.getOrgDirectory();
       if (mounted) {
         setState(() {
           _all = records.map((r) => _StaffEntry.fromLive(r)).toList();
+          _directoryPool = directory;
           _isLoading = false;
           _selectedId = null;
           _applyFilter();
@@ -230,6 +224,7 @@ class _ManageStaffPageState extends State<ManageStaffPage> {
       context: context,
       builder: (_) => _AddStaffDialog(
         existingEmails: _all.map((s) => s.email).toList(),
+        directoryPool: _directoryPool,
         onInvite: (email, portal, roleStr) async {
           final success = await ApiService.inviteStaff(
             email: email,
@@ -670,10 +665,11 @@ class _StaffRowState extends State<_StaffRow> {
 
 class _AddStaffDialog extends StatefulWidget {
   final List<String> existingEmails;
+  final List<OrgDirectoryRecord> directoryPool;
   final Future<void> Function(String email, _Portal portal, String roleStr)
   onInvite;
 
-  const _AddStaffDialog({required this.existingEmails, required this.onInvite});
+  const _AddStaffDialog({required this.existingEmails, required this.directoryPool, required this.onInvite});
 
   @override
   State<_AddStaffDialog> createState() => _AddStaffDialogState();
@@ -687,19 +683,24 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
   List<String> _suggestions = [];
   bool _isInviting = false;
 
-  bool get _canInvite => _emailCtrl.text.trim().isNotEmpty && !_isInviting;
+  bool get _canInvite {
+    final emailStr = _emailCtrl.text.trim();
+    final isInDirectory = widget.directoryPool.any((e) => e.email == emailStr);
+    return emailStr.isNotEmpty && !_isInviting && isInDirectory;
+  }
 
   void _onEmailChanged(String v) {
     final q = v.trim().toLowerCase();
-    final pool = {..._kOrgPool, ...widget.existingEmails}.toList();
+
     setState(() {
       _suggestions = q.isEmpty
           ? []
-          : pool
+          : widget.directoryPool
+              .map((e) => e.email)
                 .where(
-                  (e) =>
-                      e.toLowerCase().contains(q) &&
-                      !widget.existingEmails.contains(e),
+                  (email) =>
+                      email.toLowerCase().contains(q) &&
+                      !widget.existingEmails.contains(email),
                 )
                 .toList();
     });

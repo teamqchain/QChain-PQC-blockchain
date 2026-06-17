@@ -1,6 +1,7 @@
 // screens/verifier/alerts_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/services/api_service.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
 import 'package:qportal_webapp/components/connection_error.dart';
@@ -260,7 +261,7 @@ class _AlertsPageState extends State<AlertsPage> {
           const Spacer(),
 
           // Filter
-          _ToolbarIconBtn(
+          ToolbarIconBtn(
             icon: Icons.filter_list_rounded,
             tooltip: 'Filter',
             onTap: () {},
@@ -492,6 +493,16 @@ class _AlertItemState extends State<_AlertItem> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Text(
+                          a.credentialID,
+                          style: AppTextStyles.bodyTiny.copyWith(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: accent,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
                         // Main line: Holder Name · Credential Name
                         Row(
                           children: [

@@ -824,49 +824,15 @@ class _CategoryChip extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    width: 80,
-    decoration: BoxDecoration(
-      color: _color.withOpacity(0.09),
-      borderRadius: BorderRadius.circular(4),
-      border: Border.all(color: _color.withOpacity(0.25)),
-    ),
-    child: Center(
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: _color,
-        ),
+  Widget build(BuildContext context) => Center(
+    child: Text(
+      label,
+      style: TextStyle(
+        fontSize: 10,
+        fontWeight: FontWeight.w600,
+        color: _color,
       ),
     ),
   );
 }
-
-// ─── FIELDS COUNT CHIP ────────────────────────────────────────────────────────
-
-// class _FieldsChip extends StatelessWidget {
-//   final int count;
-//   const _FieldsChip({required this.count});
-
-//   @override
-//   Widget build(BuildContext context) => Row(
-//     mainAxisSize: MainAxisSize.min,
-//     children: [
-//       const Icon(Icons.list_alt_rounded, size: 11, color: AppColors.textDim),
-//       const SizedBox(width: 4),
-//       Text(
-//         '$count field${count == 1 ? '' : 's'}',
-//         style: AppTextStyles.bodyTiny.copyWith(
-//           fontSize: 10,
-//           color: AppColors.textDim,
-//         ),
-//       ),
-//     ],
-//   );
-// }
-
-// ─── SEARCH BAR ───────────────────────────────────────────────────────────────
 

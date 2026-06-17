@@ -43,6 +43,7 @@ class VerificationDetailData {
 // Add this wrapper model for alerts to decouple from mock data
 class LiveAlertRecord {
   final String id;
+  final String credentialID;
   final String holderName;
   final String credentialName;
   final AlertSeverity severity;
@@ -52,6 +53,7 @@ class LiveAlertRecord {
 
   LiveAlertRecord({
     required this.id,
+    required this.credentialID,
     required this.holderName,
     required this.credentialName,
     required this.severity,
@@ -113,6 +115,20 @@ class LiveStaffRecord {
     required this.addedDate,
     required this.status,
   });
+}
+
+class OrgDirectoryRecord {
+  final String name;
+  final String email;
+
+  OrgDirectoryRecord({required this.name, required this.email});
+
+  factory OrgDirectoryRecord.fromJson(Map<String, dynamic> json) {
+    return OrgDirectoryRecord(
+      name: json['name']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+    );
+  }
 }
 
 // ─── API service ──────────────────────────────────────────────────────────────
@@ -1079,11 +1095,30 @@ class ApiService {
     }
   }
 
+  static Future<List<OrgDirectoryRecord>> getOrgDirectory() async {
+    logDebug('[ApiService] getOrgDirectory called');
+    if (!await _ensureConnection()) throw ConnectionException();
+
+    try {
+      final res = await _client.get(Uri.parse('$kApiBaseUrl/getDirectory'));
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        final list = body['directory'] as List? ?? [];
+        return list.map((e) => OrgDirectoryRecord.fromJson(e)).toList();
+      }
+      return [];
+    } catch (e) {
+      logDebug('[ApiService] getOrgDirectory exception: $e');
+      throw ConnectionException();
+    }
+  }
+
   // ── parsers ───────────────────────────────────────────────────────────────
 
   static LiveAlertRecord _parseAlertRecord(Map<String, dynamic> e) {
     return LiveAlertRecord(
       id: e['id'] as String? ?? '',
+      credentialID: e['credentialID'] as String? ?? '',
       holderName: e['holderName'] as String? ?? '',
       credentialName: e['credentialName'] as String? ?? '',
       severity: _parseAlertSeverity(e['severity'] as String? ?? 'revoked'),
@@ -1153,6 +1188,7 @@ class ApiService {
         DateTime.tryParse(e['verifiedAt'] as String? ?? '') ?? DateTime.now();
     return VerificationHistoryRecord(
       id: e['id'] as String? ?? '',
+      credID: e['credentialID'] as String? ?? '',
       date:
           '${dt.day.toString().padLeft(2, '0')} ${_monthName(dt.month)} ${dt.year}',
       time:
@@ -1177,6 +1213,7 @@ class ApiService {
 
     final historyRecord = VerificationHistoryRecord(
       id: e['id'] as String? ?? '',
+      credID: e['credentialID'] as String? ?? '',
       date:
           '${dt.day.toString().padLeft(2, '0')} ${_monthName(dt.month)} ${dt.year}',
       time:
@@ -1484,6 +1521,7 @@ class ApiService {
   static SubscriptionRecord _parseSubscriptionRecord(Map<String, dynamic> e) {
     return SubscriptionRecord(
       id: e['id'] as String? ?? '',
+      credentialID: e['credentialID'] as String? ?? '',
       holderName: e['holderName'] as String? ?? '',
       holderId: e['holderID'] as String? ?? '',
       credentialType: e['credentialType'] as String? ?? '',

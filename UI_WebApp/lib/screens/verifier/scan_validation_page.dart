@@ -112,20 +112,6 @@ class _ScanToValidatePageState extends State<ScanToValidatePage>
     }
   }
 
-  // ── For development / demo only — simulates API outcomes ─────────────────
-  void _simulateFail() {
-    _cameraController.stop();
-    setState(() {
-      _state = _ScanState.failed;
-      _errorMessage = 'Simulated failure triggered.';
-    });
-  }
-
-  void _simulateSuccess() {
-    _cameraController.stop();
-    // Simulate passing a valid credential to bypass the API for local Mac testing
-    widget.onScanSuccess?.call(VerifyingMockData.valid());
-  }
 
   // ─── BUILD ─────────────────────────────────────────────────────────────────
 
@@ -257,7 +243,6 @@ class _ScanToValidatePageState extends State<ScanToValidatePage>
             ),
           ),
           const SizedBox(height: 24),
-          _buildSimulateButtons(),
         ],
       ),
     );
@@ -325,44 +310,6 @@ class _ScanToValidatePageState extends State<ScanToValidatePage>
     );
   }
 
-  Widget _buildSimulateButtons() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            onTap: _simulateSuccess,
-            child: Text(
-              'Simulate successful scan',
-              style: AppTextStyles.bodyTiny.copyWith(
-                fontSize: 10,
-                color: AppColors.verifyingAccent.withOpacity(0.4),
-                decoration: TextDecoration.underline,
-                decorationColor: AppColors.verifyingAccent.withOpacity(0.3),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 16),
-        MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            onTap: _simulateFail,
-            child: Text(
-              'Simulate scan failure',
-              style: AppTextStyles.bodyTiny.copyWith(
-                fontSize: 10,
-                color: AppColors.textDim.withOpacity(0.4),
-                decoration: TextDecoration.underline,
-                decorationColor: AppColors.textDim.withOpacity(0.3),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

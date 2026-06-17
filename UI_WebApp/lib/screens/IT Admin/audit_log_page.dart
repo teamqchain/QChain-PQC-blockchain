@@ -9,6 +9,7 @@ import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
 import 'package:qportal_webapp/components/countChip.dart';
+import 'package:qportal_webapp/widgets/paginationBar.dart';
 
 // ─── ACTION EXTENSION (Maps API Enums to UI Colors) ─────────────────────────
 
@@ -226,7 +227,7 @@ class _AuditLogPageState extends State<AuditLogPage> {
           const SizedBox(height: 14),
 
           // ── Pagination ───────────────────────────────────────────────────
-          _PaginationBar(
+          PaginationBar(
             currentPage: _currentPage,
             totalPages: _totalPages,
             rowsPerPage: _rowsPerPage,
@@ -237,6 +238,7 @@ class _AuditLogPageState extends State<AuditLogPage> {
               _currentPage = 1;
               _applyFilter();
             }),
+              accentColor: AppColors.adminAccent,
           ),
           const SizedBox(height: 14),
 
@@ -884,237 +886,6 @@ class _FormatOptionState extends State<_FormatOption> {
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  PAGINATION BAR
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _PaginationBar extends StatelessWidget {
-  final int currentPage;
-  final int totalPages;
-  final int rowsPerPage;
-  final int totalRows;
-  final void Function(int) onPageChanged;
-  final void Function(int) onRowsPerPageChanged;
-
-  const _PaginationBar({
-    required this.currentPage,
-    required this.totalPages,
-    required this.rowsPerPage,
-    required this.totalRows,
-    required this.onPageChanged,
-    required this.onRowsPerPageChanged,
-  });
-
-  List<int?> get _pages {
-    if (totalPages <= 7) return List.generate(totalPages, (i) => i + 1);
-    final result = <int?>[];
-    result.add(1);
-    if (currentPage > 4) result.add(null);
-    final start = (currentPage - 2).clamp(2, totalPages - 1);
-    final end = (currentPage + 2).clamp(2, totalPages - 1);
-    for (int i = start; i <= end; i++) {
-      result.add(i);
-    }
-    if (currentPage < totalPages - 3) result.add(null);
-    result.add(totalPages);
-    return result;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final start = totalRows == 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
-    final end = (currentPage * rowsPerPage).clamp(0, totalRows);
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // Page buttons
-        Row(
-          children: [
-            _PageBtn(
-              enabled: currentPage > 1,
-              onTap: () => onPageChanged(currentPage - 1),
-              child: const Icon(Icons.chevron_left, size: 16),
-            ),
-            const SizedBox(width: 4),
-            ..._pages.map((p) {
-              if (p == null) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                  child: Text(
-                    '…',
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 12,
-                      color: AppColors.textDim,
-                    ),
-                  ),
-                );
-              }
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: _PageBtn(
-                  active: p == currentPage,
-                  onTap: () => onPageChanged(p),
-                  child: Text(
-                    '$p',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: p == currentPage
-                          ? FontWeight.w700
-                          : FontWeight.w400,
-                      color: p == currentPage
-                          ? Colors.white
-                          : AppColors.textDim,
-                    ),
-                  ),
-                ),
-              );
-            }),
-            const SizedBox(width: 4),
-            _PageBtn(
-              enabled: currentPage < totalPages,
-              onTap: () => onPageChanged(currentPage + 1),
-              child: const Icon(Icons.chevron_right, size: 16),
-            ),
-          ],
-        ),
-        const SizedBox(width: 20),
-        Text(
-          totalRows == 0 ? 'No results' : 'Showing $start–$end of $totalRows',
-          style: AppTextStyles.bodyTiny.copyWith(
-            fontSize: 11,
-            color: AppColors.textDim,
-          ),
-        ),
-        const SizedBox(width: 20),
-        Text(
-          'Rows per page:',
-          style: AppTextStyles.bodyTiny.copyWith(
-            fontSize: 11,
-            color: AppColors.textDim,
-          ),
-        ),
-        const SizedBox(width: 8),
-        ...[25, 50, 100].map(
-          (n) => Padding(
-            padding: const EdgeInsets.only(right: 6),
-            child: _RowsChip(
-              value: n,
-              selected: n == rowsPerPage,
-              onTap: () => onRowsPerPageChanged(n),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _PageBtn extends StatefulWidget {
-  final Widget child;
-  final bool active;
-  final bool enabled;
-  final VoidCallback onTap;
-  const _PageBtn({
-    required this.child,
-    required this.onTap,
-    this.active = false,
-    this.enabled = true,
-  });
-  @override
-  State<_PageBtn> createState() => _PageBtnState();
-}
-
-class _PageBtnState extends State<_PageBtn> {
-  bool _h = false;
-  @override
-  Widget build(BuildContext context) => MouseRegion(
-    cursor: widget.enabled
-        ? SystemMouseCursors.click
-        : SystemMouseCursors.basic,
-    onEnter: (_) => setState(() => _h = true),
-    onExit: (_) => setState(() => _h = false),
-    child: GestureDetector(
-      onTap: widget.enabled ? widget.onTap : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        width: 30,
-        height: 30,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: widget.active
-              ? AppColors.adminAccent
-              : _h && widget.enabled
-              ? AppColors.surfaceHover
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          border: widget.active
-              ? null
-              : Border.all(
-                  color: _h && widget.enabled
-                      ? AppColors.border
-                      : Colors.transparent,
-                ),
-        ),
-        child: Opacity(
-          opacity: widget.enabled ? 1.0 : 0.3,
-          child: widget.child,
-        ),
-      ),
-    ),
-  );
-}
-
-class _RowsChip extends StatefulWidget {
-  final int value;
-  final bool selected;
-  final VoidCallback onTap;
-  const _RowsChip({
-    required this.value,
-    required this.selected,
-    required this.onTap,
-  });
-  @override
-  State<_RowsChip> createState() => _RowsChipState();
-}
-
-class _RowsChipState extends State<_RowsChip> {
-  bool _h = false;
-  @override
-  Widget build(BuildContext context) => MouseRegion(
-    cursor: SystemMouseCursors.click,
-    onEnter: (_) => setState(() => _h = true),
-    onExit: (_) => setState(() => _h = false),
-    child: GestureDetector(
-      onTap: widget.onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: widget.selected
-              ? AppColors.adminAccent.withOpacity(0.18)
-              : _h
-              ? AppColors.surfaceHover
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(5),
-          border: Border.all(
-            color: widget.selected
-                ? AppColors.adminAccent.withOpacity(0.5)
-                : AppColors.border,
-          ),
-        ),
-        child: Text(
-          '${widget.value}',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: widget.selected ? FontWeight.w700 : FontWeight.w400,
-            color: widget.selected ? AppColors.adminLight : AppColors.textDim,
-          ),
-        ),
-      ),
-    ),
-  );
-}
 
 // ─── TOOLBAR ICON BUTTON ──────────────────────────────────────────────────────
 

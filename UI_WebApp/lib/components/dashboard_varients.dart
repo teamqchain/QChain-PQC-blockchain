@@ -386,6 +386,7 @@ class VariantIssuerContent extends StatelessWidget {
                   title: 'Recent Issuing Activity',
                   accent: AppColors.issuingAccent,
                   linkText: 'View All',
+                  onLinkTap: () => ShellNav.push(RouteName.allCredentials),
                 ),
                 ...recentIssuedList.map(
                   (item) =>
@@ -404,8 +405,9 @@ class VariantIssuerContent extends StatelessWidget {
                       title: 'Expiry Warnings',
                       accent: AppColors.issuingAccent,
                       linkText: 'View All',
+                      onLinkTap: () => ShellNav.push(RouteName.allCredentials),
                     ),
-                    ...expiryWarningsList.map((item) => ExpiryRow(item: item)),
+                    ...expiryWarningsList.map((item) => ExpiryRow(item: item, accent: AppColors.issuingAccent)),
                   ],
                 ),
               ),
@@ -414,14 +416,12 @@ class VariantIssuerContent extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 🔄 CHANGED: Updated the title to match the 7-day layout
                     const SectionHeader(
                       title: 'Credentials Issued — Last 7 Days',
                       accent: AppColors.issuingAccent,
                     ),
                     const SizedBox(height: 10),
                     MiniBarChart(
-                      // 🔄 CHANGED: Passing the daily list here
                       data: dailyIssuedList,
                       accent: AppColors.issuingAccent,
                     ),
@@ -507,6 +507,7 @@ class VariantVerifierContent extends StatelessWidget {
                   title: 'Recent Verifications',
                   accent: AppColors.verifyingAccent,
                   linkText: 'View Full History',
+                  onLinkTap: () => ShellNav.push(RouteName.verificationHistory),
                 ),
                 ...recentVerificationsList.map(
                   (item) => VerificationRow(item: item),
@@ -523,9 +524,10 @@ class VariantVerifierContent extends StatelessWidget {
                     SectionHeader(
                       title: 'Status Alerts',
                       accent: AppColors.verifyingAccent,
-                      linkText: 'Manage Subscriptions',
+                      linkText: 'Manage Alerts',
+                      onLinkTap: () => ShellNav.push(RouteName.alertHistory),
                     ),
-                    ...statusAlertsList.map((item) => AlertRow(item: item)),
+                    ...statusAlertsList.map((item) => AlertRow(item: item, accent: AppColors.verifyingAccent)),
                   ],
                 ),
               ),
@@ -1012,10 +1014,11 @@ class _RecentAuditCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(
+           SectionHeader(
             title: 'Recent Audit Activity',
             accent: AppColors.adminAccent,
             linkText: 'View Full Log',
+            onLinkTap: () => ShellNav.push(RouteName.auditLog),
           ),
           const SizedBox(height: 4),
           if (auditLogs.isEmpty)
@@ -1430,10 +1433,11 @@ class _CapabilityRequestsCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(
+           SectionHeader(
             title: 'Capability Requests',
             accent: AppColors.adminAccent,
             linkText: 'View All',
+            onLinkTap: () => ShellNav.push(RouteName.requestCapabilities),
           ),
           const SizedBox(height: 4),
           ..._AdminMock.capRequests.map((r) => _CapRow(req: r)),

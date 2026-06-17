@@ -24,6 +24,8 @@ import 'package:qportal_webapp/models/verifiying_models.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
+import 'package:qportal_webapp/widgets/paginationBar.dart';
+import 'package:qportal_webapp/widgets/statusBadge.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  PAGE
@@ -182,13 +184,14 @@ class _PoliciesPageState extends State<PoliciesPage> {
           const SizedBox(height: 14),
 
           // ── Pagination ───────────────────────────────────────────────────
-          _PaginationBar(
+          PaginationBar(
             currentPage: _currentPage,
             totalPages: _totalPages,
             rowsPerPage: _rowsPerPage,
             totalRows: _filtered.length,
             onPageChanged: _goToPage,
             onRowsPerPageChanged: _changeRowsPerPage,
+            accentColor: AppColors.verifyingAccent,
           ),
           const SizedBox(height: 14),
 
@@ -576,7 +579,7 @@ class _PolicyRowState extends State<_PolicyRow> {
               ),
 
               // Status badge
-              SizedBox(width: 120, child: _StatusBadge(status: r.status)),
+              SizedBox(width: 120, child: StatusBadge(fg: r.status.fg, label: r.status.label)),
             ],
           ),
         ),
@@ -607,75 +610,19 @@ class AppliesToBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fg = _color();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      width: 130,
-      decoration: BoxDecoration(
-        color: fg.withOpacity(0.09),
-        borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: fg.withOpacity(0.28), width: 1),
+    return Text(
+      label,
+      style: TextStyle(
+        fontSize: 10,
+        fontWeight: FontWeight.w600,
+        color: fg,
+        letterSpacing: 0.2,
       ),
-      child: Center(
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            color: fg,
-            letterSpacing: 0.2,
-          ),
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
+      overflow: TextOverflow.ellipsis,
     );
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  STATUS BADGE  — dot + label, coloured
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _StatusBadge extends StatelessWidget {
-  final PolicyStatus status;
-  const _StatusBadge({required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    final fg = status.fg;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      width: 90,
-      decoration: BoxDecoration(
-        color: fg.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: fg.withOpacity(0.35), width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: fg),
-          ),
-          const SizedBox(width: 5),
-          Center(
-            child: Text(
-              status.label,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: fg,
-                letterSpacing: 0.4,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  DELETE CONFIRMATION DIALOG
@@ -840,245 +787,6 @@ class _DeleteDialog extends StatelessWidget {
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  PAGINATION BAR  (identical to subscription_page.dart)
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _PaginationBar extends StatelessWidget {
-  final int currentPage;
-  final int totalPages;
-  final int rowsPerPage;
-  final int totalRows;
-  final void Function(int) onPageChanged;
-  final void Function(int) onRowsPerPageChanged;
-
-  const _PaginationBar({
-    required this.currentPage,
-    required this.totalPages,
-    required this.rowsPerPage,
-    required this.totalRows,
-    required this.onPageChanged,
-    required this.onRowsPerPageChanged,
-  });
-
-  List<int?> get _pageNumbers {
-    if (totalPages <= 7) return List.generate(totalPages, (i) => i + 1);
-    final result = <int?>[];
-    result.add(1);
-    if (currentPage > 4) result.add(null);
-    final start = (currentPage - 2).clamp(2, totalPages - 1);
-    final end = (currentPage + 2).clamp(2, totalPages - 1);
-    for (int i = start; i <= end; i++) {
-      result.add(i);
-    }
-    if (currentPage < totalPages - 3) result.add(null);
-    result.add(totalPages);
-    return result;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final start = totalRows == 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
-    final end = (currentPage * rowsPerPage).clamp(0, totalRows);
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Row(
-          children: [
-            _PageBtn(
-              enabled: currentPage > 1,
-              onTap: () => onPageChanged(currentPage - 1),
-              child: const Icon(Icons.chevron_left, size: 16),
-            ),
-            const SizedBox(width: 4),
-            ..._pageNumbers.map((p) {
-              if (p == null) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                  child: Text(
-                    '…',
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 12,
-                      color: AppColors.textDim,
-                    ),
-                  ),
-                );
-              }
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: _PageBtn(
-                  active: p == currentPage,
-                  onTap: () => onPageChanged(p),
-                  child: Text(
-                    '$p',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: p == currentPage
-                          ? FontWeight.w700
-                          : FontWeight.w400,
-                      color: p == currentPage
-                          ? Colors.white
-                          : AppColors.textDim,
-                    ),
-                  ),
-                ),
-              );
-            }),
-            const SizedBox(width: 4),
-            _PageBtn(
-              enabled: currentPage < totalPages,
-              onTap: () => onPageChanged(currentPage + 1),
-              child: const Icon(Icons.chevron_right, size: 16),
-            ),
-          ],
-        ),
-        const SizedBox(width: 20),
-        Row(
-          children: [
-            Text(
-              totalRows == 0
-                  ? 'No results'
-                  : 'Showing $start–$end of $totalRows',
-              style: AppTextStyles.bodyTiny.copyWith(
-                fontSize: 11,
-                color: AppColors.textDim,
-              ),
-            ),
-            const SizedBox(width: 20),
-            Text(
-              'Rows per page:',
-              style: AppTextStyles.bodyTiny.copyWith(
-                fontSize: 11,
-                color: AppColors.textDim,
-              ),
-            ),
-            const SizedBox(width: 8),
-            ...[25, 50, 100].map(
-              (n) => Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: _RowsPerPageChip(
-                  value: n,
-                  selected: n == rowsPerPage,
-                  onTap: () => onRowsPerPageChanged(n),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _PageBtn extends StatefulWidget {
-  final Widget child;
-  final bool active;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  const _PageBtn({
-    required this.child,
-    required this.onTap,
-    this.active = false,
-    this.enabled = true,
-  });
-
-  @override
-  State<_PageBtn> createState() => _PageBtnState();
-}
-
-class _PageBtnState extends State<_PageBtn> {
-  bool _h = false;
-  @override
-  Widget build(BuildContext context) {
-    final isActive = widget.active;
-    final isEnabled = widget.enabled;
-    return MouseRegion(
-      cursor: isEnabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => _h = true),
-      onExit: (_) => setState(() => _h = false),
-      child: GestureDetector(
-        onTap: isEnabled ? widget.onTap : null,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          width: 30,
-          height: 30,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: isActive
-                ? AppColors.verifyingAccent
-                : _h && isEnabled
-                ? AppColors.surfaceHover
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
-            border: isActive
-                ? null
-                : Border.all(
-                    color: _h && isEnabled
-                        ? AppColors.border
-                        : Colors.transparent,
-                  ),
-          ),
-          child: Opacity(opacity: isEnabled ? 1.0 : 0.3, child: widget.child),
-        ),
-      ),
-    );
-  }
-}
-
-class _RowsPerPageChip extends StatefulWidget {
-  final int value;
-  final bool selected;
-  final VoidCallback onTap;
-  const _RowsPerPageChip({
-    required this.value,
-    required this.selected,
-    required this.onTap,
-  });
-  @override
-  State<_RowsPerPageChip> createState() => _RowsPerPageChipState();
-}
-
-class _RowsPerPageChipState extends State<_RowsPerPageChip> {
-  bool _h = false;
-  @override
-  Widget build(BuildContext context) => MouseRegion(
-    cursor: SystemMouseCursors.click,
-    onEnter: (_) => setState(() => _h = true),
-    onExit: (_) => setState(() => _h = false),
-    child: GestureDetector(
-      onTap: widget.onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: widget.selected
-              ? AppColors.verifyingAccent.withOpacity(0.18)
-              : _h
-              ? AppColors.surfaceHover
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(5),
-          border: Border.all(
-            color: widget.selected
-                ? AppColors.verifyingAccent.withOpacity(0.5)
-                : AppColors.border,
-          ),
-        ),
-        child: Text(
-          '${widget.value}',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: widget.selected ? FontWeight.w700 : FontWeight.w400,
-            color: widget.selected
-                ? AppColors.verifyingLight
-                : AppColors.textDim,
-          ),
-        ),
-      ),
-    ),
-  );
-}
 
 // ─── TOOLBAR ICON BUTTON ──────────────────────────────────────────────────────
 

@@ -400,7 +400,13 @@ class _AppShellState extends State<_AppShell> {
 
       case RouteName.verificationResult:
         return VerificationResultPage(
-          result: _selectedVerificationResult ?? VerifyingMockData.tampered(),
+          result:
+              _selectedVerificationResult ??
+              VerificationResult(
+                credential: null,
+                invalidReason: InvalidReason.notFound,
+                verifiedAt: DateTime.now().toString(),
+              ),
           onVerifyAnother: () =>
               _handleNavigate(_verificationResultReturnRoute),
         );

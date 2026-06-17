@@ -248,13 +248,17 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
     final defaults = _kSchemaDefaults[schema.id] ?? {};
 
     for (final f in schema.fields) {
-      final defaultVal = defaults[f.id] ?? '';
-      _fieldValues[f.id] = defaultVal;
-
       if (f.type == SchemaFieldType.text || f.type == SchemaFieldType.number) {
+        final defaultVal = defaults[f.id] ?? '';
+        _fieldValues[f.id] = defaultVal;
         final ctrl = TextEditingController(text: defaultVal);
         ctrl.addListener(() => _fieldValues[f.id] = ctrl.text);
         _fieldCtrl[f.id] = ctrl;
+      } else {
+        // Dropdown / Yes-No / Date fields must start empty — otherwise
+        // dependent logic (Degree Title needing College picked first)
+        // gets fooled into thinking the user already made a choice.
+        _fieldValues[f.id] = '';
       }
     }
   }
@@ -270,6 +274,15 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
   }
 
   List<String> _getFilteredDropdownOptions(SchemaField f) {
+    final schemaMap = IssuingMockData.degreesByCollege[_selectedSchema!.id];
+
+    if (f.label == 'College') {
+      // If this schema has a College→Degree mapping, the dropdown's options
+      // ARE the map's keys — no separate list to maintain or fall out of sync.
+      if (schemaMap != null) return schemaMap.keys.toList();
+      return f.dropdownOptions;
+    }
+
     if (f.label == 'Degree Title') {
       String collegeValue = '';
       for (final field in _selectedSchema!.fields) {
@@ -279,32 +292,12 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
         }
       }
 
-      if (collegeValue.isNotEmpty) {
-        return f.dropdownOptions.where((option) {
-          final opt = option.toLowerCase();
-          switch (collegeValue) {
-            case 'College of Computing & Informatics':
-              return opt.contains('computer science') || opt.contains('cybersecurity') || opt.contains('artificial intelligence') || opt.contains('quantum');
-            case 'College of Engineering':
-              return opt.contains('engineering') || opt.contains('architecture');
-            case 'College of Science':
-              return opt.contains('mathematics') || opt.contains('physics') || opt.contains('environmental');
-            case 'College of Business Administration':
-              return opt.contains('business') || opt.contains('finance');
-            case 'College of Pharmacy':
-              return opt.contains('pharmaceutical') || opt.contains('pharmacy');
-            case 'College of Medicine':
-              return opt.contains('nursing') || opt.contains('medicine') || opt.contains('surgery') || opt.contains('pediatrics') || opt.contains('radiology') || opt.contains('psychiatry');
-            case 'College of Arts & Humanities':
-              return opt.contains('arts') || opt.contains('humanities');
-            case 'College of Law':
-              return opt.contains('law');
-            default:
-              return true;
-          }
-        }).toList();
-      }
+      if (collegeValue.isEmpty) return [];
+
+      return schemaMap?[collegeValue] ?? [];
     }
+
+    // All other dropdowns (Grade, Specialty, Track, etc.) are unaffected.
     return f.dropdownOptions;
   }
 
@@ -324,6 +317,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
       _issuingStatus = 'Signing credential with Dilithium...';
     });
 
+    // 1. Build the attributes map
     final infoMap = <String, String>{};
     for (final f in _selectedSchema!.fields) {
       infoMap[f.label] = _fieldValues[f.id] ?? '';
@@ -332,11 +326,37 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
       infoMap['expiryDate'] = _fmt(_expiryDate!);
     }
 
+    // 2. Dynamically determine the Credential Type
+    // Start with the default schema name (e.g., "Medical License")
+    String dynamicCredentialType = _selectedSchema!.name;
+
+    // Check for specific title fields based on your schema configurations
+    final titleKeys = [
+      'Degree Title', // Bachelors, Masters
+      'Programme Name', // Diploma
+      'Programme Title', // Higher Training Certificate
+      'Fellowship Title', // Research Fellowship
+    ];
+
+    for (final key in titleKeys) {
+      if (infoMap.containsKey(key) && infoMap[key]!.trim().isNotEmpty) {
+        dynamicCredentialType = infoMap[key]!.trim();
+        break; // Stop looking once we find the first match
+      }
+    }
+
+    // Special handling for PhD which combines "PhD" + "Research Field" in your mock data
+    if (_selectedSchema!.id == 'SCH-003' &&
+        infoMap.containsKey('Research Field')) {
+      dynamicCredentialType = 'PhD ${infoMap['Research Field']}'.trim();
+    }
+
     setState(() => _issuingStatus = 'Submitting to blockchain...');
 
+    // 3. Send the API Request with the dynamic type
     final result = await ApiService.issueCredential(
       holderEmiratesID: emiratesID,
-      credentialType: _selectedSchema!.name,
+      credentialType: dynamicCredentialType, // <--- Use the dynamic type here
       info: jsonEncode(infoMap),
     );
 
@@ -838,15 +858,13 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                   onTap: () {},
                 ),
                 const SizedBox(width: 10),
-                Expanded(
-                  child: QSearchBar(
-                    controller: _searchCtrl,
-                    query: _holderSearch,
-                    onChanged: (v) => setState(() => _holderSearch = v),
-                    onClear: () => setState(() => _holderSearch = ''),
-                    searchLabel: 'Search holders...',
-                    barWidth: 240,
-                  ),
+                QSearchBar(
+                  controller: _searchCtrl,
+                  query: _holderSearch,
+                  onChanged: (v) => setState(() => _holderSearch = v),
+                  onClear: () => setState(() => _holderSearch = ''),
+                  searchLabel: 'Search holders...',
+                  barWidth: 240,
                 ),
               ],
             ),
@@ -1050,15 +1068,27 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
               builder: (context) {
                 final options = _getFilteredDropdownOptions(f);
                 final currentValue = _fieldValues[f.id] ?? '';
-                final validValue = options.contains(currentValue) ? currentValue : null;
+                final validValue = options.contains(currentValue)
+                    ? currentValue
+                    : null;
+
+                // 1. Check if this is the Degree Title AND it has no options yet
+                final isDisabled = f.label == 'Degree Title' && options.isEmpty;
+
                 return _StyledDropdown(
                   value: validValue,
-                  hint: 'Select ${f.label.toLowerCase()}',
+                  // 2. Change the hint text to guide the user
+                  hint: isDisabled
+                      ? 'Select College first...'
+                      : 'Select ${f.label.toLowerCase()}',
                   options: options,
-                  onChanged: (v) => setState(() {
-                    _fieldValues[f.id] = v ?? '';
-                    _step3Error = false;
-                  }),
+                  // 3. Pass null to onChanged if disabled, otherwise pass the function
+                  onChanged: isDisabled
+                      ? null
+                      : (v) => setState(() {
+                          _fieldValues[f.id] = v ?? '';
+                          _step3Error = false;
+                        }),
                 );
               },
             )
@@ -1572,7 +1602,8 @@ class _StyledDropdown extends StatelessWidget {
   final String? value;
   final String hint;
   final List<String> options;
-  final ValueChanged<String?> onChanged;
+  final ValueChanged<String?>? onChanged; // <-- 1. Made this nullable
+
   const _StyledDropdown({
     required this.value,
     required this.hint,
@@ -1581,39 +1612,62 @@ class _StyledDropdown extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => DropdownButtonFormField<String>(
-    initialValue: value,
-    isExpanded: true,
-    hint: Text(
-      hint,
-      style: const TextStyle(fontSize: 12, color: AppColors.textDim),
-    ),
-    dropdownColor: const Color(0xFF1C1C1C),
-    style: const TextStyle(fontSize: 12, color: Colors.white),
-    icon: const Icon(
-      Icons.keyboard_arrow_down,
-      size: 18,
-      color: AppColors.textDim,
-    ),
-    decoration: InputDecoration(
-      isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      filled: true,
-      fillColor: AppColors.surfaceHover,
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(7),
-        borderSide: const BorderSide(color: AppColors.border),
+  Widget build(BuildContext context) {
+    final bool isDisabled = onChanged == null; // <-- Check if disabled
+
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      isExpanded: true,
+      hint: Text(
+        hint,
+        style: TextStyle(
+          fontSize: 12,
+          color: isDisabled ? AppColors.textMuted : AppColors.textDim,
+        ),
       ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(7),
-        borderSide: BorderSide(color: AppColors.issuingAccent, width: 1.5),
+      dropdownColor: const Color(0xFF1C1C1C),
+      style: const TextStyle(fontSize: 12, color: Colors.white),
+      icon: Icon(
+        Icons.keyboard_arrow_down,
+        size: 18,
+        color: isDisabled
+            ? AppColors.textMuted.withOpacity(0.3)
+            : AppColors.textDim,
       ),
-    ),
-    items: options
-        .map((o) => DropdownMenuItem(value: o, child: Text(o)))
-        .toList(),
-    onChanged: onChanged,
-  );
+      decoration: InputDecoration(
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+        filled: true,
+        // Make the background darker when disabled
+        fillColor: isDisabled
+            ? AppColors.surfaceHover.withOpacity(0.4)
+            : AppColors.surfaceHover,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(7),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        // Add disabled border
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(7),
+          borderSide: BorderSide(color: AppColors.border.withOpacity(0.3)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(7),
+          borderSide: BorderSide(color: AppColors.issuingAccent, width: 1.5),
+        ),
+      ),
+      // 2. If disabled, pass null to items to fully lock the Flutter widget
+      items: isDisabled || options.isEmpty
+          ? null
+          : options
+                .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+                .toList(),
+      onChanged: onChanged,
+    );
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
