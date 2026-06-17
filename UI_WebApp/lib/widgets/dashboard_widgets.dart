@@ -141,11 +141,14 @@ class SectionHeader extends StatelessWidget {
             Text(title.toUpperCase(), style: AppTextStyles.sectionLabel),
             const Spacer(),
             if (linkText != null)
-              GestureDetector(
-                onTap: onLinkTap,
-                child: Text(
-                  '$linkText →',
-                  style: AppTextStyles.linkText.copyWith(color: accent),
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: onLinkTap,
+                  child: Text(
+                    '$linkText →',
+                    style: AppTextStyles.linkText.copyWith(color: accent),
+                  ),
                 ),
               ),
           ] else ...[
@@ -161,11 +164,14 @@ class SectionHeader extends StatelessWidget {
             Text(title.toUpperCase(), style: AppTextStyles.sectionLabel),
             const Spacer(),
             if (linkText != null)
-              GestureDetector(
-                onTap: onLinkTap,
-                child: Text(
-                  '$linkText →',
-                  style: AppTextStyles.linkText.copyWith(color: accent),
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: onLinkTap,
+                  child: Text(
+                    '$linkText →',
+                    style: AppTextStyles.linkText.copyWith(color: accent),
+                  ),
                 ),
               ),
           ],
@@ -337,7 +343,8 @@ class _VerificationRowState extends State<VerificationRow> {
 
 class AlertRow extends StatefulWidget {
   final AlertItem item;
-  const AlertRow({super.key, required this.item});
+  final Color accent;
+  const AlertRow({super.key, required this.item, required this.accent});
 
   @override
   State<AlertRow> createState() => _AlertRowState();
@@ -357,7 +364,13 @@ class _AlertRowState extends State<AlertRow> {
         margin: const EdgeInsets.symmetric(vertical: 1),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
         decoration: BoxDecoration(
-          color: _hovered ? const Color(0xFF1A1000) : Colors.transparent,
+          color: _hovered ? AppColors.surfaceHover : Colors.transparent,
+          border: Border(
+            left: BorderSide(
+              color: _hovered ? widget.accent : Colors.transparent,
+              width: 2,
+            ),
+          ),
           borderRadius: BorderRadius.circular(7),
         ),
         child: Row(
@@ -406,7 +419,8 @@ class _AlertRowState extends State<AlertRow> {
 
 class ExpiryRow extends StatefulWidget {
   final ExpiryItem item;
-  const ExpiryRow({super.key, required this.item});
+  final Color accent;
+  const ExpiryRow({super.key, required this.item, required this.accent});
 
   @override
   State<ExpiryRow> createState() => _ExpiryRowState();
@@ -430,6 +444,12 @@ class _ExpiryRowState extends State<ExpiryRow> {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
         decoration: BoxDecoration(
           color: _hovered ? AppColors.surfaceHover : Colors.transparent,
+          border: Border(
+            left: BorderSide(
+              color: _hovered ? widget.accent : Colors.transparent,
+              width: 2,
+            ),
+          ),
           borderRadius: BorderRadius.circular(7),
         ),
         child: Row(

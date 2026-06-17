@@ -197,7 +197,6 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
         break;
     }
 
-    widget.onVerify(VerifyingMockData.suspended());
   }
 
   /// Starts the document verification processing sequence (success path).
@@ -213,7 +212,6 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
       Future.delayed(const Duration(milliseconds: 1500), () {
         if (!mounted) return;
         setState(() => _docState = _DocProcessing.none);
-        widget.onVerify(VerifyingMockData.valid());
       });
     });
   }

@@ -3,7 +3,10 @@
 
 // ─── ENUMS ────────────────────────────────────────────────────────────────────
 
+import 'dart:ui';
+
 import 'package:qportal_webapp/screens/verifier/subscription_page.dart';
+import 'package:qportal_webapp/theme/appColours.dart';
 
 enum CredentialStatus { valid, revoked, suspended, expired }
 
@@ -18,6 +21,32 @@ extension CredentialStatusX on CredentialStatus {
         return 'SUSPENDED';
       case CredentialStatus.expired:
         return 'EXPIRED';
+    }
+  }
+
+  Color get bg {
+    switch (this) {
+      case CredentialStatus.valid:
+        return AppColors.valid.withOpacity(0.13);
+      case CredentialStatus.revoked:
+        return AppColors.revoked.withOpacity(0.13);
+      case CredentialStatus.suspended:
+        return AppColors.suspended.withOpacity(0.13);
+      case CredentialStatus.expired:
+        return AppColors.expired.withOpacity(0.13);
+    }
+  }
+
+  Color get fg {
+    switch (this) {
+      case CredentialStatus.valid:
+        return AppColors.valid;
+      case CredentialStatus.revoked:
+        return AppColors.revoked;
+      case CredentialStatus.suspended:
+        return AppColors.suspended;
+      case CredentialStatus.expired:
+        return AppColors.expired;
     }
   }
 }
@@ -204,8 +233,8 @@ class CredentialRecord {
   /// Derives the credential category from [credentialType].
   String get category {
     final t = credentialType.toLowerCase();
-    if (t.contains('bsc') ||
-        t.contains('msc') ||
+    if (t.contains('Bachelors') ||
+        t.contains('Masters') ||
         t.contains('phd') ||
         t.contains('diploma')) {
       return 'Academic';
@@ -335,7 +364,7 @@ class StaffMember {
 
 // ─── BATCH ROW MODEL ──────────────────────────────────────────────────────────
 //
-// Columns used in the batch upload template (BSc Degree schema):
+// Columns used in the batch upload template (Bachelors Degree schema):
 //   Student ID  |  Degree Title  |  College  |  Grade  |  Graduation Year  |  Expiry Date
 //
 // Student ID doubles as the Holder ID — it is used to look up the registered
@@ -397,145 +426,108 @@ class ActionLogEntry {
 }
 
 // ─── MOCK DATA ─────────────────────────────────────────────────────────────────
-
 abstract class IssuingMockData {
-  // ── Holders ────────────────────────────────────────────────────────────────
-  // static const holders = [
-  //   HolderRecord(
-  //     id: 'H-0001',
-  //     fullName: 'Ahmed Al Mansouri',
-  //     email: 'ahmed.mansouri@student.uos.ae',
-  //     type: HolderType.bachelorStudent,
-  //     college: 'College of Computing & Informatics',
-  //     walletAddress: 'QW-A1B2C3D4',
-  //     emiratesID: '784-1990-1234567-1',
-  //   ),
-  //   HolderRecord(
-  //     id: 'H-0002',
-  //     fullName: 'Sara Al Hashimi',
-  //     email: 'sara.hashimi@student.uos.ae',
-  //     type: HolderType.bachelorStudent,
-  //     college: 'College of Business Administration',
-  //     walletAddress: 'QW-E5F6A7B8',
-  //     emiratesID: '784-1995-7654321-2',
-  //   ),
-
-  //   // HolderRecord(
-  //   //   id: 'HC-00101',
-  //   //   fullName: 'Ahmed Al Rashidi',
-  //   //   email: 'a.rashidi@student.uos.ae',
-  //   //   type: HolderType.bachelorStudent,
-  //   //   college: 'College of Engineering',
-  //   //   walletAddress: 'QW-1A2B3C4D',
-  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-  //   // ),
-  //   // HolderRecord(
-  //   //   id: 'HC-00184',
-  //   //   fullName: 'Dr. Sara Al Mansoori',
-  //   //   email: 's.mansoori@uos.ae',
-  //   //   type: HolderType.medical,
-  //   //   college: 'College of Medicine',
-  //   //   walletAddress: 'QW-9F8E7D6C',
-  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-  //   // ),
-  //   // HolderRecord(
-  //   //   id: 'HC-00291',
-  //   //   fullName: 'Mohammed Ali',
-  //   //   email: 'm.ali@student.uos.ae',
-  //   //   type: HolderType.bachelorStudent,
-  //   //   college: 'College of Computing & Informatics',
-  //   //   walletAddress: 'QW-2C3D4E5F',
-  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-  //   // ),
-  //   // HolderRecord(
-  //   //   id: 'HC-00312',
-  //   //   fullName: 'Fatima Al Hashimi',
-  //   //   email: 'f.hashimi@student.uos.ae',
-  //   //   type: HolderType.masterStudent,
-  //   //   college: 'College of Business Administration',
-  //   //   walletAddress: 'QW-3E4F5A6B',
-  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-  //   // ),
-  //   // HolderRecord(
-  //   //   id: 'HC-00392',
-  //   //   fullName: 'Khalid Hassan',
-  //   //   email: 'k.hassan@uos.ae',
-  //   //   type: HolderType.employee,
-  //   //   college: 'N/A',
-  //   //   walletAddress: 'QW-5B6C7D8E',
-  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-  //   // ),
-  //   // HolderRecord(
-  //   //   id: 'HC-00445',
-  //   //   fullName: 'Mariam Yusuf',
-  //   //   email: 'm.yusuf@student.uos.ae',
-  //   //   type: HolderType.phdStudent,
-  //   //   college: 'College of Science',
-  //   //   walletAddress: 'QW-6C7D8E9F',
-  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-  //   // ),
-  //   // HolderRecord(
-  //   //   id: 'HC-00547',
-  //   //   fullName: 'Layla Khalid',
-  //   //   email: 'l.khalid@student.uos.ae',
-  //   //   type: HolderType.bachelorStudent,
-  //   //   college: 'College of Arts & Humanities',
-  //   //   walletAddress: 'QW-7D8E9F0A',
-  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-
-  //   // ),
-  //   // HolderRecord(
-  //   //   id: 'HC-00601',
-  //   //   fullName: 'Nour Ibrahim',
-  //   //   email: 'n.ibrahim@student.uos.ae',
-  //   //   type: HolderType.masterStudent,
-  //   //   college: 'College of Engineering',
-  //   //   walletAddress: 'QW-8E9F0A1B',
-  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-  //   // ),
-  //   // HolderRecord(
-  //   //   id: 'HC-00618',
-  //   //   fullName: 'Omar Saeed',
-  //   //   email: 'o.saeed@uos.ae',
-  //   //   type: HolderType.employee,
-  //   //   college: 'N/A',
-  //   //   walletAddress: 'QW-9F0A1B2C',
-  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-  //   // ),
-  //   // HolderRecord(
-  //   //   id: 'HC-00724',
-  //   //   fullName: 'Reem Al Zaabi',
-  //   //   email: 'r.zaabi@student.uos.ae',
-  //   //   type: HolderType.phdStudent,
-  //   //   college: 'College of Law',
-  //   //   walletAddress: 'QW-0A1B2C3D',
-  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-  //   // ),
-  //   // HolderRecord(
-  //   //   id: 'HC-00801',
-  //   //   fullName: 'Tariq Al Nasser',
-  //   //   email: 't.nasser@student.uos.ae',
-  //   //   type: HolderType.masterStudent,
-  //   //   college: 'College of Computing & Informatics',
-  //   //   walletAddress: 'QW-1B2C3D4E',
-  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-  //   // ),
-  //   // HolderRecord(
-  //   //   id: 'HC-00852',
-  //   //   fullName: 'Hessa Al Mazrouei',
-  //   //   email: 'h.mazrouei@student.uos.ae',
-  //   //   type: HolderType.bachelorStudent,
-  //   //   college: 'College of Pharmacy',
-  //   //   walletAddress: 'QW-2C3D4E5F',
-  //   //   emiratesID: 'xxx-xxxx-xxxxxxx-x',
-  //   // ),
-  // ];
-
+  static const Map<String, Map<String, List<String>>> degreesByCollege = {
+    'SCH-001': {
+      'College of Sharia & Islamic Studies': [
+        'Bachelors in Fundamentals of Religions',
+        'Bachelors in Jurisprudence & its fundamentals',
+        'Bachelors in Religious Discourse and Community Communication',
+      ],
+      'College of Arts,Humanities & SocialScience': [
+        'Bachelors in Arabic Language & literature',
+        'Bachelors in English Language & literature',
+        'Bachelors in French Language & literature',
+        'Bachelors in Sociology',
+        'Bachelors in History & Islamic Civilization',
+        'Bachelors in History & Islamic Civilization-Tourist guide',
+        'Bachelors in Early Childhood',
+        'Bachelors in Arabic for Non‐Native Speakers',
+        'Bachelors in Family Counseling and Guidance',
+      ],
+      'College of Public Policy': ['Bachelors in International relation'],
+      'College of Law(Arabic)': ['Bachelors in Law (Arabic)'],
+      'College of Law(English)': ['Bachelors in Law (English)'],
+      'College of Fine Arts & Design': [
+        'Bachelors in Fine Arts',
+        'Bachelors in Interior Design',
+        'Bachelors in Fashion Design & Textiles',
+        'Bachelors in Visual Communication',
+        'Bachelors in Art History and Museum Studies',
+      ],
+      'College of Science': [
+        'Bachelors in Chemistry',
+        'Bachelors in Applied Physics',
+        'Bachelors in Mathematics',
+        'Bachelors in Biotechnology',
+        'Bachelors in Petroleum Geoscience & Remote Sensing',
+      ],
+      'College of Business Administration': [
+        'Bachelors in Accounting',
+        'Bachelors in Business Administration-Management',
+        'Bachelors in Business Administration-Marketing',
+        'Bachelors in Supply Chain Management',
+        'Bachelors in Finance',
+        'Bachelors in Economics',
+      ],
+      'College of Computing & Informatic': [
+        'Bachelors in Computer Science',
+        'Bachelors in Information Technology-Multimedia',
+        'Bachelors in Business Information System',
+        'Bachelors in Computer Engineering',
+        'Bachelors in CyberSecurity Engineering',
+        'Bachelors in Biomedical Informatics',
+      ],
+      'College of Mass communication': [
+        'Bachelors in Public Relations',
+        'Bachelors in Communication-Electronic Journalism',
+        'Bachelors in Communication-Digital Media Design',
+        'Bachelors in Communication-Radio & Television',
+        'Bachelors in Mass Communication(Eng)',
+        'Bachelors in Strategic Communication and Advertising',
+      ],
+      'College of Engineering': [
+        'Bachelors in Civil Engineering',
+        'Bachelors in Architectural Engineering',
+        'Bachelors in Nuclear Engineering',
+        'Bachelors in Chemical&Water Desalination Engineering',
+        'Bachelors in Mechanical Engineering',
+        'Bachelors in Mechatronics & Robotics Engineering',
+        'Bachelors in Electrical & Electronics Engineering',
+        'Bachelors in Sustainable&Renewable Energy Engineering',
+        'Bachelors in Industrial Engineering & Engineering Management',
+      ],
+      'College of Health Sciences': [
+        'Bachelors in Medical Laboratory Sciences',
+        'Bachelors in Health Services Administration',
+        'Bachelors in Environmental Health Sciences',
+        'Bachelors in Clinical Nutrition & Dietetics',
+        'Bachelors in Medical Diagnostic Imaging',
+        'Bachelors in Nursing',
+        'Bachelors in Physiotherapy',
+        'Bachelors in Audiology and Speech Language Pathology',
+      ],
+      'College of Pharmacy': ['Bachelors in Pharmacy'],
+    },
+    'SCH-002': {
+      'College of Computing & Informatics': [
+        'Masters Computer Science',
+        'Masters Cybersecurity',
+        'Masters Artificial Intelligence',
+      ],
+      'College of Engineering': ['Masters Mechanical Engineering'],
+      'College of Business Administration': [
+        'Masters Business Administration',
+        'Masters Finance',
+      ],
+      'College of Science': [],
+    },
+  };
   // ── Schemas ────────────────────────────────────────────────────────────────
   static final schemas = [
     SchemaRecord(
       id: 'SCH-001',
-      name: 'BSc Degree',
+      name: 'Bachelors Degree',
       description:
           'Bachelor of Science academic degree awarded upon successful completion of an undergraduate programme.',
       category: 'Academic',
@@ -554,33 +546,12 @@ abstract class IssuingMockData {
           id: 'f1',
           label: 'College',
           type: SchemaFieldType.dropdown,
-          dropdownOptions: [
-            'College of Engineering',
-            'College of Computing & Informatics',
-            'College of Science',
-            'College of Business Administration',
-            'College of Arts & Humanities',
-            'College of Law',
-            'College of Medicine',
-            'College of Pharmacy',
-          ],
+
         ),
         SchemaField(
           id: 'f2',
           label: 'Degree Title',
           type: SchemaFieldType.dropdown,
-          dropdownOptions: [
-            'BSc Computer Science',
-            'BSc Electrical Engineering',
-            'BSc Civil Engineering',
-            'BSc Mathematics',
-            'BSc Physics',
-            'BSc Biomedical Engineering',
-            'BSc Environmental Science',
-            'BSc Nursing',
-            'BSc Pharmaceutical Sciences',
-            'BSc Architecture',
-          ],
         ),
         SchemaField(id: 'f3', label: 'Student ID', type: SchemaFieldType.text),
         SchemaField(
@@ -601,7 +572,7 @@ abstract class IssuingMockData {
     ),
     SchemaRecord(
       id: 'SCH-002',
-      name: 'MSc Degree',
+      name: 'Masters Degree',
       description:
           'Master of Science postgraduate degree awarded upon completion of a master\'s programme.',
       category: 'Academic',
@@ -618,27 +589,13 @@ abstract class IssuingMockData {
       fields: [
         SchemaField(
           id: 'f1',
-          label: 'Degree Title',
+          label: 'College',
           type: SchemaFieldType.dropdown,
-          dropdownOptions: [
-            'MSc Computer Science',
-            'MSc Cybersecurity',
-            'MSc Artificial Intelligence',
-            'MSc Business Administration',
-            'MSc Mechanical Engineering',
-            'MSc Finance',
-          ],
         ),
         SchemaField(
           id: 'f2',
-          label: 'College',
+          label: 'Degree Title',
           type: SchemaFieldType.dropdown,
-          dropdownOptions: [
-            'College of Engineering',
-            'College of Computing & Informatics',
-            'College of Science',
-            'College of Business Administration',
-          ],
         ),
         SchemaField(id: 'f3', label: 'Student ID', type: SchemaFieldType.text),
         SchemaField(
@@ -905,784 +862,7 @@ abstract class IssuingMockData {
     ),
   ];
 
-  // ── Credentials ────────────────────────────────────────────────────────────
-  static final credentials = [
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2025-009182',
-      holderName: 'Mohammed Ali',
-      holderEmail: 'm.ali@student.uos.ae',
-      holderId: 'HC-00291',
-      credentialType: 'BSc Computer Science',
-      issuedBy: 'Registrar Ali',
-      issueDate: '15 Jan 2024',
-      expiryDate: '15 Jan 2029',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '15 Jan 2024',
-        ),
-      ],
-      attributes: {
-        'Degree Title': 'BSc Computer Science',
-        'Grade': 'Distinction',
-        'Student ID': 'HC-00291',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2025-008741',
-      holderName: 'Dr. Sara Al Mansoori',
-      holderEmail: 's.mansoori@uos.ae',
-      holderId: 'HC-00184',
-      credentialType: 'Medical License',
-      issuedBy: 'Compliance Officer',
-      issueDate: '01 Mar 2022',
-      expiryDate: '01 Mar 2027',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Compliance Officer',
-          date: '01 Mar 2022',
-        ),
-      ],
-      attributes: {
-        'License Type': 'Full Practicing',
-        'License No': 'ML-2022-0184',
-        'Specialty': 'Internal Medicine',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2025-007192',
-      holderName: 'Khalid Hassan',
-      holderEmail: 'k.hassan@uos.ae',
-      holderId: 'HC-00392',
-      credentialType: 'Higher Training Certificate',
-      issuedBy: 'Mohammed A.',
-      issueDate: '10 Aug 2023',
-      status: CredentialStatus.revoked,
-      revokedBy: 'Mohammed A.',
-      revokedDate: '10 May 2025',
-      revokedReason: 'Disciplinary action',
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Mohammed A.',
-          date: '10 Aug 2023',
-        ),
-        AuditEntry(
-          action: 'Revoked',
-          performedBy: 'Mohammed A.',
-          date: '10 May 2025',
-          note: 'Disciplinary action',
-        ),
-      ],
-      attributes: {
-        'Programme Title': 'PMP Certification',
-        'Training Hours': '40',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2025-006831',
-      holderName: 'Layla Khalid',
-      holderEmail: 'l.khalid@student.uos.ae',
-      holderId: 'HC-00547',
-      credentialType: 'Higher Training Certificate',
-      issuedBy: 'Registrar Ali',
-      issueDate: '05 Jan 2025',
-      expiryDate: '05 Jan 2026',
-      status: CredentialStatus.suspended,
-      suspendedReason: 'Audit review in progress',
-      suspendedUntil: '05 Aug 2025',
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '05 Jan 2025',
-        ),
-        AuditEntry(
-          action: 'Suspended',
-          performedBy: 'Compliance Officer',
-          date: '15 Jul 2025',
-        ),
-      ],
-      attributes: {
-        'Programme Title': 'Information Security Awareness',
-        'Training Hours': '8',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2024-005210',
-      holderName: 'Omar Saeed',
-      holderEmail: 'o.saeed@uos.ae',
-      holderId: 'HC-00618',
-      credentialType: 'Employee ID',
-      issuedBy: 'Mohammed A.',
-      issueDate: '01 Jun 2024',
-      expiryDate: '01 Jun 2025',
-      status: CredentialStatus.expired,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Mohammed A.',
-          date: '01 Jun 2024',
-        ),
-      ],
-      attributes: {
-        'Department': 'Information Technology',
-        'Employee No': 'EMP-2024-0618',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2025-004817',
-      holderName: 'Ahmed Al Rashidi',
-      holderEmail: 'a.rashidi@student.uos.ae',
-      holderId: 'HC-00101',
-      credentialType: 'BSc Electrical Engineering',
-      issuedBy: 'Registrar Ali',
-      issueDate: '20 Feb 2025',
-      expiryDate: '20 Feb 2030',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '20 Feb 2025',
-        ),
-      ],
-      attributes: {
-        'Degree Title': 'BSc Electrical Engineering',
-        'Grade': 'Merit',
-        'Student ID': 'HC-00101',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2025-004312',
-      holderName: 'Fatima Al Hashimi',
-      holderEmail: 'f.hashimi@student.uos.ae',
-      holderId: 'HC-00312',
-      credentialType: 'MSc Business Administration',
-      issuedBy: 'Registrar Ali',
-      issueDate: '10 Mar 2025',
-      expiryDate: '10 Mar 2030',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '10 Mar 2025',
-        ),
-      ],
-      attributes: {
-        'Degree Title': 'MSc Business Administration',
-        'Grade': 'Merit',
-        'Student ID': 'HC-00312',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2025-003991',
-      holderName: 'Mariam Yusuf',
-      holderEmail: 'm.yusuf@student.uos.ae',
-      holderId: 'HC-00445',
-      credentialType: 'Research Fellowship',
-      issuedBy: 'Mohammed A.',
-      issueDate: '01 Sep 2024',
-      expiryDate: '01 Sep 2026',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Mohammed A.',
-          date: '01 Sep 2024',
-        ),
-      ],
-      attributes: {
-        'Fellowship Title': 'Postdoctoral Research Fellow',
-        'Department': 'Quantum Computing',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2025-003654',
-      holderName: 'Nour Ibrahim',
-      holderEmail: 'n.ibrahim@student.uos.ae',
-      holderId: 'HC-00601',
-      credentialType: 'MSc Mechanical Engineering',
-      issuedBy: 'Registrar Ali',
-      issueDate: '15 Apr 2025',
-      expiryDate: '15 Apr 2030',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '15 Apr 2025',
-        ),
-      ],
-      attributes: {
-        'Degree Title': 'MSc Mechanical Engineering',
-        'Grade': 'Distinction',
-        'Student ID': 'HC-00601',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2025-003208',
-      holderName: 'Reem Al Zaabi',
-      holderEmail: 'r.zaabi@student.uos.ae',
-      holderId: 'HC-00724',
-      credentialType: 'PhD Quantum Machine Learning',
-      issuedBy: 'Mohammed A.',
-      issueDate: '01 Jun 2025',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Mohammed A.',
-          date: '01 Jun 2025',
-        ),
-      ],
-      attributes: {
-        'Research Field': 'Quantum Machine Learning',
-        'Student ID': 'HC-00724',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2025-002971',
-      holderName: 'Tariq Al Nasser',
-      holderEmail: 't.nasser@student.uos.ae',
-      holderId: 'HC-00801',
-      credentialType: 'MSc Cybersecurity',
-      issuedBy: 'Registrar Ali',
-      issueDate: '22 Jan 2025',
-      expiryDate: '22 Jan 2030',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '22 Jan 2025',
-        ),
-      ],
-      attributes: {
-        'Degree Title': 'MSc Cybersecurity',
-        'Grade': 'Merit',
-        'Student ID': 'HC-00801',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2025-002640',
-      holderName: 'Hessa Al Mazrouei',
-      holderEmail: 'h.mazrouei@student.uos.ae',
-      holderId: 'HC-00852',
-      credentialType: 'BSc Pharmaceutical Sciences',
-      issuedBy: 'Compliance Officer',
-      issueDate: '05 May 2025',
-      expiryDate: '05 May 2030',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Compliance Officer',
-          date: '05 May 2025',
-        ),
-      ],
-      attributes: {
-        'Degree Title': 'BSc Pharmaceutical Sciences',
-        'Grade': 'Pass',
-        'Student ID': 'HC-00852',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2024-002301',
-      holderName: 'Saeed Al Hamdan',
-      holderEmail: 's.hamdan@student.uos.ae',
-      holderId: 'HC-00931',
-      credentialType: 'Diploma in Business Technology',
-      issuedBy: 'Registrar Ali',
-      issueDate: '10 Dec 2023',
-      expiryDate: '10 Dec 2025',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '10 Dec 2023',
-        ),
-      ],
-      attributes: {
-        'Programme Name': 'Diploma in Business Technology',
-        'Grade': 'Merit',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2024-002088',
-      holderName: 'Mona Al Suwaidi',
-      holderEmail: 'm.suwaidi@uos.ae',
-      holderId: 'HC-00955',
-      credentialType: 'Medical License',
-      issuedBy: 'Compliance Officer',
-      issueDate: '18 Nov 2023',
-      expiryDate: '18 Nov 2028',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Compliance Officer',
-          date: '18 Nov 2023',
-        ),
-      ],
-      attributes: {
-        'License Type': 'Full Practicing',
-        'Specialty': 'Pediatrics',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2024-001876',
-      holderName: 'Faisal Al Blooshi',
-      holderEmail: 'f.blooshi@student.uos.ae',
-      holderId: 'HC-01002',
-      credentialType: 'BSc Civil Engineering',
-      issuedBy: 'Registrar Ali',
-      issueDate: '30 Sep 2023',
-      expiryDate: '30 Sep 2028',
-      status: CredentialStatus.revoked,
-      revokedBy: 'Mohammed A.',
-      revokedDate: '01 Feb 2025',
-      revokedReason: 'Academic misconduct',
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '30 Sep 2023',
-        ),
-        AuditEntry(
-          action: 'Revoked',
-          performedBy: 'Mohammed A.',
-          date: '01 Feb 2025',
-          note: 'Academic misconduct',
-        ),
-      ],
-      attributes: {'Degree Title': 'BSc Civil Engineering', 'Grade': 'Pass'},
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2024-001543',
-      holderName: 'Aisha Bin Laden',
-      holderEmail: 'a.binladen@student.uos.ae',
-      holderId: 'HC-01045',
-      credentialType: 'Higher Training Certificate',
-      issuedBy: 'Mohammed A.',
-      issueDate: '14 Jul 2023',
-      expiryDate: '14 Jul 2024',
-      status: CredentialStatus.expired,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Mohammed A.',
-          date: '14 Jul 2023',
-        ),
-      ],
-      attributes: {
-        'Programme Title': 'Project Management Foundations',
-        'Training Hours': '60',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2024-001290',
-      holderName: 'Yousef Al Marzouqi',
-      holderEmail: 'y.marzouqi@student.uos.ae',
-      holderId: 'HC-01089',
-      credentialType: 'BSc Mathematics',
-      issuedBy: 'Registrar Ali',
-      issueDate: '20 Jun 2023',
-      expiryDate: '20 Jun 2028',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '20 Jun 2023',
-        ),
-      ],
-      attributes: {'Degree Title': 'BSc Mathematics', 'Grade': 'Distinction'},
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2024-001102',
-      holderName: 'Shahd Al Owais',
-      holderEmail: 's.owais@student.uos.ae',
-      holderId: 'HC-01122',
-      credentialType: 'BSc Biomedical Engineering',
-      issuedBy: 'Compliance Officer',
-      issueDate: '05 May 2023',
-      expiryDate: '05 May 2028',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Compliance Officer',
-          date: '05 May 2023',
-        ),
-      ],
-      attributes: {
-        'Degree Title': 'BSc Biomedical Engineering',
-        'Grade': 'Merit',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2024-000891',
-      holderName: 'Hamad Al Ketbi',
-      holderEmail: 'h.ketbi@uos.ae',
-      holderId: 'HC-01198',
-      credentialType: 'Research Fellowship',
-      issuedBy: 'Mohammed A.',
-      issueDate: '01 Mar 2023',
-      expiryDate: '01 Mar 2025',
-      status: CredentialStatus.expired,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Mohammed A.',
-          date: '01 Mar 2023',
-        ),
-      ],
-      attributes: {
-        'Fellowship Title': 'Visiting Research Fellow',
-        'Department': 'Cybersecurity',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2024-000712',
-      holderName: 'Lujain Al Dhaheri',
-      holderEmail: 'l.dhaheri@student.uos.ae',
-      holderId: 'HC-01234',
-      credentialType: 'MSc Artificial Intelligence',
-      issuedBy: 'Registrar Ali',
-      issueDate: '15 Feb 2023',
-      expiryDate: '15 Feb 2028',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '15 Feb 2023',
-        ),
-      ],
-      attributes: {
-        'Degree Title': 'MSc Artificial Intelligence',
-        'Grade': 'Distinction',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2023-000598',
-      holderName: 'Khamis Al Muhairi',
-      holderEmail: 'k.muhairi@student.uos.ae',
-      holderId: 'HC-01301',
-      credentialType: 'Diploma in IT',
-      issuedBy: 'Registrar Ali',
-      issueDate: '01 Dec 2022',
-      expiryDate: '01 Dec 2024',
-      status: CredentialStatus.expired,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '01 Dec 2022',
-        ),
-      ],
-      attributes: {
-        'Programme Name': 'Diploma in Information Technology',
-        'Grade': 'Pass',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2023-000487',
-      holderName: 'Noura Al Shamsi',
-      holderEmail: 'n.shamsi@student.uos.ae',
-      holderId: 'HC-01355',
-      credentialType: 'BSc Architecture',
-      issuedBy: 'Registrar Ali',
-      issueDate: '10 Oct 2022',
-      expiryDate: '10 Oct 2027',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '10 Oct 2022',
-        ),
-      ],
-      attributes: {'Degree Title': 'BSc Architecture', 'Grade': 'Distinction'},
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2023-000374',
-      holderName: 'Abdullah Al Kaabi',
-      holderEmail: 'a.kaabi@uos.ae',
-      holderId: 'HC-01402',
-      credentialType: 'Medical License',
-      issuedBy: 'Compliance Officer',
-      issueDate: '20 Aug 2022',
-      expiryDate: '20 Aug 2027',
-      status: CredentialStatus.suspended,
-      suspendedReason: 'License renewal under review',
-      suspendedUntil: '20 Oct 2025',
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Compliance Officer',
-          date: '20 Aug 2022',
-        ),
-        AuditEntry(
-          action: 'Suspended',
-          performedBy: 'Compliance Officer',
-          date: '10 Jun 2025',
-        ),
-      ],
-      attributes: {'License Type': 'Full Practicing', 'Specialty': 'Surgery'},
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2023-000261',
-      holderName: 'Maryam Al Falasi',
-      holderEmail: 'm.falasi@student.uos.ae',
-      holderId: 'HC-01448',
-      credentialType: 'Higher Training Certificate',
-      issuedBy: 'Mohammed A.',
-      issueDate: '05 Jun 2022',
-      expiryDate: '05 Jun 2023',
-      status: CredentialStatus.expired,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Mohammed A.',
-          date: '05 Jun 2022',
-        ),
-      ],
-      attributes: {
-        'Programme Title': 'Data Science Bootcamp',
-        'Training Hours': '120',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2023-000189',
-      holderName: 'Sultan Al Qubaisi',
-      holderEmail: 's.qubaisi@student.uos.ae',
-      holderId: 'HC-01501',
-      credentialType: 'BSc Environmental Science',
-      issuedBy: 'Registrar Ali',
-      issueDate: '20 Apr 2022',
-      expiryDate: '20 Apr 2027',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '20 Apr 2022',
-        ),
-      ],
-      attributes: {
-        'Degree Title': 'BSc Environmental Science',
-        'Grade': 'Merit',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2022-000147',
-      holderName: 'Wafa Al Nuaimi',
-      holderEmail: 'w.nuaimi@student.uos.ae',
-      holderId: 'HC-01567',
-      credentialType: 'MSc Finance',
-      issuedBy: 'Registrar Ali',
-      issueDate: '15 Feb 2022',
-      expiryDate: '15 Feb 2027',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '15 Feb 2022',
-        ),
-      ],
-      attributes: {'Degree Title': 'MSc Finance', 'Grade': 'Merit'},
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2022-000098',
-      holderName: 'Jasim Al Hammadi',
-      holderEmail: 'j.hammadi@uos.ae',
-      holderId: 'HC-01622',
-      credentialType: 'Research Fellowship',
-      issuedBy: 'Mohammed A.',
-      issueDate: '01 Jan 2022',
-      expiryDate: '01 Jan 2024',
-      status: CredentialStatus.revoked,
-      revokedBy: 'Mohammed A.',
-      revokedDate: '15 Mar 2023',
-      revokedReason: 'Fellowship terminated early',
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Mohammed A.',
-          date: '01 Jan 2022',
-        ),
-        AuditEntry(
-          action: 'Revoked',
-          performedBy: 'Mohammed A.',
-          date: '15 Mar 2023',
-          note: 'Fellowship terminated early',
-        ),
-      ],
-      attributes: {
-        'Fellowship Title': 'Part-Time Research Fellow',
-        'Department': 'Biomedical Research',
-      },
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2022-000051',
-      holderName: 'Amna Al Hajri',
-      holderEmail: 'a.hajri@student.uos.ae',
-      holderId: 'HC-01678',
-      credentialType: 'BSc Nursing',
-      issuedBy: 'Compliance Officer',
-      issueDate: '10 Nov 2021',
-      expiryDate: '10 Nov 2026',
-      status: CredentialStatus.valid,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Compliance Officer',
-          date: '10 Nov 2021',
-        ),
-      ],
-      attributes: {'Degree Title': 'BSc Nursing', 'Grade': 'Distinction'},
-    ),
-    CredentialRecord(
-      holderEmiratesID: 'xxx-xxxx-xxxxxxx-x',
-      id: 'QC-2022-000019',
-      holderName: 'Rashid Al Mansoori',
-      holderEmail: 'r.mansoori@student.uos.ae',
-      holderId: 'HC-01712',
-      credentialType: 'Diploma in Business Technology',
-      issuedBy: 'Registrar Ali',
-      issueDate: '01 Sep 2021',
-      expiryDate: '01 Sep 2023',
-      status: CredentialStatus.expired,
-      auditTrail: [
-        AuditEntry(
-          action: 'Issued',
-          performedBy: 'Registrar Ali',
-          date: '01 Sep 2021',
-        ),
-      ],
-      attributes: {
-        'Programme Name': 'Diploma in Business Technology',
-        'Grade': 'Pass',
-      },
-    ),
-  ];
-
-  // ── Staff ─────────────────────────────────────────────────────────────────
-  static const staff = [
-    StaffMember(
-      id: 'STF-001',
-      name: 'Mohammed A.',
-      email: 'm.admin@org.ae',
-      role: IssuerRole.admin,
-      addedDate: '01 Jan 2024',
-      status: StaffStatus.active,
-    ),
-    StaffMember(
-      id: 'STF-002',
-      name: 'Registrar Ali',
-      email: 'r.ali@org.ae',
-      role: IssuerRole.staff,
-      addedDate: '10 Jan 2024',
-      status: StaffStatus.active,
-    ),
-    StaffMember(
-      id: 'STF-003',
-      name: 'Compliance Officer',
-      email: 'c.officer@org.ae',
-      role: IssuerRole.staff,
-      addedDate: '15 Feb 2024',
-      status: StaffStatus.active,
-    ),
-    StaffMember(
-      id: 'STF-004',
-      name: 'Schema Manager',
-      email: 'schema@org.ae',
-      role: IssuerRole.schemaManager,
-      addedDate: '01 Mar 2025',
-      status: StaffStatus.invited,
-    ),
-    StaffMember(
-      id: 'STF-005',
-      name: 'Fatima Al Zahra',
-      email: 'f.zahra@org.ae',
-      role: IssuerRole.staff,
-      addedDate: '20 Apr 2025',
-      status: StaffStatus.active,
-    ),
-    StaffMember(
-      id: 'STF-006',
-      name: 'Omar Nasser',
-      email: 'o.nasser@org.ae',
-      role: IssuerRole.staff,
-      addedDate: '05 Jun 2024',
-      status: StaffStatus.invited,
-    ),
-  ];
-
-  // ── Action Log ─────────────────────────────────────────────────────────────
-  static const actionLog = [
-    ActionLogEntry(
-      credentialId: 'QC-2025-007192',
-      holderName: 'Khalid Hassan',
-      action: 'REVOKED',
-      reason: 'Disciplinary action',
-      doneBy: 'Admin',
-      timestamp: '10 May 2025  14:22',
-    ),
-    ActionLogEntry(
-      credentialId: 'QC-2025-006831',
-      holderName: 'Layla Khalid',
-      action: 'SUSPENDED',
-      reason: 'Audit review in progress',
-      doneBy: 'Compliance Officer',
-      timestamp: '15 Jul 2025  09:10',
-    ),
-  ];
-
   // ── Batch preview rows ─────────────────────────────────────────────────────
-  //
-  // Fields map uses the exact column names from the upload template:
-  //   Student ID · Degree Title · College · Grade · Graduation Year · Expiry Date
-  //
-  // fieldErrors maps column name → validation message shown inline under the cell.
-  //
   static const batchPreview = [
     BatchRow(
       rowNumber: 1,
@@ -1690,7 +870,7 @@ abstract class IssuingMockData {
       holderName: 'Mohammed Ali',
       fields: {
         'Student ID': 'HC-00291',
-        'Degree Title': 'BSc Computer Science',
+        'Degree Title': 'Bachelors Computer Science',
         'College': 'College of Computing & Informatics',
         'Grade': 'Distinction',
         'Graduation Year': '2025',
@@ -1704,7 +884,7 @@ abstract class IssuingMockData {
       holderName: 'Ahmed Al Rashidi',
       fields: {
         'Student ID': 'HC-00101',
-        'Degree Title': 'BSc Electrical Engineering',
+        'Degree Title': 'Bachelors Electrical Engineering',
         'College': 'College of Engineering',
         'Grade': 'Merit',
         'Graduation Year': '2025',
@@ -1733,7 +913,7 @@ abstract class IssuingMockData {
       holderName: 'Fatima Al Hashimi',
       fields: {
         'Student ID': 'HC-00312',
-        'Degree Title': 'BSc Business Administration',
+        'Degree Title': 'Bachelors Business Administration',
         'College': 'College of Business Administration',
         'Grade': 'Merit',
         'Graduation Year': '2025',
@@ -1747,7 +927,7 @@ abstract class IssuingMockData {
       holderName: 'Unknown Student',
       fields: {
         'Student ID': '',
-        'Degree Title': 'BSc Physics',
+        'Degree Title': 'Bachelors Physics',
         'College': 'College of Science',
         'Grade': '',
         'Graduation Year': '2025',
@@ -1762,7 +942,7 @@ abstract class IssuingMockData {
       holderName: 'Nour Ibrahim',
       fields: {
         'Student ID': 'HC-00601',
-        'Degree Title': 'MSc Mechanical Engineering',
+        'Degree Title': 'Masters Mechanical Engineering',
         'College': 'College of Engineering',
         'Grade': 'Distinction',
         'Graduation Year': '2025',
@@ -1776,7 +956,7 @@ abstract class IssuingMockData {
       holderName: 'Hessa Al Mazrouei',
       fields: {
         'Student ID': 'HC-00852',
-        'Degree Title': 'BSc Pharmaceutical Sciences',
+        'Degree Title': 'Bachelors Pharmaceutical Sciences',
         'College': 'College of Pharmacy',
         'Grade': '',
         'Graduation Year': '',

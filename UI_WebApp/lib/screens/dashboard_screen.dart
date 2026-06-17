@@ -56,6 +56,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Stack(
+      fit: StackFit.expand,
       children: [
         Container(color: AppColors.bg, child: _buildBody()),
         VariantToggler(
