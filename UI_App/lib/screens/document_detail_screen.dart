@@ -6,7 +6,7 @@ import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/screens/selective_screen.dart';
-import 'package:qwallet_mobileapp/services/wallet_controller.dart';
+import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────

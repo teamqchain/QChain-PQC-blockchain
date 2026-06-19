@@ -6,7 +6,7 @@ import 'package:qwallet_mobileapp/components/shimmerWave.dart';
 import 'package:qwallet_mobileapp/routes/main_shell.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/model/subscription_model.dart';
-import 'package:qwallet_mobileapp/services/manage_subscriptions_controller.dart';
+import 'package:qwallet_mobileapp/controllers/manage_subscriptions_controller.dart';
 import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
 import 'package:qwallet_mobileapp/widgets/QSearchBar.dart';
 

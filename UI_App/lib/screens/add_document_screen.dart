@@ -9,9 +9,9 @@ import 'package:qwallet_mobileapp/screens/home_screen.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/widgets/QSearchBar.dart';
 import 'package:qwallet_mobileapp/model/catalog_model.dart';
-import 'package:qwallet_mobileapp/services/add_document_controller.dart';
+import 'package:qwallet_mobileapp/controllers/add_document_controller.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
-import 'package:qwallet_mobileapp/services/wallet_controller.dart';
+import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 
 class AddDocumentScreen extends StatefulWidget {
   const AddDocumentScreen({super.key});

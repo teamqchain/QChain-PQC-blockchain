@@ -8,7 +8,7 @@ import 'package:qwallet_mobileapp/utils/logger.dart';
 import 'package:qwallet_mobileapp/widgets/wallet_category.dart';
 import 'package:qwallet_mobileapp/view/listView.dart';
 import 'package:qwallet_mobileapp/view/stackView.dart';
-import 'package:qwallet_mobileapp/services/wallet_controller.dart';
+import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 
 class CategoryDocumentsScreen extends StatefulWidget {
   const CategoryDocumentsScreen({super.key});
