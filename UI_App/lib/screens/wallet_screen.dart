@@ -5,7 +5,7 @@ import 'package:qwallet_mobileapp/Headers/walletHeader.dart';
 import 'package:qwallet_mobileapp/components/categoryTile.dart';
 import 'package:qwallet_mobileapp/components/emptyState.dart';
 import 'package:qwallet_mobileapp/components/shimmerWave.dart';
-import 'package:qwallet_mobileapp/services/wallet_controller.dart';
+import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 
 class WalletScreen extends StatefulWidget {

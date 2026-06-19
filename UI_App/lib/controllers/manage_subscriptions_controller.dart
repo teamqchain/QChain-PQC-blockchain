@@ -2,7 +2,7 @@ import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/model/subscription_model.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
 import 'package:qwallet_mobileapp/utils/app_config.dart';
-import 'package:qwallet_mobileapp/services/activity_controller.dart';
+import 'package:qwallet_mobileapp/controllers/activity_controller.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
 
 class ManageSubscriptionsController extends GetxController {
