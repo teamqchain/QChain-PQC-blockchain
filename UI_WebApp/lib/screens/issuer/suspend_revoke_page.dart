@@ -1,77 +1,23 @@
-// screens/issuer/revoke_suspend_page.dart
-//
-// Revoke / Suspend Management — credential table + three full multi-step
-// action flows (Revoke → Suspend → Restore), each with:
-//   Step 1 — credential summary + action details + acknowledgement
-//   Step 2 — password confirmation
-//   Step 3 — result confirmation
-//
-// ── Integration in app_shell.dart ───────────────────────────────────────────
-//   case RouteName.revokeSuspend:
-//     return RevokeSuspendPage(
-//       onViewCredential: (id) =>
-//           _handleNavigate(RouteName.credentialDetail, arg: id),
-//     );
-
 import 'package:flutter/material.dart';
-import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/components/label.dart';
-import 'package:qportal_webapp/components/searchBar.dart';
-import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/dialog/restore_dialog.dart';
+import 'package:qportal_webapp/dialog/revoke_dialog.dart';
+import 'package:qportal_webapp/dialog/suspend_dialog.dart';
+import 'package:qportal_webapp/models/ISSUER/credentials_model.dart';
+import 'package:qportal_webapp/services/issuer_api.dart';
+import 'package:qportal_webapp/tables/revokeSuspend_table.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
-import 'package:qportal_webapp/services/api_service.dart';
-import 'package:qportal_webapp/components/countChip.dart';
-import 'package:qportal_webapp/components/connection_error.dart';
-import 'package:qportal_webapp/widgets/paginationBar.dart';
-import 'package:qportal_webapp/widgets/statusBadge.dart';
+import 'package:qportal_webapp/components/paginationBar.dart';
+import 'package:qportal_webapp/components/statusBadge.dart';
+import 'package:qportal_webapp/utils/currentUser.dart';
+import 'package:qportal_webapp/utils/dateFormatter.dart';
+import 'package:qportal_webapp/utils/logger.dart';
 
-// ─── MOCK CURRENT USER ────────────────────────────────────────────────────────
 
-const _kCurrentUser = 'Mohammed A.';
-
-// ─── REVOKE REASON OPTIONS ────────────────────────────────────────────────────
-
-const _kRevokeReasons = <String>[
-  'Academic misconduct',
-  'Disciplinary action',
-  'Credential error — reissue required',
-  'Holder request',
-  'Fraudulent information provided',
-  'Duplicate credential',
-  'Other',
-];
-
-// ─── SUSPEND REASON OPTIONS ───────────────────────────────────────────────────
-
-const _kSuspendReasons = <String>[
-  'Audit review in progress',
-  'Disciplinary investigation',
-  'Temporary hold — pending verification',
-  'Holder request',
-  'Other',
-];
-
-// ─── DATE FORMATTER ───────────────────────────────────────────────────────────
-
-String formatDateString(String dateStr) {
-  if (dateStr.isEmpty) return 'No Expiry';
-  final dt = DateTime.tryParse(dateStr);
-  if (dt == null) return dateStr;
-  const m = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-  ];
-  return '${dt.day.toString().padLeft(2, '0')} ${m[dt.month - 1]} ${dt.year}';
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  PAGE
-// ═════════════════════════════════════════════════════════════════════════════
 
 class RevokeSuspendPage extends StatefulWidget {
-  /// Called when the user presses "View Credential".
   final void Function(String credentialId)? onViewCredential;
 
   const RevokeSuspendPage({super.key, this.onViewCredential});
@@ -81,7 +27,6 @@ class RevokeSuspendPage extends StatefulWidget {
 }
 
 class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
-  // ── local mutable list so status mutations reflect in the table ────────────
   List<CredentialRecord> _rows = [];
   List<CredentialRecord> _filtered = [];
   bool _isLoading = true;
@@ -91,18 +36,8 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
   final _searchCtrl = TextEditingController();
   final Set<String> _selectedIds = {};
 
-  // ── pagination ─────────────────────────────────────────────────────────────
   int _rowsPerPage = 25;
   int _currentPage = 1;
-
-  // ── helpers ────────────────────────────────────────────────────────────────
-
-  // @override
-  // void initState() {
-  //   super.initState();
-  //   _rows = List<CredentialRecord>.from(IssuingMockData.credentials);
-  //   _applyFilter();
-  // }
 
   @override
   void initState() {
@@ -116,7 +51,7 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
       _hasError = false;
     });
     try {
-      final data = await ApiService.getAllCredentials();
+      final data = await IssuerApi.getAllCredentials();
       if (!mounted) return;
       setState(() {
         _rows = data;
@@ -154,7 +89,6 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
 
   bool get _hasSelection => _selectedIds.isNotEmpty;
 
-  /// All selected rows share the same status (enforced at selection time).
   CredentialStatus? get _selStatus =>
       _hasSelection ? _selRecords.first.status : null;
 
@@ -183,10 +117,8 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
         _selectedIds.remove(id);
         return;
       }
-      // Enforce same-status constraint
       final rec = _rows.firstWhere((r) => r.id == id);
       if (_selectedIds.isNotEmpty && rec.status != _selStatus) return;
-      // Enforce max 10
       if (_selectedIds.length >= 10) return;
       _selectedIds.add(id);
     });
@@ -207,7 +139,6 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
     });
   }
 
-  // ── status mutation ────────────────────────────────────────────────────────
 
   void _mutateAll(List<String> ids, CredentialStatus newStatus) {
     setState(() {
@@ -227,10 +158,10 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
           expiryDate: old.expiryDate,
           status: newStatus,
           revokedBy: newStatus == CredentialStatus.revoked
-              ? _kCurrentUser
+              ? kCurrentUser
               : null,
           revokedDate: newStatus == CredentialStatus.revoked
-              ? _todayStr()
+              ? DateFormatter.formatIsoDate(DateTime.now() as String?)
               : null,
           auditTrail: old.auditTrail,
           attributes: old.attributes,
@@ -245,27 +176,8 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
     });
   }
 
-  String _todayStr() {
-    final n = DateTime.now();
-    const m = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${n.day.toString().padLeft(2, '0')} ${m[n.month - 1]} ${n.year}';
-  }
 
-  // ── dialog openers ─────────────────────────────────────────────────────────
-
+  // Dialogs for Revoke, Suspend, Restore actions
   Future<void> _openRevoke() async {
     final recs = _selRecords;
     if (recs.isEmpty) return;
@@ -273,39 +185,18 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _RevokeDialog(
+      builder: (_) => RevokeDialog(
         credentials: recs,
         onConfirmed: () {
           _mutateAll(ids, CredentialStatus.revoked);
-          // Fire-and-forget: only real CRED- IDs hit the API (mock QC- IDs are skipped).
           for (final id in ids) {
-            if (id.startsWith('CRED-')) ApiService.revokeCredential(id);
+            if (id.startsWith('CRED-')) IssuerApi.revokeCredential(id);
           }
         },
       ),
     );
   }
 
-  // Future<void> _openSuspend() async {
-  //   final recs = _selRecords;
-  //   if (recs.isEmpty) return;
-  //   final ids = recs.map((r) => r.id).toList();
-  //   await showDialog(
-  //     context: context,
-  //     barrierDismissible: false,
-  //     builder: (_) => _SuspendDialog(
-  //       credentials: recs,
-  //       onConfirmed: (String reason) {
-  //         _mutateAll(ids, CredentialStatus.suspended);
-  //         for (final id in ids) {
-  //           if (id.startsWith('CRED-')) {
-  //             ApiService.suspendCredential(id, reason: reason);
-  //           }
-  //         }
-  //       },
-  //     ),
-  //   );
-  // }
   Future<void> _openSuspend() async {
     final recs = _selRecords;
     if (recs.isEmpty) return;
@@ -314,22 +205,21 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _SuspendDialog(
+      builder: (_) => SuspendDialog(
         credentials: recs,
         onConfirmed: (String reason) async {
-          // 1. Call API first, THEN mutate local state only on success
           bool allSucceeded = true;
           for (final id in ids) {
             if (id.startsWith('CRED-')) {
               try {
-                final success = await ApiService.suspendCredential(
+                final success = await IssuerApi.suspendCredential(
                   id,
                   reason: reason,
                 );
                 if (!success) allSucceeded = false;
               } catch (e) {
                 allSucceeded = false;
-                debugPrint('Suspend failed for $id: $e');
+                logDebug('Suspend failed for $id: $e');
               }
             }
           }
@@ -338,9 +228,8 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
             _mutateAll(
               ids,
               CredentialStatus.suspended,
-            ); // only update UI after confirmed
+            ); 
           } else {
-            // Show error to user
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -348,7 +237,6 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
                 ),
               );
             }
-            // Re-fetch real state from API
             _loadCredentials();
           }
         },
@@ -363,14 +251,13 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _RestoreDialog(
+      builder: (_) => RestoreDialog(
         credentials: recs,
-        // onConfirmed: () => _mutateAll(ids, CredentialStatus.valid),
         onConfirmed: () {
           _mutateAll(ids, CredentialStatus.valid);
           for (final id in ids) {
             if (id.startsWith('CRED-')) {
-              ApiService.restoreCredential(id);
+              IssuerApi.restoreCredential(id);
             }
           }
         },
@@ -378,7 +265,6 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
     );
   }
 
-  // ─── BUILD ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -387,7 +273,6 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Page title ─────────────────────────────────────────────────────
           Text(
             'Revoke / Suspend Management',
             style: AppTextStyles.navLabelActive.copyWith(
@@ -396,28 +281,30 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
             ),
           ),
           const SizedBox(height: 18),
-
-          // ── Table container ────────────────────────────────────────────────
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border),
-              ),
-              clipBehavior: Clip.hardEdge,
-              child: Column(
-                children: [
-                  _buildToolbar(),
-                  _buildColumnHeader(),
-                  Expanded(child: _buildRows()),
-                ],
-              ),
+            child: SuspendRevokeTable(
+              isLoading: _isLoading,
+              hasError: _hasError,
+              onRetry: _loadCredentials,
+              rows: _pageRows,
+              selected: _selectedIds,
+              selStatus: _selStatus,
+              totalFiltered: _filteredCount,
+              onToggleRow: _toggleSelection,
+              search: _query,
+              searchCtrl: _searchCtrl,
+              onSearchChanged: (v) => setState(() {
+                _query = v;
+                _applyFilter();
+              }),
+              onClearSearch: () => setState(() {
+                _query = '';
+                _searchCtrl.clear();
+                _applyFilter();
+              }),
             ),
           ),
-
           const SizedBox(height: 16),
-
           PaginationBar(
             currentPage: _currentPage,
             totalPages: _totalPages,
@@ -427,156 +314,12 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
             onRowsPerPageChanged: _changeRowsPerPage,
             accentColor: AppColors.issuingAccent,
           ),
-
           const SizedBox(height: 16),
-
-          // ── Action buttons ─────────────────────────────────────────────────
           _buildActionBar(),
         ],
       ),
     );
   }
-
-  // ─── TOOLBAR ───────────────────────────────────────────────────────────────
-
-  Widget _buildToolbar() {
-    final selCount = _selectedIds.length;
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF161616),
-        border: Border(bottom: BorderSide(color: AppColors.border)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      child: Row(
-        children: [
-          CountChip(
-            count: (selCount > 0) ? selCount : _filteredCount,
-            label: (selCount > 0) ? 'selected' : 'credential',
-            pluralLabel: (selCount > 1) ? 'selected' : 'credential',
-          ),
-          // Search
-          const Spacer(),
-          ToolbarIconBtn(
-            icon: Icons.filter_list_rounded,
-            tooltip: 'Filtersear',
-            onTap: () {},
-          ),
-          const SizedBox(width: 6),
-          QSearchBar(
-            controller: _searchCtrl,
-            query: _query,
-            onChanged: (v) => setState(() {
-              _query = v;
-              _applyFilter();
-            }),
-            onClear: () => setState(() {
-              _query = '';
-              _searchCtrl.clear();
-              _applyFilter();
-            }),
-            searchLabel: 'Search credentials…',
-            barWidth: 240,
-          ),
-          const SizedBox(width: 8),
-
-          // Filter icon
-        ],
-      ),
-    );
-  }
-
-  // ─── COLUMN HEADER ─────────────────────────────────────────────────────────
-
-  Widget _buildColumnHeader() {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.issuingAccent.withOpacity(0.16),
-        border: Border(bottom: BorderSide(color: AppColors.border)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-      child: Row(
-        children: [
-          const SizedBox(width: 36), // checkbox space
-          _ColHead('CREDENTIAL ID', flex: 3),
-          _ColHead('HOLDER NAME', flex: 3),
-          _ColHead('CREDENTIAL TYPE', flex: 4),
-          _ColHead('ISSUED BY', flex: 3),
-          _ColHead('ISSUE DATE', flex: 2),
-          _ColHead('EXPIRY DATE', flex: 2),
-          _ColHead('STATUS', flex: 2),
-        ],
-      ),
-    );
-  }
-
-  // ─── DATA ROWS ─────────────────────────────────────────────────────────────
-
-  Widget _buildRows() {
-    if (_hasError) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 80.0),
-        child: ConnectionErrorWidget(onRetry: _loadCredentials),
-      );
-    }
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    final pageRows = _pageRows;
-
-    if (_filtered.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.search_off_rounded,
-              size: 32,
-              color: AppColors.textDim,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              _query.isEmpty
-                  ? 'No credentials found.'
-                  : 'No results for "$_query".',
-              style: AppTextStyles.bodyTiny.copyWith(
-                fontSize: 12,
-                color: AppColors.textDim,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (pageRows.isEmpty) {
-      return const Center(
-        child: Text(
-          'No credentials on this page.',
-          style: TextStyle(color: AppColors.textDim, fontSize: 12),
-        ),
-      );
-    }
-
-    return ListView.separated(
-      itemCount: pageRows.length,
-      separatorBuilder: (_, __) =>
-          Container(height: 1, color: AppColors.border),
-      itemBuilder: (_, i) {
-        final rec = pageRows[i];
-        // Dim rows whose status differs from the current selection
-        final canSelect = _selectedIds.isEmpty || rec.status == _selStatus;
-        return _CredRow(
-          record: rec,
-          selected: _selectedIds.contains(rec.id),
-          dimmed: !canSelect && !_selectedIds.contains(rec.id),
-          onTap: () => _toggleSelection(rec.id),
-        );
-      },
-    );
-  }
-
-  // ─── ACTION BAR ────────────────────────────────────────────────────────────
 
   Widget _buildActionBar() {
     final count = _selectedIds.length;
@@ -586,29 +329,6 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // ── Selection count chip ─────────────────────────────────────────
-        // if (count > 0) ...[
-        //   Container(
-        //     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        //     decoration: BoxDecoration(
-        //       color: AppColors.issuingAccent.withOpacity(0.12),
-        //       borderRadius: BorderRadius.circular(6),
-        //       border: Border.all(
-        //         color: AppColors.issuingAccent.withOpacity(0.35),
-        //       ),
-        //     ),
-        //     child: Text(
-        //       '$count selected',
-        //       style: TextStyle(
-        //         fontSize: 11,
-        //         fontWeight: FontWeight.w700,
-        //         color: AppColors.issuingAccent,
-        //       ),
-        //     ),
-        //   ),
-        //   const SizedBox(width: 10),
-        // ],
-
         // ── Revoke ──────────────────────────────────────────────────────────
         AppButton(
           label: count > 1 ? 'Revoke ($count)' : 'Revoke',
@@ -678,29 +398,6 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
           hoverColor: AppColors.surfaceHover,
           disabledTextColor: AppColors.textDim,
         ),
-
-        // ── Selection indicator ─────────────────────────────────────────────
-        // if (count > 0) ...[
-        //   const SizedBox(width: 16),
-        //   Container(width: 1, height: 18, color: AppColors.border),
-        //   const SizedBox(width: 14),
-        //   const Icon(
-        //     Icons.check_circle_outline_rounded,
-        //     size: 12,
-        //     color: AppColors.textDim,
-        //   ),
-        //   const SizedBox(width: 6),
-        //   Flexible(
-        //     child: Text(
-        //       '${sel.holderName}  ·  ${sel.id}',
-        //       style: AppTextStyles.bodyTiny.copyWith(
-        //         fontSize: 11,
-        //         color: AppColors.textDim,
-        //       ),
-        //       overflow: TextOverflow.ellipsis,
-        //     ),
-        //   ),
-        // ],
       ],
     );
   }
@@ -712,836 +409,9 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  CREDENTIAL TABLE ROW
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _CredRow extends StatefulWidget {
-  final CredentialRecord record;
-  final bool selected;
-  final bool dimmed;
-  final VoidCallback onTap;
-
-  const _CredRow({
-    required this.record,
-    required this.selected,
-    this.dimmed = false,
-    required this.onTap,
-  });
-
-  @override
-  State<_CredRow> createState() => _CredRowState();
-}
-
-class _CredRowState extends State<_CredRow> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final r = widget.record;
-
-    return Opacity(
-      opacity: widget.dimmed ? 0.35 : 1.0,
-      child: MouseRegion(
-        cursor: widget.dimmed
-            ? SystemMouseCursors.basic
-            : SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTap: widget.dimmed ? null : widget.onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            color: widget.selected
-                ? AppColors.issuingAccent.withOpacity(0.08)
-                : _hovered && !widget.dimmed
-                ? AppColors.surfaceHover
-                : Colors.transparent,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                // Checkbox
-                SizedBox(
-                  width: 36,
-                  child: Checkbox(
-                    value: widget.selected,
-                    onChanged: (_) => widget.onTap(),
-                    activeColor: AppColors.issuingAccent,
-                    checkColor: Colors.white,
-                    side: const BorderSide(color: AppColors.border, width: 1.5),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-
-                // Credential ID
-                Expanded(
-                  flex: 3,
-                  child: Text(
-                    r.id,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.issuingLight,
-                      fontFamily: 'monospace',
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-
-                // Holder Name
-                Expanded(
-                  flex: 3,
-                  child: Text(
-                    r.holderName,
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textMuted,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-
-                // Credential Type
-                Expanded(
-                  flex: 4,
-                  child: Text(
-                    r.credentialType,
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 11,
-                      color: AppColors.textMuted,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-
-                // Issued By
-                Expanded(
-                  flex: 3,
-                  child: Text(
-                    r.issuedBy,
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 11,
-                      color: AppColors.textDim,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-
-                // Issue Date
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    formatDateString(r.issueDate),
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 11,
-                      color: AppColors.textDim,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-
-                // Expiry Date
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    r.expiryDate != null ? formatDateString(r.expiryDate!) : 'No Expiry',
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 11,
-                      color: r.expiryDate != null
-                          ? AppColors.textDim
-                          : AppColors.textDim.withOpacity(0.4),
-                      fontStyle: r.expiryDate == null
-                          ? FontStyle.italic
-                          : FontStyle.normal,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-
-                // Status badge
-                Expanded(flex: 2, child: StatusBadge(fg: r.status.fg, label: r.status.label)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  REVOKE DIALOG  (3-step: details+reason → password → confirmation)
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _RevokeDialog extends StatefulWidget {
-  final List<CredentialRecord> credentials;
-  final VoidCallback onConfirmed;
-
-  const _RevokeDialog({required this.credentials, required this.onConfirmed});
-
-  @override
-  State<_RevokeDialog> createState() => _RevokeDialogState();
-}
-
-class _RevokeDialogState extends State<_RevokeDialog>
-    with SingleTickerProviderStateMixin {
-  int _step = 1;
-
-  // Step 1
-  String? _reason;
-  final _notesCtrl = TextEditingController();
-  bool _acked = false;
-
-  // Step 2
-  final _pwCtrl = TextEditingController();
-  bool _pwErr = false;
-
-  bool get _step1Ready => _reason != null && _acked;
-
-  void _toStep2() => setState(() => _step = 2);
-
-  void _submitPw() {
-    if (_pwCtrl.text.trim().isEmpty) {
-      setState(() => _pwErr = true);
-      return;
-    }
-    widget.onConfirmed();
-    setState(() {
-      _pwErr = false;
-      _step = 3;
-    });
-  }
-
-  @override
-  void dispose() {
-    _notesCtrl.dispose();
-    _pwCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => _DialogFrame(
-    child: AnimatedSwitcher(
-      duration: const Duration(milliseconds: 200),
-      child: KeyedSubtree(
-        key: ValueKey(_step),
-        child: switch (_step) {
-          1 => _Step1Revoke(
-            credentials: widget.credentials,
-            reason: _reason,
-            notesCtrl: _notesCtrl,
-            acked: _acked,
-            reasons: _kRevokeReasons,
-            accentColor: AppColors.revoked,
-            proceedLabel: 'Revoke',
-            onReasonChanged: (v) => setState(() => _reason = v),
-            onAckedChanged: (v) => setState(() => _acked = v),
-            canProceed: _step1Ready,
-            onCancel: () => Navigator.pop(context),
-            onProceed: _toStep2,
-          ),
-          2 => _Step2Password(
-            accentColor: AppColors.revoked,
-            proceedLabel: 'Revoke',
-            pwCtrl: _pwCtrl,
-            pwErr: _pwErr,
-            onBack: () => setState(() {
-              _step = 1;
-              _pwErr = false;
-            }),
-            onSubmit: _submitPw,
-          ),
-          _ => _Step3Done(
-            credentials: widget.credentials,
-            performedBy: _kCurrentUser,
-            actionPast: 'revoked',
-            accentColor: AppColors.revoked,
-            onReturn: () => Navigator.pop(context),
-          ),
-        },
-      ),
-    ),
-  );
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  SUSPEND DIALOG
-// ═════════════════════════════════════════════════════════════════════════════
-
-enum _SuspendMode { furtherNotice, specificDate }
-
-class _SuspendDialog extends StatefulWidget {
-  final List<CredentialRecord> credentials;
-  final void Function(String reason) onConfirmed;
-
-  const _SuspendDialog({required this.credentials, required this.onConfirmed});
-
-  @override
-  State<_SuspendDialog> createState() => _SuspendDialogState();
-}
-
-class _SuspendDialogState extends State<_SuspendDialog> {
-  int _step = 1;
-
-  // Step 1
-  String? _reason;
-  final _notesCtrl = TextEditingController();
-  bool _acked = false;
-  _SuspendMode _mode = _SuspendMode.furtherNotice;
-  DateTime? _untilDate;
-
-  // Step 2
-  final _pwCtrl = TextEditingController();
-  bool _pwErr = false;
-
-  bool get _step1Ready =>
-      _reason != null &&
-      _acked &&
-      (_mode == _SuspendMode.furtherNotice || _untilDate != null);
-
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now().add(const Duration(days: 30)),
-      firstDate: DateTime.now().add(const Duration(days: 1)),
-      lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
-      builder: (ctx, child) => Theme(
-        data: ThemeData.dark().copyWith(
-          colorScheme: const ColorScheme.dark(
-            primary: AppColors.suspended,
-            onPrimary: Colors.black,
-            surface: Color(0xFF1E1E1E),
-          ),
-        ),
-        child: child!,
-      ),
-    );
-    if (picked != null) setState(() => _untilDate = picked);
-  }
-
-  String _fmtDate(DateTime d) {
-    const m = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${d.day.toString().padLeft(2, '0')} ${m[d.month - 1]} ${d.year}';
-  }
-
-  void _submitPw() {
-    if (_pwCtrl.text.trim().isEmpty) {
-      setState(() => _pwErr = true);
-      return;
-    }
-    widget.onConfirmed(_reason!);
-    setState(() {
-      _pwErr = false;
-      _step = 3;
-    });
-  }
-
-  @override
-  void dispose() {
-    _notesCtrl.dispose();
-    _pwCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => _DialogFrame(
-    child: AnimatedSwitcher(
-      duration: const Duration(milliseconds: 200),
-      child: KeyedSubtree(
-        key: ValueKey(_step),
-        child: switch (_step) {
-          1 => _Step1Suspend(
-            credentials: widget.credentials,
-            reason: _reason,
-            notesCtrl: _notesCtrl,
-            acked: _acked,
-            mode: _mode,
-            untilDate: _untilDate,
-            dateLabel: _untilDate != null ? _fmtDate(_untilDate!) : null,
-            reasons: _kSuspendReasons,
-            onReasonChanged: (v) => setState(() => _reason = v),
-            onAckedChanged: (v) => setState(() => _acked = v),
-            onModeChanged: (v) => setState(() {
-              _mode = v;
-              _untilDate = null;
-            }),
-            onPickDate: _pickDate,
-            canProceed: _step1Ready,
-            onCancel: () => Navigator.pop(context),
-            onProceed: () => setState(() => _step = 2),
-          ),
-          2 => _Step2Password(
-            accentColor: AppColors.suspended,
-            proceedLabel: 'Suspend',
-            pwCtrl: _pwCtrl,
-            pwErr: _pwErr,
-            onBack: () => setState(() {
-              _step = 1;
-              _pwErr = false;
-            }),
-            onSubmit: _submitPw,
-          ),
-          _ => _Step3Done(
-            credentials: widget.credentials,
-            performedBy: _kCurrentUser,
-            actionPast: 'suspended',
-            accentColor: AppColors.suspended,
-            onReturn: () => Navigator.pop(context),
-          ),
-        },
-      ),
-    ),
-  );
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  RESTORE DIALOG
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _RestoreDialog extends StatefulWidget {
-  final List<CredentialRecord> credentials;
-  final VoidCallback onConfirmed;
-
-  const _RestoreDialog({required this.credentials, required this.onConfirmed});
-
-  @override
-  State<_RestoreDialog> createState() => _RestoreDialogState();
-}
-
-class _RestoreDialogState extends State<_RestoreDialog> {
-  int _step = 1;
-  bool _acked = false;
-
-  final _pwCtrl = TextEditingController();
-  bool _pwErr = false;
-
-  void _submitPw() {
-    if (_pwCtrl.text.trim().isEmpty) {
-      setState(() => _pwErr = true);
-      return;
-    }
-    widget.onConfirmed();
-    setState(() {
-      _pwErr = false;
-      _step = 3;
-    });
-  }
-
-  @override
-  void dispose() {
-    _pwCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => _DialogFrame(
-    child: AnimatedSwitcher(
-      duration: const Duration(milliseconds: 200),
-      child: KeyedSubtree(
-        key: ValueKey(_step),
-        child: switch (_step) {
-          1 => _Step1Restore(
-            credentials: widget.credentials,
-            acked: _acked,
-            onAckedChanged: (v) => setState(() => _acked = v),
-            canProceed: _acked,
-            onCancel: () => Navigator.pop(context),
-            onProceed: () => setState(() => _step = 2),
-          ),
-          2 => _Step2Password(
-            accentColor: AppColors.verifyingAccent,
-            proceedLabel: 'Restore',
-            pwCtrl: _pwCtrl,
-            pwErr: _pwErr,
-            onBack: () => setState(() {
-              _step = 1;
-              _pwErr = false;
-            }),
-            onSubmit: _submitPw,
-          ),
-          _ => _Step3Done(
-            credentials: widget.credentials,
-            performedBy: _kCurrentUser,
-            actionPast: 'restored',
-            accentColor: AppColors.verifyingAccent,
-            onReturn: () => Navigator.pop(context),
-          ),
-        },
-      ),
-    ),
-  );
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  STEP WIDGETS
-// ═════════════════════════════════════════════════════════════════════════════
-
-// ─── STEP 1 — REVOKE ──────────────────────────────────────────────────────────
-
-class _Step1Revoke extends StatelessWidget {
-  final List<CredentialRecord> credentials;
-  final String? reason;
-  final TextEditingController notesCtrl;
-  final bool acked;
-  final List<String> reasons;
-  final Color accentColor;
-  final String proceedLabel;
-  final void Function(String?) onReasonChanged;
-  final void Function(bool) onAckedChanged;
-  final bool canProceed;
-  final VoidCallback onCancel;
-  final VoidCallback onProceed;
-
-  const _Step1Revoke({
-    required this.credentials,
-    required this.reason,
-    required this.notesCtrl,
-    required this.acked,
-    required this.reasons,
-    required this.accentColor,
-    required this.proceedLabel,
-    required this.onReasonChanged,
-    required this.onAckedChanged,
-    required this.canProceed,
-    required this.onCancel,
-    required this.onProceed,
-  });
-
-  @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _DlgHeader(
-        icon: Icons.block_rounded,
-        title: credentials.length == 1
-            ? '$proceedLabel Credential'
-            : '$proceedLabel ${credentials.length} Credentials',
-        subtitle: 'Review the summary and provide a reason before proceeding.',
-        accentColor: accentColor,
-      ),
-      const SizedBox(height: 20),
-
-      _CredSummary(credentials: credentials),
-      const SizedBox(height: 20),
-
-      Label(text: 'Reason for $proceedLabel', required: true),
-      const SizedBox(height: 6),
-      _Dropdown(
-        value: reason,
-        items: reasons,
-        hint: 'Select a reason…',
-        accentColor: accentColor,
-        onChanged: onReasonChanged,
-      ),
-      const SizedBox(height: 14),
-
-      Label(text: 'Additional Notes'),
-      const SizedBox(height: 6),
-      _TextArea(
-        controller: notesCtrl,
-        hint: 'Optional — add any relevant context here…',
-      ),
-      const SizedBox(height: 18),
-
-      _AckRow(
-        checked: acked,
-        text:
-            'I understand this action will affect the holder\'s'
-            ' credential and cannot be undone without re-issuance.',
-        color: accentColor,
-        onChanged: onAckedChanged,
-      ),
-      const SizedBox(height: 24),
-
-      _DlgFooter(
-        cancelLabel: 'Cancel',
-        proceedLabel: proceedLabel,
-        proceedColor: accentColor,
-        canProceed: canProceed,
-        onCancel: onCancel,
-        onProceed: onProceed,
-      ),
-    ],
-  );
-}
-
-// ─── STEP 1 — SUSPEND ─────────────────────────────────────────────────────────
-
-class _Step1Suspend extends StatelessWidget {
-  final List<CredentialRecord> credentials;
-  final String? reason;
-  final TextEditingController notesCtrl;
-  final bool acked;
-  final _SuspendMode mode;
-  final DateTime? untilDate;
-  final String? dateLabel;
-  final List<String> reasons;
-  final void Function(String?) onReasonChanged;
-  final void Function(bool) onAckedChanged;
-  final void Function(_SuspendMode) onModeChanged;
-  final VoidCallback onPickDate;
-  final bool canProceed;
-  final VoidCallback onCancel;
-  final VoidCallback onProceed;
-
-  const _Step1Suspend({
-    required this.credentials,
-    required this.reason,
-    required this.notesCtrl,
-    required this.acked,
-    required this.mode,
-    required this.untilDate,
-    required this.dateLabel,
-    required this.reasons,
-    required this.onReasonChanged,
-    required this.onAckedChanged,
-    required this.onModeChanged,
-    required this.onPickDate,
-    required this.canProceed,
-    required this.onCancel,
-    required this.onProceed,
-  });
-
-  @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _DlgHeader(
-        icon: Icons.pause_circle_outline_rounded,
-        title: credentials.length == 1
-            ? 'Suspend Credential'
-            : 'Suspend ${credentials.length} Credentials',
-        subtitle: 'Review the summary and configure the suspension period.',
-        accentColor: AppColors.suspended,
-      ),
-      const SizedBox(height: 20),
-
-      _CredSummary(credentials: credentials),
-      const SizedBox(height: 20),
-
-      // Suspension duration
-      const Label(text: 'Suspension Duration'),
-      const SizedBox(height: 10),
-      Row(
-        children: [
-          _Radio(
-            label: 'Until further notice',
-            selected: mode == _SuspendMode.furtherNotice,
-            color: AppColors.suspended,
-            onTap: () => onModeChanged(_SuspendMode.furtherNotice),
-          ),
-          const SizedBox(width: 20),
-          _Radio(
-            label: 'Until a specific date',
-            selected: mode == _SuspendMode.specificDate,
-            color: AppColors.suspended,
-            onTap: () => onModeChanged(_SuspendMode.specificDate),
-          ),
-        ],
-      ),
-
-      if (mode == _SuspendMode.specificDate) ...[
-        const SizedBox(height: 10),
-        GestureDetector(
-          onTap: onPickDate,
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceHover,
-                borderRadius: BorderRadius.circular(7),
-                border: Border.all(
-                  color: dateLabel != null
-                      ? AppColors.suspended.withOpacity(0.55)
-                      : AppColors.border,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.calendar_today_outlined,
-                    size: 14,
-                    color: dateLabel != null
-                        ? AppColors.suspended
-                        : AppColors.textDim,
-                  ),
-                  const SizedBox(width: 9),
-                  Text(
-                    dateLabel ?? 'Pick a date…',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: dateLabel != null
-                          ? AppColors.text
-                          : AppColors.textDim,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-
-      const SizedBox(height: 14),
-
-      const Label(text: 'Reason for Suspension ', required: true),
-      const SizedBox(height: 6),
-      _Dropdown(
-        value: reason,
-        items: reasons,
-        hint: 'Select a reason…',
-        accentColor: AppColors.suspended,
-        onChanged: onReasonChanged,
-      ),
-      const SizedBox(height: 14),
-
-      const Label(text: 'Additional Notes'),
-      const SizedBox(height: 6),
-      _TextArea(
-        controller: notesCtrl,
-        hint: 'Optional — add any relevant context here…',
-      ),
-      const SizedBox(height: 18),
-
-      _AckRow(
-        checked: acked,
-        text:
-            'I understand this will temporarily restrict the holder\'s'
-            ' access to this credential.',
-        color: AppColors.suspended,
-        onChanged: onAckedChanged,
-      ),
-      const SizedBox(height: 24),
-
-      _DlgFooter(
-        cancelLabel: 'Cancel',
-        proceedLabel: 'Suspend',
-        proceedColor: AppColors.suspended,
-        canProceed: canProceed,
-        onCancel: onCancel,
-        onProceed: onProceed,
-      ),
-    ],
-  );
-}
-
-// ─── STEP 1 — RESTORE ─────────────────────────────────────────────────────────
-
-class _Step1Restore extends StatelessWidget {
-  final List<CredentialRecord> credentials;
-  final bool acked;
-  final void Function(bool) onAckedChanged;
-  final bool canProceed;
-  final VoidCallback onCancel;
-  final VoidCallback onProceed;
-
-  const _Step1Restore({
-    required this.credentials,
-    required this.acked,
-    required this.onAckedChanged,
-    required this.canProceed,
-    required this.onCancel,
-    required this.onProceed,
-  });
-
-  @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _DlgHeader(
-        icon: Icons.restore_rounded,
-        title: credentials.length == 1
-            ? 'Restore Credential'
-            : 'Restore ${credentials.length} Credentials',
-        subtitle: 'This will reinstate the credential to VALID status.',
-        accentColor: AppColors.verifyingAccent,
-      ),
-      const SizedBox(height: 20),
-
-      _CredSummary(credentials: credentials),
-      const SizedBox(height: 18),
-
-      // Info banner
-      Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.verifyingAccent.withOpacity(0.07),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: AppColors.verifyingAccent.withOpacity(0.22),
-          ),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(
-              Icons.info_outline,
-              size: 14,
-              color: AppColors.verifyingAccent,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Restoring this credential will set its status back to VALID'
-                ' and make it verifiable by third parties again.'
-                ' All blockchain and IPFS records remain unchanged.',
-                style: AppTextStyles.bodyTiny.copyWith(
-                  fontSize: 11,
-                  color: AppColors.textMuted,
-                  height: 1.6,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 18),
-
-      _AckRow(
-        checked: acked,
-        text:
-            'I confirm that this credential should be reinstated to'
-            ' VALID status and made accessible to the holder.',
-        color: AppColors.verifyingAccent,
-        onChanged: onAckedChanged,
-      ),
-      const SizedBox(height: 24),
-
-      _DlgFooter(
-        cancelLabel: 'Cancel',
-        proceedLabel: 'Restore',
-        proceedColor: AppColors.verifyingAccent,
-        canProceed: canProceed,
-        onCancel: onCancel,
-        onProceed: onProceed,
-      ),
-    ],
-  );
-}
-
 // ─── STEP 2 — PASSWORD ────────────────────────────────────────────────────────
 
-class _Step2Password extends StatelessWidget {
+class Step2Password extends StatelessWidget {
   final Color accentColor;
   final String proceedLabel;
   final TextEditingController pwCtrl;
@@ -1549,7 +419,8 @@ class _Step2Password extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onSubmit;
 
-  const _Step2Password({
+  const Step2Password({
+    super.key,
     required this.accentColor,
     required this.proceedLabel,
     required this.pwCtrl,
@@ -1575,7 +446,7 @@ class _Step2Password extends StatelessWidget {
       ),
       const SizedBox(height: 22),
 
-      _DlgHeader(
+      DlgHeader(
         icon: Icons.lock_outline_rounded,
         title: 'Confirm Your Identity',
         subtitle: 'Enter your password to authorise this action.',
@@ -1626,7 +497,7 @@ class _Step2Password extends StatelessWidget {
       ],
       const SizedBox(height: 24),
 
-      _DlgFooter(
+      DlgFooter(
         cancelLabel: '← Back',
         proceedLabel: 'Submit',
         proceedColor: accentColor,
@@ -1640,14 +511,15 @@ class _Step2Password extends StatelessWidget {
 
 // ─── STEP 3 — DONE ────────────────────────────────────────────────────────────
 
-class _Step3Done extends StatelessWidget {
+class Step3Done extends StatelessWidget {
   final List<CredentialRecord> credentials;
   final String performedBy;
   final String actionPast; // 'revoked' | 'suspended' | 'restored'
   final Color accentColor;
   final VoidCallback onReturn;
 
-  const _Step3Done({
+  const Step3Done({
+    super.key,
     required this.credentials,
     required this.performedBy,
     required this.actionPast,
@@ -1781,9 +653,9 @@ class _Step3Done extends StatelessWidget {
 
 // ─── DIALOG OUTER FRAME ───────────────────────────────────────────────────────
 
-class _DialogFrame extends StatelessWidget {
+class DialogFrame extends StatelessWidget {
   final Widget child;
-  const _DialogFrame({required this.child});
+  const DialogFrame({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) => Dialog(
@@ -1813,13 +685,14 @@ class _DialogFrame extends StatelessWidget {
 
 // ─── DIALOG HEADER ────────────────────────────────────────────────────────────
 
-class _DlgHeader extends StatelessWidget {
+class DlgHeader extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
   final Color accentColor;
 
-  const _DlgHeader({
+  const DlgHeader({
+    super.key,
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -1868,9 +741,9 @@ class _DlgHeader extends StatelessWidget {
 
 // ─── CREDENTIAL SUMMARY CARD ──────────────────────────────────────────────────
 
-class _CredSummary extends StatelessWidget {
+class CredSummary extends StatelessWidget {
   final List<CredentialRecord> credentials;
-  const _CredSummary({required this.credentials});
+  const CredSummary({super.key, required this.credentials});
 
   @override
   Widget build(BuildContext context) {
@@ -1888,8 +761,15 @@ class _CredSummary extends StatelessWidget {
             _row('Credential ID', c.id, mono: true),
             _row('Holder Name', c.holderName),
             _row('Credential Type', c.credentialType),
-            _row('Issue Date', formatDateString(c.issueDate)),
-            _rowWidget('Current Status', StatusBadge(fg: c.status.fg, label: c.status.label)),
+            _row('Issue Date', DateFormatter.formatIsoDate(c.issueDate)),
+            _rowWidget(
+              'Current Status',
+              StatusBadge(
+                fg: c.status.fg,
+                label: c.status.label,
+                iconPresent: false,
+              ),
+            ),
           ],
         ),
       );
@@ -1966,7 +846,6 @@ class _CredSummary extends StatelessWidget {
                       fontSize: 10,
                       fontWeight: FontWeight.w500,
                       color: AppColors.issuingLight.withOpacity(0.7),
-                      fontFamily: 'monospace',
                     ),
                   ),
                 ],
@@ -1999,7 +878,6 @@ class _CredSummary extends StatelessWidget {
               fontSize: 11,
               fontWeight: FontWeight.w600,
               color: mono ? AppColors.issuingLight : AppColors.text,
-              fontFamily: mono ? 'monospace' : null,
             ),
             overflow: TextOverflow.ellipsis,
           ),
@@ -2027,14 +905,15 @@ class _CredSummary extends StatelessWidget {
 
 // ─── DROPDOWN ─────────────────────────────────────────────────────────────────
 
-class _Dropdown extends StatelessWidget {
+class Dropdown extends StatelessWidget {
   final String? value;
   final List<String> items;
   final String hint;
   final Color accentColor;
   final void Function(String?) onChanged;
 
-  const _Dropdown({
+  const Dropdown({
+    super.key,
     required this.value,
     required this.items,
     required this.hint,
@@ -2082,10 +961,10 @@ class _Dropdown extends StatelessWidget {
 
 // ─── TEXT AREA ────────────────────────────────────────────────────────────────
 
-class _TextArea extends StatelessWidget {
+class TextArea extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
-  const _TextArea({required this.controller, required this.hint});
+  const TextArea({super.key, required this.controller, required this.hint});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -2114,13 +993,14 @@ class _TextArea extends StatelessWidget {
 
 // ─── ACKNOWLEDGEMENT ROW ──────────────────────────────────────────────────────
 
-class _AckRow extends StatelessWidget {
+class AckRow extends StatelessWidget {
   final bool checked;
   final String text;
   final Color color;
   final void Function(bool) onChanged;
 
-  const _AckRow({
+  const AckRow({
+    super.key,
     required this.checked,
     required this.text,
     required this.color,
@@ -2142,14 +1022,14 @@ class _AckRow extends StatelessWidget {
             height: 18,
             margin: const EdgeInsets.only(top: 1.5),
             decoration: BoxDecoration(
-              color: checked ? color.withOpacity(0.16) : Colors.transparent,
+              color: checked ? color : Colors.transparent,
               borderRadius: BorderRadius.circular(4),
               border: Border.all(
                 color: checked ? color : AppColors.border,
                 width: 1.5,
               ),
             ),
-            child: checked ? Icon(Icons.check, size: 12, color: color) : null,
+            child: checked ? Icon(Icons.check, size: 14, color: AppColors.text) : null,
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -2170,13 +1050,14 @@ class _AckRow extends StatelessWidget {
 
 // ─── RADIO ────────────────────────────────────────────────────────────────────
 
-class _Radio extends StatelessWidget {
+class Radio extends StatelessWidget {
   final String label;
   final bool selected;
   final Color color;
   final VoidCallback onTap;
 
-  const _Radio({
+  const Radio({
+    super.key,
     required this.label,
     required this.selected,
     required this.color,
@@ -2292,7 +1173,7 @@ class _StepLine extends StatelessWidget {
 
 // ─── DIALOG FOOTER ────────────────────────────────────────────────────────────
 
-class _DlgFooter extends StatelessWidget {
+class DlgFooter extends StatelessWidget {
   final String cancelLabel;
   final String proceedLabel;
   final Color proceedColor;
@@ -2300,7 +1181,8 @@ class _DlgFooter extends StatelessWidget {
   final VoidCallback onCancel;
   final VoidCallback onProceed;
 
-  const _DlgFooter({
+  const DlgFooter({
+    super.key,
     required this.cancelLabel,
     required this.proceedLabel,
     required this.proceedColor,
@@ -2333,94 +1215,3 @@ class _DlgFooter extends StatelessWidget {
     ],
   );
 }
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  SMALL UTILITY WIDGETS
-// ═════════════════════════════════════════════════════════════════════════════
-
-
-
-// ─── TOOLBAR ICON BUTTON ──────────────────────────────────────────────────────
-
-class _ToolbarIconBtn extends StatefulWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-  const _ToolbarIconBtn({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
-
-  @override
-  State<_ToolbarIconBtn> createState() => _ToolbarIconBtnState();
-}
-
-class _ToolbarIconBtnState extends State<_ToolbarIconBtn> {
-  bool _h = false;
-  @override
-  Widget build(BuildContext context) => Tooltip(
-    message: widget.tooltip,
-    child: MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _h = true),
-      onExit: (_) => setState(() => _h = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: _h ? AppColors.surfaceHover : Colors.transparent,
-            borderRadius: BorderRadius.circular(7),
-            border: Border.all(
-              color: _h ? AppColors.border : Colors.transparent,
-            ),
-          ),
-          child: Icon(widget.icon, size: 17, color: AppColors.textMuted),
-        ),
-      ),
-    ),
-  );
-}
-
-// ─── COLUMN HEADER ────────────────────────────────────────────────────────────
-
-class _ColHead extends StatelessWidget {
-  final String label;
-  final int flex;
-  const _ColHead(this.label, {this.flex = 1});
-
-  @override
-  Widget build(BuildContext context) => Expanded(
-    flex: flex,
-    child: Text(
-      label,
-      style: AppTextStyles.bodyTiny.copyWith(
-        fontSize: 9,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 1.1,
-        color: AppColors.white,
-      ),
-    ),
-  );
-}
-
-// ─── LABEL ────────────────────────────────────────────────────────────────────
-
-// class Label extends StatelessWidget {
-//   final String text;
-//   const Label(this.text);
-
-//   @override
-//   Widget build(BuildContext context) => Text(
-//     text,
-//     style: AppTextStyles.bodyTiny.copyWith(
-//       fontSize: 10,
-//       fontWeight: FontWeight.w700,
-//       letterSpacing: 0.4,
-//       color: AppColors.textMuted,
-//     ),
-//   );
-// }

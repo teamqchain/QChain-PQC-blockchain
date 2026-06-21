@@ -3,6 +3,7 @@ import 'package:qportal_webapp/models/dashboard_Model.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/routes/webApp_shell.dart';
+import 'package:qportal_webapp/utils/dateFormatter.dart';
 import 'package:qportal_webapp/view/responsive_layout.dart';
 import 'package:qportal_webapp/widgets/dashboard_widgets.dart';
 
@@ -1158,7 +1159,7 @@ class _AuditRowState extends State<_AuditRow> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    widget.entry.timestamp,
+                    DateFormatter.formatIsoDateAndTime(widget.entry.timestamp),
                     style: AppTextStyles.bodyTiny.copyWith(
                       fontSize: 10,
                       color: AppColors.textDim,

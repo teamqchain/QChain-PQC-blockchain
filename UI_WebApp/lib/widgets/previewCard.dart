@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/models/holder_model.dart';
+import 'package:qportal_webapp/models/ISSUER/schema_model.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
+import 'package:qportal_webapp/utils/dateFormatter.dart';
 
 class CredentialPreviewCard extends StatelessWidget {
   final SchemaRecord schema;
@@ -20,24 +22,6 @@ class CredentialPreviewCard extends StatelessWidget {
     required this.orgName,
     required this.issuerName,
   });
-
-  String _fmt(DateTime d) {
-    const m = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${d.day.toString().padLeft(2, '0')} ${m[d.month - 1]} ${d.year}';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -191,7 +175,7 @@ class CredentialPreviewCard extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          _fmt(DateTime.now()),
+                          DateFormatter.formatIsoDate(DateTime.now().toIso8601String()),
                           style: const TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
@@ -216,7 +200,7 @@ class CredentialPreviewCard extends StatelessWidget {
                           noExpiry
                               ? 'No Expiry'
                               : expiryDate != null
-                              ? _fmt(expiryDate!)
+                              ? DateFormatter.formatIsoDate(expiryDate! as String?)
                               : '—',
                           style: const TextStyle(
                             fontSize: 10,

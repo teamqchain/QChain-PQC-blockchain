@@ -1,43 +1,30 @@
-// view/issuing/issue_single_credential_page.dart
-//
-// Issue Single Credential — 5-step wizard
-//
-// Layout contract:
-//   • The outer widget fills its parent (AppShell content area) via Column.
-//   • The stepper strip, step label, and bottom buttons are FIXED in position.
-//   • Only the main card (Expanded) changes per step.
-//   • No outer SingleChildScrollView — only inner lists/forms scroll.
-//
-// Integration:
-//   case RouteName.issueSingle:
-//     return IssueSingleCredentialPage(
-//       onCancel:       () => onNavigate(RouteName.dashboard),
-//       onIssueAnother: () => onNavigate(RouteName.issueSingle),
-//     );
-
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/components/connection_error.dart';
 import 'package:qportal_webapp/components/filterButton.dart';
-import 'package:qportal_webapp/components/issuer/holderList.dart';
-import 'package:qportal_webapp/components/issuer/previewCard.dart';
-import 'package:qportal_webapp/components/issuer/schemeType.dart';
+import 'package:qportal_webapp/components/tableHeader.dart';
+import 'package:qportal_webapp/services/holder_api.dart';
+import 'package:qportal_webapp/services/issuer_api.dart';
+import 'package:qportal_webapp/utils/currentUser.dart';
+import 'package:qportal_webapp/utils/dateFormatter.dart';
+import 'package:qportal_webapp/tables/holder_table.dart';
+import 'package:qportal_webapp/widgets/previewCard.dart';
+import 'package:qportal_webapp/widgets/schemeType.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
 import 'package:qportal_webapp/components/stepper.dart';
-import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/models/ISSUER/credentials_model.dart';
+import 'package:qportal_webapp/models/holder_model.dart';
+import 'package:qportal_webapp/models/ISSUER/schema_model.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/view/responsive_layout.dart';
 import 'package:qportal_webapp/components/countChip.dart';
-import 'package:qportal_webapp/widgets/datePicker.dart';
+import 'package:qportal_webapp/components/datePicker.dart';
 import 'package:qportal_webapp/components/appButton.dart';
 import 'dart:convert';
-import 'package:qportal_webapp/services/api_service.dart';
 
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
 const _kTotalSteps = 5;
-const _kOrgName = 'University of Sharjah';
-const _kIssuerName = 'Mohammed A.';
+
 
 const _kStepLabels = [
   'Select Credential Type',
@@ -47,8 +34,6 @@ const _kStepLabels = [
   'Confirm & Issue',
 ];
 
-// Per-schema dummy defaults used to pre-populate Step 3 fields.
-// Map key is fieldId, value is the default string to use.
 const _kSchemaDefaults = <String, Map<String, String>>{
   'SCH-001': {
     'f1': 'BSc Computer Science',
@@ -101,14 +86,11 @@ const _kSchemaDefaults = <String, Map<String, String>>{
   },
 };
 
-// ─── PAGE ─────────────────────────────────────────────────────────────────────
 
 class IssueSingleCredentialPage extends StatefulWidget {
   final VoidCallback onCancel;
   final VoidCallback onIssueAnother;
 
-  /// When non-null the wizard starts at Step 3 with schema, holder and
-  /// field values pre-populated from the existing credential.
   final CredentialRecord? reissueFrom;
 
   const IssueSingleCredentialPage({
@@ -128,27 +110,26 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
   bool _holdersLoading = false;
   bool _holdersError = false;
 
-  // ── navigation ─────────────────────────────────────────────────────────────
   int _step = 1;
 
-  // ── step 1 ─────────────────────────────────────────────────────────────────
+  // step 1
   SchemaRecord? _selectedSchema;
   bool _step1Error = false;
 
-  // ── step 2 ─────────────────────────────────────────────────────────────────
+  // step 2
   HolderRecord? _selectedHolder;
   String _holderSearch = '';
   bool _step2Error = false;
   final _searchCtrl = TextEditingController();
 
-  // ── step 3 ─────────────────────────────────────────────────────────────────
+  // step 3
   final Map<String, String> _fieldValues = {};
   final Map<String, TextEditingController> _fieldCtrl = {};
   DateTime? _expiryDate;
   bool _noExpiry = true;
   bool _step3Error = false;
 
-  // ── step 5 ─────────────────────────────────────────────────────────────────
+  // step 5
   bool _confirmed = false;
   bool _isIssuing = false;
   bool _issued = false;
@@ -163,10 +144,14 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
     if (cred != null) _bootstrapReissue(cred);
   }
 
-  /// Pre-populate schema, holder and field values from an existing credential
-  /// so the wizard opens directly at Step 3.
+
+  // This method attempts to pre-fill the issuing form based on an existing credential record (for re-issuing).
+  // It tries to match the credential's type and holder to existing schemas and holders in the system,
+  // and then seeds the form fields with the credential's attributes.
+  // This allows for a smoother re-issuing experience,
+  // as the issuer doesn't have to start from scratch when re-issuing a credential.
+
   void _bootstrapReissue(CredentialRecord cred) {
-    // 1 — Match schema by name (exact first, then contains)
     final schemas = _activeSchemas;
     _selectedSchema = schemas.cast<SchemaRecord?>().firstWhere(
       (s) => s!.name == cred.credentialType,
@@ -178,21 +163,17 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
       ),
     );
 
-    // 2 — Match holder by ID (fallback to name)
-    // In _bootstrapReissue, replace the IssuingMockData.holders lookup with:
     _selectedHolder = HolderRecord(
       id: cred.holderId,
       fullName: cred.holderName,
       email: cred.holderEmail,
       emiratesID: cred.holderEmiratesID,
-      type: HolderType.bachelorStudent, // fallback
+      type: HolderType.bachelorStudent, 
       college: '',
     );
 
-    // 3 — Init field controllers from schema + credential attributes
     if (_selectedSchema != null) {
       _initFields(_selectedSchema!);
-      // Overwrite with values from the credential's attributes map
       for (final f in _selectedSchema!.fields) {
         final attrVal = cred.attributes[f.label];
         if (attrVal != null) {
@@ -202,22 +183,18 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
       }
     }
 
-    // 4 — Map expiry
     if (cred.expiryDate != null && cred.expiryDate!.isNotEmpty) {
       _noExpiry = false;
-      // Keep the default parsed date; the text is informational
     } else {
       _noExpiry = true;
     }
 
-    // 5 — Jump to Step 3 (only if schema was resolved; otherwise start at Step 1)
     if (_selectedSchema != null) _step = 3;
   }
 
-  // ─── helpers ─────────────────────────────────────────────────────────────
 
   List<SchemaRecord> get _activeSchemas =>
-      IssuingMockData.schemas.where((s) => s.isActive).toList();
+      SchemaMockData.schemas.where((s) => s.isActive).toList();
 
   List<HolderRecord> get _filteredHolders {
     final q = _holderSearch.toLowerCase().trim();
@@ -234,8 +211,6 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
         .toList();
   }
 
-  /// Dispose old field controllers and create fresh ones seeded with
-  /// schema-specific dummy defaults.
   void _initFields(SchemaRecord schema) {
     for (final c in _fieldCtrl.values) {
       c.dispose();
@@ -255,9 +230,6 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
         ctrl.addListener(() => _fieldValues[f.id] = ctrl.text);
         _fieldCtrl[f.id] = ctrl;
       } else {
-        // Dropdown / Yes-No / Date fields must start empty — otherwise
-        // dependent logic (Degree Title needing College picked first)
-        // gets fooled into thinking the user already made a choice.
         _fieldValues[f.id] = '';
       }
     }
@@ -274,11 +246,9 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
   }
 
   List<String> _getFilteredDropdownOptions(SchemaField f) {
-    final schemaMap = IssuingMockData.degreesByCollege[_selectedSchema!.id];
+    final schemaMap = SchemaMockData.degreesByCollege[_selectedSchema!.id];
 
     if (f.label == 'College') {
-      // If this schema has a College→Degree mapping, the dropdown's options
-      // ARE the map's keys — no separate list to maintain or fall out of sync.
       if (schemaMap != null) return schemaMap.keys.toList();
       return f.dropdownOptions;
     }
@@ -296,8 +266,6 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
 
       return schemaMap?[collegeValue] ?? [];
     }
-
-    // All other dropdowns (Grade, Specialty, Track, etc.) are unaffected.
     return f.dropdownOptions;
   }
 
@@ -317,35 +285,31 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
       _issuingStatus = 'Signing credential with Dilithium...';
     });
 
-    // 1. Build the attributes map
     final infoMap = <String, String>{};
     for (final f in _selectedSchema!.fields) {
       infoMap[f.label] = _fieldValues[f.id] ?? '';
     }
     if (!_noExpiry && _expiryDate != null) {
-      infoMap['expiryDate'] = _fmt(_expiryDate!);
+      infoMap['expiryDate'] = DateFormatter.formatIsoDate(_expiryDate! as String?);
     }
 
-    // 2. Dynamically determine the Credential Type
-    // Start with the default schema name (e.g., "Medical License")
+
     String dynamicCredentialType = _selectedSchema!.name;
 
-    // Check for specific title fields based on your schema configurations
     final titleKeys = [
-      'Degree Title', // Bachelors, Masters
-      'Programme Name', // Diploma
-      'Programme Title', // Higher Training Certificate
-      'Fellowship Title', // Research Fellowship
+      'Degree Title', 
+      'Programme Name', 
+      'Programme Title', 
+      'Fellowship Title', 
     ];
 
     for (final key in titleKeys) {
       if (infoMap.containsKey(key) && infoMap[key]!.trim().isNotEmpty) {
         dynamicCredentialType = infoMap[key]!.trim();
-        break; // Stop looking once we find the first match
+        break; 
       }
     }
 
-    // Special handling for PhD which combines "PhD" + "Research Field" in your mock data
     if (_selectedSchema!.id == 'SCH-003' &&
         infoMap.containsKey('Research Field')) {
       dynamicCredentialType = 'PhD ${infoMap['Research Field']}'.trim();
@@ -353,10 +317,9 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
 
     setState(() => _issuingStatus = 'Submitting to blockchain...');
 
-    // 3. Send the API Request with the dynamic type
-    final result = await ApiService.issueCredential(
+    final result = await IssuerApi.issueCredential(
       holderEmiratesID: emiratesID,
-      credentialType: dynamicCredentialType, // <--- Use the dynamic type here
+      credentialType: dynamicCredentialType, 
       info: jsonEncode(infoMap),
     );
 
@@ -386,11 +349,10 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
           _step1Error = false;
           _step = 2;
         });
-        _loadHolders(); // ← ADD HERE, so holders load the moment Step 2 is shown
+        _loadHolders(); 
         break;
 
       case 2:
-        // if (_step == 2) _loadHolders();
         if (_selectedHolder == null) {
           setState(() => _step2Error = true);
           return;
@@ -415,7 +377,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
         break;
       case 5:
         if (_confirmed) {
-          setState(() => _issueError = ''); // ADD
+          setState(() => _issueError = ''); 
           _startIssuing();
         }
         break;
@@ -433,7 +395,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
       _holdersError = false;
     });
     try {
-      final data = await ApiService.getHolders();
+      final data = await HolderApi.getHolders();
       if (!mounted) return;
       setState(() {
         _holders = data;
@@ -468,7 +430,6 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
           ),
           const SizedBox(height: 18),
 
-          // ── Reusable step strip ────────────────────────────────────────────
           IssuerStepStrip(
             currentStep: _step,
             stepLabels: _kStepLabels,
@@ -503,9 +464,6 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
     );
   }
 
-  // ─── STEP STRIP ──────────────────────────────────────────────────────────
-
-  // ─── STEP ROUTER ─────────────────────────────────────────────────────────
 
   Widget _buildStepContent() {
     switch (_step) {
@@ -580,7 +538,8 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Left 50 % — schema list (scrollable) ───────────────────────
+
+          // left side
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -615,10 +574,9 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
             ),
           ),
 
-          // Vertical divider
           Container(width: 1, color: AppColors.border),
 
-          // ── Right 50 % — preview (scrollable) ──────────────────────────
+          // right side
           Expanded(
             child: _selectedSchema == null
                 ? Center(
@@ -842,7 +800,6 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
     return _card(
       child: Column(
         children: [
-          // ── Toolbar header (filter + search in one row) ─────────────────
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: const BoxDecoration(
@@ -869,24 +826,23 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
               ],
             ),
           ),
-          // ── Column headers ────────────────────────────────────────────────
           Container(
             color: AppColors.issuingAccent.withOpacity(0.16),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
             child: Row(
               children: [
                 const SizedBox(width: 40),
-                _colHeader('NAME', flex: 3),
-                _colHeader('TYPE', flex: 2),
-                _colHeader('COLLEGE', flex: 3),
-                _colHeader('EID', flex: 2),
+                ColHead('NAME', flex: 3),
+                ColHead('TYPE', flex: 2),
+                ColHead('COLLEGE', flex: 3),
+                ColHead('EID', flex: 2),
                 const SizedBox(width: 80),
               ],
             ),
           ),
           Container(height: 1, color: AppColors.border),
 
-          // ── Scrollable list ───────────────────────────────────────────────
+
           Expanded(
             child: holders.isEmpty
                 ? const Center(
@@ -907,7 +863,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                         _step2Error = false;
                         if (_selectedHolder?.emiratesID ==
                             holders[i].emiratesID) {
-                          _selectedHolder = null; // toggle off
+                          _selectedHolder = null; 
                         } else {
                           _selectedHolder = holders[i];
                         }
@@ -916,7 +872,6 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                   ),
           ),
 
-          // ── Selected banner ───────────────────────────────────────────────
           if (_selectedHolder != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -950,19 +905,6 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
     );
   }
 
-  Widget _colHeader(String text, {int flex = 1}) => Expanded(
-    flex: flex,
-    child: Text(
-      text,
-      style: AppTextStyles.bodyTiny.copyWith(
-        fontSize: 9,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 1.1,
-        color: AppColors.white,
-      ),
-    ),
-  );
-
   // ══════════════════════════════════════════════════════════════════════════
   // STEP 3 — Fill Credential Details
   // ══════════════════════════════════════════════════════════════════════════
@@ -976,18 +918,15 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Holder mini-chip
             _holderChip(schema),
             const SizedBox(height: 20),
 
-            // Dynamic fields from schema
             ...schema.fields.map((f) => _buildField(f)),
 
             const SizedBox(height: 4),
             Container(height: 1, color: AppColors.border),
             const SizedBox(height: 14),
 
-            // Expiry date row
             _buildExpiryRow(),
           ],
         ),
@@ -1072,17 +1011,14 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                     ? currentValue
                     : null;
 
-                // 1. Check if this is the Degree Title AND it has no options yet
                 final isDisabled = f.label == 'Degree Title' && options.isEmpty;
 
                 return _StyledDropdown(
                   value: validValue,
-                  // 2. Change the hint text to guide the user
                   hint: isDisabled
                       ? 'Select College first...'
                       : 'Select ${f.label.toLowerCase()}',
                   options: options,
-                  // 3. Pass null to onChanged if disabled, otherwise pass the function
                   onChanged: isDisabled
                       ? null
                       : (v) => setState(() {
@@ -1106,7 +1042,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                   ? null
                   : _fieldValues[f.id],
               onPick: (picked) => setState(() {
-                _fieldValues[f.id] = _fmt(picked);
+                _fieldValues[f.id] = DateFormatter.formatIsoDate(picked as String?);
                 _step3Error = false;
               }),
             ),
@@ -1128,7 +1064,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
               DatePickerButton(
                 value: _noExpiry
                     ? 'No expiry set'
-                    : (_expiryDate != null ? _fmt(_expiryDate!) : null),
+                    : (_expiryDate != null ? DateFormatter.formatIsoDate(_expiryDate! as String?) : null),
                 disabled: _noExpiry,
                 hint: 'Select expiry date',
                 onPick: (picked) => setState(() {
@@ -1178,8 +1114,8 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
               fieldValues: Map.from(_fieldValues),
               expiryDate: _noExpiry ? null : _expiryDate,
               noExpiry: _noExpiry,
-              orgName: _kOrgName,
-              issuerName: _kIssuerName,
+              orgName: kOrgName,
+              issuerName: kCurrentUser,
             ),
           ),
         ),
@@ -1239,11 +1175,11 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
               _noExpiry
                   ? 'No expiry'
                   : _expiryDate != null
-                  ? _fmt(_expiryDate!)
+                  ? DateFormatter.formatIsoDate(_expiryDate! as String?)
                   : '—',
             ),
-            _summaryRow('Issued By', _kIssuerName),
-            _summaryRow('Organization', _kOrgName),
+            _summaryRow('Issued By', kCurrentUser),
+            _summaryRow('Organization', kOrgName),
             _summaryRow('Signing Algorithm', 'Dilithium (CRYSTALS-Dilithium3)'),
             const SizedBox(height: 20),
             Container(height: 1, color: AppColors.border),
@@ -1274,7 +1210,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                   Expanded(
                     child: Text(
                       'I confirm this information is correct and I am authorized '
-                      'to issue this credential on behalf of $_kOrgName.',
+                      'to issue this credential on behalf of $kOrgName.',
                       style: AppTextStyles.bodyTiny.copyWith(
                         fontSize: 12,
                         color: AppColors.textMuted,
@@ -1381,7 +1317,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   AppButton(
-                    label: 'Return to Dashboard',
+                    label: 'See All Credentials',
                     onTap: widget.onCancel,
                     width: 190,
                     showBorder: true,
@@ -1403,7 +1339,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   AppButton(
-                    label: 'Return to Dashboard',
+                    label: 'See All Credentials',
                     onTap: widget.onCancel,
                     width: 164,
                     showBorder: true,
@@ -1438,7 +1374,6 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
     } else if (_step == 3 && _step3Error) {
       errorMsg = 'Please complete all required fields.';
     } else if (_step == 5 && _issueError.isNotEmpty) {
-      // ADD THIS CASE
       errorMsg = _issueError;
     }
 
@@ -1498,9 +1433,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
     );
   }
 
-  // ─── SHARED HELPERS ───────────────────────────────────────────────────────
-
-  /// Standard dark card that fills its parent via BoxConstraints.expand().
+  // Helper
   Widget _card({required Widget child}) {
     return Container(
       width: double.infinity,
@@ -1531,24 +1464,6 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
         ),
     ],
   );
-
-  String _fmt(DateTime d) {
-    const m = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${d.day.toString().padLeft(2, '0')} ${m[d.month - 1]} ${d.year}';
-  }
 
   @override
   void dispose() {
@@ -1602,7 +1517,7 @@ class _StyledDropdown extends StatelessWidget {
   final String? value;
   final String hint;
   final List<String> options;
-  final ValueChanged<String?>? onChanged; // <-- 1. Made this nullable
+  final ValueChanged<String?>? onChanged; 
 
   const _StyledDropdown({
     required this.value,
@@ -1613,7 +1528,7 @@ class _StyledDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool isDisabled = onChanged == null; // <-- Check if disabled
+    final bool isDisabled = onChanged == null; 
 
     return DropdownButtonFormField<String>(
       initialValue: value,
@@ -1641,7 +1556,6 @@ class _StyledDropdown extends StatelessWidget {
           vertical: 10,
         ),
         filled: true,
-        // Make the background darker when disabled
         fillColor: isDisabled
             ? AppColors.surfaceHover.withOpacity(0.4)
             : AppColors.surfaceHover,
@@ -1649,7 +1563,6 @@ class _StyledDropdown extends StatelessWidget {
           borderRadius: BorderRadius.circular(7),
           borderSide: const BorderSide(color: AppColors.border),
         ),
-        // Add disabled border
         disabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(7),
           borderSide: BorderSide(color: AppColors.border.withOpacity(0.3)),
@@ -1659,7 +1572,6 @@ class _StyledDropdown extends StatelessWidget {
           borderSide: BorderSide(color: AppColors.issuingAccent, width: 1.5),
         ),
       ),
-      // 2. If disabled, pass null to items to fully lock the Flutter widget
       items: isDisabled || options.isEmpty
           ? null
           : options
@@ -1717,5 +1629,3 @@ class _YesNoToggle extends StatelessWidget {
     }).toList(),
   );
 }
-
-// ═════════════════════════════════════════════════════════════════════════════

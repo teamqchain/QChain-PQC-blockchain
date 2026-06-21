@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/models/dashboard_Model.dart';
-import 'package:qportal_webapp/services/api_service.dart';
+import 'package:qportal_webapp/services/core_api.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/routes/webApp_shell.dart';
@@ -138,7 +138,7 @@ class _AppSidebarState extends State<AppSidebar> {
   }
 
   Future<void> _checkHealth() async {
-    final isHealthy = await ApiService.checkHealth();
+    final isHealthy = await ApiCore.checkHealth();
     if (mounted) {
       setState(() {
         _connStatus = isHealthy

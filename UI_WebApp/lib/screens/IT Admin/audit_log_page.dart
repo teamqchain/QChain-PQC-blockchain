@@ -1,66 +1,13 @@
-// screens/audit_log_page.dart
-
 import 'package:flutter/material.dart';
-import 'package:qportal_webapp/components/filterButton.dart';
-import 'package:qportal_webapp/services/api_service.dart';
-import 'package:qportal_webapp/components/searchBar.dart';
-import 'package:qportal_webapp/components/connection_error.dart';
+import 'package:qportal_webapp/components/statusBadge.dart';
+import 'package:qportal_webapp/dialog/export_dialog.dart';
+import 'package:qportal_webapp/models/IT_ADMIN/audit_model.dart';
+import 'package:qportal_webapp/services/admin_api.dart';
+import 'package:qportal_webapp/tables/auditLog_table.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
-import 'package:qportal_webapp/components/countChip.dart';
-import 'package:qportal_webapp/widgets/paginationBar.dart';
-import 'package:qportal_webapp/widgets/statusBadge.dart';
-
-// ─── ACTION EXTENSION (Maps API Enums to UI Colors) ─────────────────────────
-
-extension LiveAuditActionX on LiveAuditAction {
-  String get label {
-    switch (this) {
-      case LiveAuditAction.issued:
-        return 'Issued';
-      case LiveAuditAction.revoked:
-        return 'Revoked';
-      case LiveAuditAction.suspended:
-        return 'Suspended';
-      case LiveAuditAction.verified:
-        return 'Verified';
-      case LiveAuditAction.policy:
-        return 'Policy Change';
-      case LiveAuditAction.system:
-        return 'System Config';
-      case LiveAuditAction.restore: 
-        return 'Restored';
-      case LiveAuditAction.management:
-        return 'Management';
-      case LiveAuditAction.error:
-        return 'Error';
-    }
-  }
-
-  Color get colour {
-    switch (this) {
-      case LiveAuditAction.issued:
-        return AppColors.issuingAccent;
-      case LiveAuditAction.revoked:
-        return AppColors.revoked;
-      case LiveAuditAction.suspended:
-        return AppColors.suspended;
-      case LiveAuditAction.verified:
-        return AppColors.verifyingAccent;
-      case LiveAuditAction.policy:
-        return const Color(0xFFF97316);
-      case LiveAuditAction.system:
-        return AppColors.adminAccent;
-      case LiveAuditAction.restore: 
-        return AppColors.expired;
-      case LiveAuditAction.management:
-        return AppColors.adminLight;
-      case LiveAuditAction.error:
-        return AppColors.revoked;
-    }
-  }
-}
+import 'package:qportal_webapp/components/paginationBar.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  PAGE
@@ -103,8 +50,7 @@ class _AuditLogPageState extends State<AuditLogPage> {
     });
 
     try {
-      // Fetch an initial large batch, similar to subscription page architecture.
-      final records = await ApiService.getAuditLogs(limit: 500);
+      final records = await AdminApi.getAuditLogs(limit: 500);
       if (mounted) {
         setState(() {
           _allRows = records;
@@ -117,7 +63,7 @@ class _AuditLogPageState extends State<AuditLogPage> {
         setState(() {
           _isLoading = false;
           _allRows = [];
-          _errorMessage = 'error'; // triggers the connection error state
+          _errorMessage = 'error';
         });
       }
     }
@@ -152,13 +98,20 @@ class _AuditLogPageState extends State<AuditLogPage> {
     if (_rowsPerPage <= 0 || _filtered.isEmpty) return 1;
     return (_filtered.length / _rowsPerPage).ceil().clamp(1, 99999);
   }
-// ── export dialog ─────────────────────────────────────────────────────────
+
+  // ── EXPORT DIALOG ─────────────────────────────────────────────────────────
   void _onExport() {
-    showDialog(context: context, builder: (_) => const _ExportDialog());
+    showDialog(
+      context: context,
+      builder: (_) => const ExportDialog(
+        title: 'Export Audit Log',
+        subtitle: 'Select a format to download the log.',
+        accentColor: AppColors.adminAccent,
+      ),
+    );
   }
 
-  // ── build ─────────────────────────────────────────────────────────────────
-
+  // ── BUILD ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -177,65 +130,40 @@ class _AuditLogPageState extends State<AuditLogPage> {
                 ),
               ),
               const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.adminAccent.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: AppColors.adminAccent.withOpacity(0.25),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.lock_outline_rounded,
-                      size: 11,
-                      color: AppColors.adminLight,
-                    ),
-                    const SizedBox(width: 5),
-                    const Text(
-                      'Append-only · Read-only',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.adminLight,
-                      ),
-                    ),
-                  ],
-                ),
+              StatusBadge(
+                fg: AppColors.adminAccent,
+                label: "Append-only · Read-only",
+                iconPresent: true,
+                icon: Icons.lock_outline_rounded,
               ),
             ],
           ),
           const SizedBox(height: 18),
-
-          // ── Main container ───────────────────────────────────────────────
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border),
-              ),
-              clipBehavior: Clip.hardEdge,
-              child: Column(
-                children: [
-                  _buildToolbar(),
-                  Container(height: 1, color: AppColors.border),
-                  _buildHeader(),
-                  Container(height: 1, color: AppColors.border),
-                  Expanded(child: _buildList()),
-                ],
-              ),
+            child: AuditLogTable(
+              isLoading: _isLoading,
+              errorMessage: _errorMessage,
+              onRetry: _fetchData,
+              rows: _pageRows,
+              totalFiltered: _filtered.length,
+              search: _query,
+              searchCtrl: _searchCtrl,
+              onSearchChanged: (v) => setState(() {
+                _query = v;
+                _currentPage = 1;
+                _applyFilter();
+              }),
+              onClearSearch: () {
+                _searchCtrl.clear();
+                setState(() {
+                  _query = '';
+                  _currentPage = 1;
+                  _applyFilter();
+                });
+              },
             ),
           ),
           const SizedBox(height: 14),
-
-          // ── Pagination ───────────────────────────────────────────────────
           PaginationBar(
             currentPage: _currentPage,
             totalPages: _totalPages,
@@ -247,7 +175,7 @@ class _AuditLogPageState extends State<AuditLogPage> {
               _currentPage = 1;
               _applyFilter();
             }),
-              accentColor: AppColors.adminAccent,
+            accentColor: AppColors.adminAccent,
           ),
           const SizedBox(height: 14),
 
@@ -278,621 +206,9 @@ class _AuditLogPageState extends State<AuditLogPage> {
     );
   }
 
-  // ── TOOLBAR ───────────────────────────────────────────────────────────────
-
-  Widget _buildToolbar() {
-    return Container(
-      color: const Color(0xFF161616),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-      child: Row(
-        children: [
-            // Count chip
-          CountChip(
-            count: _filtered.length,
-            label: 'entry',
-            pluralLabel: 'entries',
-            backgroundColor: AppColors.adminAccent.withOpacity(0.10),
-            borderColor: AppColors.adminAccent.withOpacity(0.25),
-            textColor: AppColors.adminLight,
-          ),
-          const Spacer(),
-
-          // Filter
-          ToolbarIconBtn(
-            icon: Icons.filter_list_rounded,
-            tooltip: 'Filter',
-            onTap: () {},
-          ),
-          const SizedBox(width: 8),
-
-          // Search bar
-          QSearchBar(
-            controller: _searchCtrl,
-            query: _query,
-            onChanged: (v) => setState(() {
-              _query = v;
-              _currentPage = 1;
-              _applyFilter();
-            }),
-            onClear: () {
-              _searchCtrl.clear();
-              setState(() {
-                _query = '';
-                _currentPage = 1;
-                _applyFilter();
-              });
-            },
-            barWidth: 280,
-            searchLabel: 'Search ID, actions, details, staff…',
-            activeColor: AppColors.adminAccent,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Container(
-      color: AppColors.adminAccent.withOpacity(0.16),
-      padding: const EdgeInsets.symmetric(vertical: 9),
-      child: Row(
-        children: [
-          const SizedBox(width: 12),
-          _th('LOG ID', flex: 2),
-          _th('ACTION', flex: 2),
-          _th('DETAILS', flex: 6),
-          _th('PERFORMED BY', flex: 3),
-          _th('IP ADDRESS', flex: 2),
-          _th('TIMESTAMP', flex: 3),
-        ],
-      ),
-    );
-  }
-
-  Widget _th(String label, {required int flex}) => Expanded(
-    flex: flex,
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Text(
-        label,
-        style: AppTextStyles.bodyTiny.copyWith(
-          fontSize: 9,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.1,
-          color: AppColors.white,
-        ),
-      ),
-    ),
-  );
-
-  Widget _buildList() {
-    if (_errorMessage != null) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 80.0),
-        child: ConnectionErrorWidget(onRetry: _fetchData),
-      );
-    }
-
-    if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.adminAccent),
-      );
-    }
-
-    if (_filtered.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              _query.isEmpty
-                  ? Icons.history_outlined
-                  : Icons.search_off_rounded,
-              size: 36,
-              color: AppColors.textDim,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              _query.isEmpty
-                  ? 'No audit log entries found.'
-                  : 'No results for "$_query".',
-              style: AppTextStyles.bodyTiny.copyWith(
-                fontSize: 13,
-                color: AppColors.textDim,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      itemCount: _pageRows.length,
-      separatorBuilder: (_, __) =>
-          Container(height: 1, color: AppColors.border),
-      itemBuilder: (_, i) => _AuditRow(record: _pageRows[i]),
-    );
-  }
-
   @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
   }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  AUDIT ROW
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _AuditRow extends StatefulWidget {
-  final LiveAuditLogRecord record;
-  const _AuditRow({required this.record});
-
-  @override
-  State<_AuditRow> createState() => _AuditRowState();
-}
-
-class _AuditRowState extends State<_AuditRow> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final r = widget.record;
-    final colour = r.action.colour;
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        color: _hovered ? AppColors.surfaceHover : Colors.transparent,
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const SizedBox(width: 12),
-
-            // ── LOG ID
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  r.id,
-                  style: AppTextStyles.bodyTiny.copyWith(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.text,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-            ),
-
-            // ── ACTION
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: StatusBadge(label: r.action.label, fg: colour),
-              ),
-            ),
-
-            // ── DETAILS
-            Expanded(
-              flex: 6,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  r.details,
-                  style: AppTextStyles.bodyTiny.copyWith(
-                    fontSize: 11,
-                    color: AppColors.text,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-            ),
-
-            // ── PERFORMED BY
-            Expanded(
-              flex: 3,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      r.performedBy,
-                      style: AppTextStyles.bodyTiny.copyWith(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.text,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      r.performedByRole,
-                      style: AppTextStyles.bodyTiny.copyWith(
-                        fontSize: 9,
-                        color: AppColors.textDim,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // ── IP ADDRESS
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  r.ipAddress,
-                  style: AppTextStyles.bodyTiny.copyWith(
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                    color: AppColors.textMuted,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-            ),
-
-            // ── TIMESTAMP
-            Expanded(
-              flex: 3,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  r.timestamp,
-                  style: AppTextStyles.bodyTiny.copyWith(
-                    fontSize: 11,
-                    color: AppColors.textDim,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  EXPORT DIALOG & FORMAT CHIPS (Unchanged functionality)
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _ExportDialog extends StatefulWidget {
-  const _ExportDialog();
-
-  @override
-  State<_ExportDialog> createState() => _ExportDialogState();
-}
-
-class _ExportDialogState extends State<_ExportDialog> {
-  String _selected = 'XLSX';
-  static const _formats = ['XLSX', 'PDF', 'JSON'];
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 48),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 400),
-        decoration: BoxDecoration(
-          color: const Color(0xFF141414),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.55),
-              blurRadius: 40,
-              offset: const Offset(0, 14),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ── Header ───────────────────────────────────────────────────
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: AppColors.border)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.adminAccent.withOpacity(0.14),
-                      border: Border.all(
-                        color: AppColors.adminAccent.withOpacity(0.4),
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.download_rounded,
-                      size: 17,
-                      color: AppColors.adminLight,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Export Audit Log',
-                        style: AppTextStyles.navLabelActive.copyWith(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      Text(
-                        'Select a format to download the log.',
-                        style: AppTextStyles.bodyTiny.copyWith(
-                          fontSize: 11,
-                          color: AppColors.textDim,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Format options ────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: _formats
-                    .map(
-                      (fmt) => _FormatOption(
-                        label: fmt,
-                        selected: _selected == fmt,
-                        icon: _fmtIcon(fmt),
-                        subtitle: _fmtSubtitle(fmt),
-                        onTap: () => setState(() => _selected = fmt),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ),
-
-            // ── Buttons ───────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: AppButton(
-                      label: 'Cancel',
-                      showBorder: true,
-                      borderColor: AppColors.border,
-                      hoverColor: AppColors.surfaceHover,
-                      onTap: () => Navigator.pop(context),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: AppButton(
-                      icon: Icons.download_rounded,
-                      label: 'Export as $_selected',
-                      backgroundColor: AppColors.adminAccent,
-                      hoverColor: AppColors.adminAccent.withOpacity(0.82),
-                      onTap: () {
-                        Navigator.pop(context);
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  IconData _fmtIcon(String fmt) {
-    switch (fmt) {
-      case 'PDF':
-        return Icons.picture_as_pdf_outlined;
-      case 'JSON':
-        return Icons.data_object_rounded;
-      default:
-        return Icons.table_chart_outlined;
-    }
-  }
-
-  String _fmtSubtitle(String fmt) {
-    switch (fmt) {
-      case 'PDF':
-        return 'Formatted report — ideal for printing';
-      case 'JSON':
-        return 'Machine-readable — ideal for integrations';
-      default:
-        return 'Spreadsheet — ideal for analysis';
-    }
-  }
-}
-
-// ─── FORMAT OPTION ROW ────────────────────────────────────────────────────────
-
-class _FormatOption extends StatefulWidget {
-  final String label;
-  final String subtitle;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _FormatOption({
-    required this.label,
-    required this.subtitle,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  State<_FormatOption> createState() => _FormatOptionState();
-}
-
-class _FormatOptionState extends State<_FormatOption> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: widget.selected
-                ? AppColors.adminAccent.withOpacity(0.08)
-                : _hovered
-                ? AppColors.surfaceHover
-                : AppColors.surface,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: widget.selected
-                  ? AppColors.adminAccent.withOpacity(0.4)
-                  : AppColors.border,
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                widget.icon,
-                size: 18,
-                color: widget.selected
-                    ? AppColors.adminLight
-                    : AppColors.textMuted,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.label,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: widget.selected
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                        color: widget.selected
-                            ? AppColors.text
-                            : AppColors.textMuted,
-                      ),
-                    ),
-                    Text(
-                      widget.subtitle,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: AppColors.textDim,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 140),
-                width: 18,
-                height: 18,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: widget.selected
-                      ? AppColors.adminAccent
-                      : Colors.transparent,
-                  border: Border.all(
-                    color: widget.selected
-                        ? AppColors.adminAccent
-                        : AppColors.textMuted,
-                    width: 1.5,
-                  ),
-                ),
-                child: widget.selected
-                    ? const Icon(
-                        Icons.check_rounded,
-                        size: 11,
-                        color: Colors.white,
-                      )
-                    : null,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-
-// ─── TOOLBAR ICON BUTTON ──────────────────────────────────────────────────────
-
-class _ToolbarIconBtn extends StatefulWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-  const _ToolbarIconBtn({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
-  @override
-  State<_ToolbarIconBtn> createState() => _ToolbarIconBtnState();
-}
-
-class _ToolbarIconBtnState extends State<_ToolbarIconBtn> {
-  bool _h = false;
-  @override
-  Widget build(BuildContext context) => Tooltip(
-    message: widget.tooltip,
-    child: MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _h = true),
-      onExit: (_) => setState(() => _h = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: _h ? AppColors.surfaceHover : Colors.transparent,
-            borderRadius: BorderRadius.circular(7),
-            border: Border.all(
-              color: _h ? AppColors.border : Colors.transparent,
-            ),
-          ),
-          child: Icon(widget.icon, size: 17, color: AppColors.textMuted),
-        ),
-      ),
-    ),
-  );
 }

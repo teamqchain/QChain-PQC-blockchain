@@ -1,7 +1,8 @@
-// widgets/verifier/add_new_subscription_dialog.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:qportal_webapp/services/api_service.dart';
+import 'package:qportal_webapp/components/toast.dart';
+import 'package:qportal_webapp/services/issuer_api.dart';
+import 'package:qportal_webapp/services/subscription_api.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
@@ -48,7 +49,7 @@ class _AddNewSubscriptionDialogState extends State<AddNewSubscriptionDialog> {
     });
 
     try {
-      final cred = await ApiService.getCredentialDetail(id);
+      final cred = await IssuerApi.getCredentialDetail(id);
 
       if (!mounted) return;
       setState(() => _isLoading = false);
@@ -311,7 +312,7 @@ class _ConfirmDialogState extends State<_ConfirmDialog> {
     });
 
     try {
-      final success = await ApiService.requestSubscription(widget.credentialID);
+      final success = await SubscriptionApi.requestSubscription(widget.credentialID);
       setState(() => _isSending = false);
 
       if (success) {
@@ -320,7 +321,7 @@ class _ConfirmDialogState extends State<_ConfirmDialog> {
         _showToast(widget.overlayContext);
       } else {
         setState(
-          () => _errorText = 'An unexpected error occurred. Please try again.',
+          () => _errorText = 'Error 400: Unable to send request. Please try again.',
         );
       }
     } catch (e) {
@@ -390,7 +391,7 @@ class _ConfirmDialogState extends State<_ConfirmDialog> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -408,6 +409,7 @@ class _ConfirmDialogState extends State<_ConfirmDialog> {
                           style: const TextStyle(
                             fontWeight: FontWeight.w700,
                             color: AppColors.verifyingLight,
+                            letterSpacing: 0.3
                           ),
                         ),
                         const TextSpan(text: ' of '),
@@ -416,6 +418,7 @@ class _ConfirmDialogState extends State<_ConfirmDialog> {
                           style: const TextStyle(
                             fontWeight: FontWeight.w700,
                             color: AppColors.text,
+                            letterSpacing: 0.3
                           ),
                         ),
                         const TextSpan(text: ' will be sent.'),
@@ -447,7 +450,7 @@ class _ConfirmDialogState extends State<_ConfirmDialog> {
                             'The subscription becomes Active once the holder accepts.',
                             style: TextStyle(
                               fontSize: 11,
-                              color: AppColors.textDim,
+                              color: AppColors.textMuted,
                               height: 1.5,
                             ),
                           ),
@@ -503,118 +506,19 @@ class _ConfirmDialogState extends State<_ConfirmDialog> {
   }
 }
 
-// ... existing Toast code remains unchanged ...
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  TOAST
-// ═════════════════════════════════════════════════════════════════════════════
-
 void _showToast(BuildContext context) {
   OverlayEntry? entry;
   entry = OverlayEntry(
-    builder: (_) => _RequestSentToast(
-      onDismiss: () {
+    builder: (_) => Toast(
+      message: "Request Sent",
+      toastIcons: Icons.check_circle_outline_rounded,
+      onDone: () {
         entry?.remove();
         entry = null;
       },
+      bgColor: AppColors.valid,
+      iconColor: AppColors.text,
     ),
   );
   Overlay.of(context).insert(entry!);
-}
-
-class _RequestSentToast extends StatefulWidget {
-  final VoidCallback onDismiss;
-  const _RequestSentToast({required this.onDismiss});
-
-  @override
-  State<_RequestSentToast> createState() => _RequestSentToastState();
-}
-
-class _RequestSentToastState extends State<_RequestSentToast>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _opacity;
-  late Animation<Offset> _slide;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 320),
-    );
-    _opacity = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
-    _slide = Tween<Offset>(
-      begin: const Offset(0, -0.4),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
-
-    _ctrl.forward();
-
-    Future.delayed(const Duration(milliseconds: 3000), () {
-      if (mounted) {
-        _ctrl.reverse().then((_) => widget.onDismiss());
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) => Positioned(
-    top: 24,
-    left: 0,
-    right: 0,
-    child: Center(
-      child: FadeTransition(
-        opacity: _opacity,
-        child: SlideTransition(
-          position: _slide,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A2A1A),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: AppColors.verifyingAccent.withOpacity(0.45),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.45),
-                    blurRadius: 20,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.check_circle_outline_rounded,
-                    size: 18,
-                    color: AppColors.verifyingAccent,
-                  ),
-                  const SizedBox(width: 10),
-                  const Text(
-                    'Request sent.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.verifyingLight,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
 }

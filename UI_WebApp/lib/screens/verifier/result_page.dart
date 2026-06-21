@@ -1,25 +1,9 @@
-// screens/verifier/verification_result_page.dart
-//
-// Verification Result — shown after a QR code is successfully read by the
-// hardware scanner.  Displays a processing spinner first, then the result
-// certificate card.
-//
-// ── Integration in app_shell.dart ───────────────────────────────────────────
-//   import 'package:qportal_webapp/screens/verifier/verification_result_page.dart';
-//   import 'package:qportal_webapp/models/verifying_models.dart';
-//
-//   // Pass the VerificationResult obtained from the scanner/blockchain layer.
-//   // For development, use one of VerifyingMockData.valid() / .revoked() etc.
-//
-//   case RouteName.verificationResult:
-//     return VerificationResultPage(
-//       result:         VerifyingMockData.valid(),   // swap mock as needed
-//       onVerifyAnother: () => _handleNavigate(RouteName.scanQR),
-//     );
-
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:qportal_webapp/models/verifiying_models.dart';
+import 'package:qportal_webapp/components/toast.dart';
+import 'package:qportal_webapp/models/VERIFIER/policy_model.dart';
+import 'package:qportal_webapp/models/VERIFIER/verificationResult_model.dart';
+import 'package:qportal_webapp/models/VERIFIER/verifyResult_enum.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
@@ -63,11 +47,15 @@ class _VerificationResultPageState extends State<VerificationResultPage> {
   void _saveReceipt() {
     _toastEntry?.remove();
     _toastEntry = OverlayEntry(
-      builder: (_) => _ReceiptToast(
-        onDismiss: () {
+      builder: (_) => Toast(
+        message: 'Receipt saved to OneDrive',
+        onDone: () {
           _toastEntry?.remove();
           _toastEntry = null;
         },
+        bgColor: AppColors.valid,
+        iconColor: AppColors.text,
+        toastIcons: Icons.cloud_done_outlined,
       ),
     );
     Overlay.of(context).insert(_toastEntry!);
@@ -276,11 +264,7 @@ class _StatusHeader extends StatelessWidget {
             color: accent.withOpacity(0.18),
             border: Border.all(color: accent.withOpacity(0.5)),
           ),
-          child: Icon(
-            verifyResult.headerIcon,
-            size: 18,
-            color: accent,
-          ),
+          child: Icon(verifyResult.headerIcon, size: 18, color: accent),
         ),
         const SizedBox(width: 12),
         Text(
@@ -488,107 +472,7 @@ class _InvalidBody extends StatelessWidget {
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  RECEIPT TOAST
-// ═════════════════════════════════════════════════════════════════════════════
 
-class _ReceiptToast extends StatefulWidget {
-  final VoidCallback onDismiss;
-  const _ReceiptToast({required this.onDismiss});
-
-  @override
-  State<_ReceiptToast> createState() => _ReceiptToastState();
-}
-
-class _ReceiptToastState extends State<_ReceiptToast>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _opacity;
-  late Animation<Offset> _slide;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 320),
-    );
-    _opacity = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
-    _slide = Tween<Offset>(
-      begin: const Offset(0, -0.4),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
-
-    _ctrl.forward();
-
-    // Auto-dismiss after 3 seconds.
-    Future.delayed(const Duration(milliseconds: 3000), () {
-      if (mounted) {
-        _ctrl.reverse().then((_) => widget.onDismiss());
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) => Positioned(
-    top: 24,
-    left: 0,
-    right: 0,
-    child: Center(
-      child: FadeTransition(
-        opacity: _opacity,
-        child: SlideTransition(
-          position: _slide,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A2A1A),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: AppColors.verifyingAccent.withOpacity(0.45),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.45),
-                    blurRadius: 20,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.cloud_done_outlined,
-                    size: 18,
-                    color: AppColors.verifyingAccent,
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Receipt saved to OneDrive',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.verifyingLight,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-}
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  SHARED SMALL WIDGETS

@@ -2,11 +2,12 @@
 
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:qportal_webapp/models/VERIFIER/verificationResult_model.dart';
+import 'package:qportal_webapp/services/verifier_api.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
-import 'package:qportal_webapp/services/api_service.dart';
-import 'package:qportal_webapp/models/verifiying_models.dart';
+import 'package:qportal_webapp/utils/logger.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  SCAN STATE
@@ -93,14 +94,14 @@ class _ScanToValidatePageState extends State<ScanToValidatePage>
 
       try {
         // 3. Hit the backend
-        final result = await ApiService.resolveSession(code);
+        final result = await VerifierApi.resolveSession(code);
 
         // 4. Pass the result up to the shell
         if (mounted) {
           widget.onScanSuccess?.call(result);
         }
       } catch (e) {
-        debugPrint("QR Resolution Error: $e");
+        logDebug("QR Resolution Error: $e");
         if (mounted) {
           setState(() {
             _state = _ScanState.failed;

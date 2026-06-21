@@ -1,25 +1,18 @@
-// screens/verifier/verification_detail_page.dart
-//
-// Verification Details — shows the full verification result for a record
-// selected from the Verification History page.
-//
-// ── Integration ──────────────────────────────────────────────────────────────
-//   case RouteName.verificationDetails:
-//     return VerificationDetailPage(
-//       recordId: _selectedVerificationHistoryId ?? '',
-//       onBack: () => _handleNavigate(RouteName.verificationHistory),
-//     );
-
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/dialog/export_dialog.dart';
+import 'package:qportal_webapp/models/ISSUER/credentials_model.dart';
 import 'package:qportal_webapp/components/connection_error.dart';
-import 'package:qportal_webapp/models/verifiying_models.dart';
-import 'package:qportal_webapp/services/api_service.dart';
+import 'package:qportal_webapp/models/VERIFIER/verificationDetail_model.dart';
+import 'package:qportal_webapp/models/VERIFIER/verificationHistory_model.dart';
+import 'package:qportal_webapp/models/VERIFIER/verificationResult_model.dart';
+import 'package:qportal_webapp/models/VERIFIER/verifyResult_enum.dart';
+import 'package:qportal_webapp/services/verifier_api.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
-import 'package:qportal_webapp/utils/logger.dart';
+import 'package:qportal_webapp/utils/dateFormatter.dart';
+
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  PAGE
@@ -52,7 +45,7 @@ class _VerificationDetailPageState extends State<VerificationDetailPage> {
 
   Future<void> _loadData() async {
     try {
-      final detail = await ApiService.getVerificationDetail(widget.recordId);
+      final detail = await VerifierApi.getVerificationDetail(widget.recordId);
       if (!mounted) return;
       setState(() {
         _loading = false;
@@ -247,7 +240,15 @@ class _VerificationDetailPageState extends State<VerificationDetailPage> {
   void _showExportDialog() {
     showDialog(
       context: context,
-      builder: (_) => _ExportDialog(isValid: _data!.result.isValid),
+      builder: (_) => const ExportDialog(
+        title: 'Export Verification Record',
+        subtitle: 'Choose a format to export this record.',
+        accentColor: AppColors.verifyingAccent,
+        formats: [
+          'PDF',
+          'JSON',
+        ], // Example: Excludes XLSX for this specific page
+      ),
     );
   }
 }
@@ -366,7 +367,7 @@ class _VerificationMetaSection extends StatelessWidget {
           _DataColumn(label: 'Verification ID', value: record.id),
           _DataColumn(
             label: 'Timestamp',
-            value: '${record.date}, ${record.time}',
+            value: DateFormatter.formatIsoDateAndTime(record.verifiedAt),
           ),
           _DataColumn(label: 'Mode / Method', value: record.method.label),
           _DataColumn(
@@ -648,266 +649,3 @@ Widget _divider() => Container(
   color: AppColors.border.withOpacity(0.5),
   margin: const EdgeInsets.symmetric(vertical: 4),
 );
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  EXPORT DIALOG
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _ExportDialog extends StatefulWidget {
-  final bool isValid;
-  const _ExportDialog({required this.isValid});
-
-  @override
-  State<_ExportDialog> createState() => _ExportDialogState();
-}
-
-class _ExportDialogState extends State<_ExportDialog> {
-  String _format = 'PDF';
-
-  static const _kFormats = [
-    (
-      value: 'PDF',
-      icon: Icons.picture_as_pdf_outlined,
-      description: 'Formal compliance report',
-      color: AppColors.verifyingAccent,
-    ),
-    (
-      value: 'JSON',
-      icon: Icons.code_rounded,
-      description: 'Developer integration & API use',
-      color: AppColors.verifyingAccent,
-    ),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 48),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 400),
-        decoration: BoxDecoration(
-          color: const Color(0xFF141414),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.55),
-              blurRadius: 40,
-              offset: const Offset(0, 14),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ── Header ───────────────────────────────────────────────────
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: AppColors.border)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.verifyingAccent.withOpacity(0.14),
-                      border: Border.all(
-                        color: AppColors.verifyingAccent.withOpacity(0.4),
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.download_rounded,
-                      size: 17,
-                      color: AppColors.verifyingAccent,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Export Verification Record',
-                          style: AppTextStyles.navLabelActive.copyWith(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        Text(
-                          'Choose a format to export this record.',
-                          style: AppTextStyles.bodyTiny.copyWith(
-                            fontSize: 11,
-                            color: AppColors.textDim,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Format options ────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'SELECT FORMAT',
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.1,
-                      color: AppColors.textDim,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  ..._kFormats.map(
-                    (f) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _FormatOption(
-                        value: f.value,
-                        icon: f.icon,
-                        description: f.description,
-                        color: f.color,
-                        selected: _format == f.value,
-                        onTap: () => setState(() => _format = f.value),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Buttons ───────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: AppButton(
-                      label: 'Cancel',
-                      showBorder: true,
-                      borderColor: AppColors.border,
-                      hoverColor: AppColors.surfaceHover,
-                      onTap: () => Navigator.pop(context),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: AppButton(
-                      icon: Icons.download_rounded,
-                      label: 'Export as $_format',
-                      backgroundColor: AppColors.verifyingAccent,
-                      hoverColor: AppColors.verifyingAccent.withOpacity(0.82),
-                      onTap: () => Navigator.pop(context),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─── FORMAT OPTION ROW ────────────────────────────────────────────────────────
-
-class _FormatOption extends StatefulWidget {
-  final String value;
-  final IconData icon;
-  final String description;
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _FormatOption({
-    required this.value,
-    required this.icon,
-    required this.description,
-    required this.color,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  State<_FormatOption> createState() => _FormatOptionState();
-}
-
-class _FormatOptionState extends State<_FormatOption> {
-  bool _h = false;
-
-  @override
-  Widget build(BuildContext context) => MouseRegion(
-    cursor: SystemMouseCursors.click,
-    onEnter: (_) => setState(() => _h = true),
-    onExit: (_) => setState(() => _h = false),
-    child: GestureDetector(
-      onTap: widget.onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: widget.selected
-              ? widget.color.withOpacity(0.09)
-              : _h
-              ? AppColors.surfaceHover
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: widget.selected
-                ? widget.color.withOpacity(0.4)
-                : AppColors.border,
-            width: widget.selected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: widget.color.withOpacity(widget.selected ? 0.15 : 0.08),
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: Icon(widget.icon, size: 17, color: widget.color),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.value,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: widget.selected ? widget.color : AppColors.text,
-                    ),
-                  ),
-                  Text(
-                    widget.description,
-                    style: AppTextStyles.bodyTiny.copyWith(
-                      fontSize: 11,
-                      color: AppColors.textDim,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (widget.selected)
-              Icon(Icons.check_circle_rounded, size: 18, color: widget.color),
-          ],
-        ),
-      ),
-    ),
-  );
-}

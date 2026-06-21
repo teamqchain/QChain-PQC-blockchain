@@ -1,33 +1,13 @@
-// screens/verifier/manual_verify_page.dart
-//
-// Manual Verify — three modes: Credential ID, OTP, Upload Document.
-//
-// ── Integration in app_shell.dart ───────────────────────────────────────────
-//   import 'package:qportal_webapp/screens/verifier/manual_verify_page.dart';
-//   import 'package:qportal_webapp/models/verifying_models.dart';
-//
-//   case RouteName.manualVerify:
-//     return ManualVerifyPage(
-//       onBack: () => _handleNavigate(RouteName.dashboard),
-//       onVerify: (result) {
-//         _selectedVerificationResult = result;
-//         _handleNavigate(RouteName.verificationResult);
-//       },
-//     );
-//
-//   // Add _selectedVerificationResult to _AppShellState and pass it into
-//   // VerificationResultPage just as _selectedCredentialId is used for credentials.
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qportal_webapp/components/connection_error.dart';
 import 'package:qportal_webapp/components/label.dart';
-import 'package:qportal_webapp/models/verifiying_models.dart';
+import 'package:qportal_webapp/models/VERIFIER/verificationResult_model.dart';
+import 'package:qportal_webapp/services/verifier_api.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
-import 'package:qportal_webapp/services/api_service.dart';
 
 // ─── VERIFICATION MODE ────────────────────────────────────────────────────────
 
@@ -66,8 +46,7 @@ extension _VerifyModeX on _VerifyMode {
 class ManualVerifyPage extends StatefulWidget {
   final VoidCallback onBack;
 
-  /// Called with a [VerificationResult] when the verifier presses Verify.
-  /// The caller should navigate to VerificationResultPage passing this result.
+
   final void Function(VerificationResult result) onVerify;
 
   /// Called when the user taps "Manage Policies".
@@ -132,7 +111,7 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
           _hasConnectionError = false;
         });
         try {
-          final result = await ApiService.verifyCredential(credID);
+          final result = await VerifierApi.verifyCredential(credID);
           if (!mounted) return;
           setState(() => _verifying = false);
           widget.onVerify(result);
@@ -175,7 +154,7 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
         // 3. API Call
         try {
           // Prepend OTP- so the backend finds the session
-          final result = await ApiService.resolveSession('OTP-$otpCode');
+          final result = await VerifierApi.resolveSession('OTP-$otpCode');
 
           if (!mounted) return;
           setState(() => _verifying = false);
