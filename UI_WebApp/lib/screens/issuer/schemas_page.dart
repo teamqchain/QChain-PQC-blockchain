@@ -12,7 +12,7 @@
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
-import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/models/ISSUER/schema_model.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
@@ -48,7 +48,7 @@ class _SchemasPageState extends State<SchemasPage> {
   @override
   void initState() {
     super.initState();
-    _schemas = List<SchemaRecord>.from(IssuingMockData.schemas);
+    _schemas = List<SchemaRecord>.from(SchemaMockData.schemas);
     _applyFilter();
   }
 

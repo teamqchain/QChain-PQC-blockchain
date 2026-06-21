@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+
 class StatusBadge extends StatelessWidget {
   // final SubStatus status;
   final Color fg;
   final String label;
-  const StatusBadge({required this.fg, required this.label});
+  final bool iconPresent;
+  final IconData? icon;
+  const StatusBadge({super.key, required this.fg, required this.label, required this.iconPresent, this.icon});
 
   @override
   Widget build(BuildContext context) {
@@ -18,11 +21,19 @@ class StatusBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: fg),
-          ),
+          if (!iconPresent)...[
+            Container(
+              width: 5,
+              height: 5,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: fg),
+            ),
+          ]else...[
+            Icon(
+              icon,
+              size: 12,
+              color: fg,
+            ),
+          ],
           const SizedBox(width: 5),
           Text(
             label,

@@ -23,7 +23,7 @@ import 'package:flutter/material.dart';
 import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
 import 'package:qportal_webapp/components/stepper.dart';
-import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/models/ISSUER/batchRow_model.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
@@ -278,7 +278,7 @@ class _BatchVerifyPageState extends State<BatchVerifyPage> {
   }
 
   void _loadDummyRows() {
-    _rows = List<BatchRow>.from(IssuingMockData.batchPreview);
+    _rows = List<BatchRow>.from(BatchMockData.batchPreview);
     _rowSelected = List.filled(_rows.length, false);
     _selectAll = false;
   }

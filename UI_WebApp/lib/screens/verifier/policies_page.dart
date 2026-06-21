@@ -20,12 +20,12 @@
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
-import 'package:qportal_webapp/models/verifiying_models.dart';
+import 'package:qportal_webapp/models/VERIFIER/policy_model.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
-import 'package:qportal_webapp/widgets/paginationBar.dart';
-import 'package:qportal_webapp/widgets/statusBadge.dart';
+import 'package:qportal_webapp/components/paginationBar.dart';
+import 'package:qportal_webapp/components/statusBadge.dart';
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  PAGE
@@ -579,7 +579,7 @@ class _PolicyRowState extends State<_PolicyRow> {
               ),
 
               // Status badge
-              SizedBox(width: 120, child: StatusBadge(fg: r.status.fg, label: r.status.label)),
+              SizedBox(width: 120, child: StatusBadge(fg: r.status.fg, label: r.status.label, iconPresent: false,)),
             ],
           ),
         ),

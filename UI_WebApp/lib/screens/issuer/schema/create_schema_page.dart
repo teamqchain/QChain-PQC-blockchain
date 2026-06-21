@@ -30,7 +30,7 @@
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/components/label.dart';
 import 'package:qportal_webapp/components/stepper.dart';
-import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/models/ISSUER/schema_model.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';

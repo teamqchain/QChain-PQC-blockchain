@@ -15,9 +15,9 @@
 //             _handleNavigate(RouteName.schemaDetail, arg: id),
 //       );
 //     case RouteName.schemaDetail:
-//       final schema = IssuingMockData.schemas.firstWhere(
+//       final schema = SchemaMockData.schemas.firstWhere(
 //         (s) => s.id == (_selectedCredentialId ?? ''),
-//         orElse: () => IssuingMockData.schemas.first,
+//         orElse: () => SchemaMockData.schemas.first,
 //       );
 //       return SchemaDetailPage(
 //         schema: schema,
@@ -25,7 +25,7 @@
 //       );
 
 import 'package:flutter/material.dart';
-import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/models/ISSUER/schema_model.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';

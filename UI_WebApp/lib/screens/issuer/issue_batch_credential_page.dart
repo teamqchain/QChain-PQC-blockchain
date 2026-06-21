@@ -16,11 +16,12 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:qportal_webapp/components/issuer/schemeType.dart';
+import 'package:qportal_webapp/widgets/schemeType.dart';
 import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
 import 'package:qportal_webapp/components/stepper.dart';
-import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/models/ISSUER/batchRow_model.dart';
+import 'package:qportal_webapp/models/ISSUER/schema_model.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
@@ -101,7 +102,7 @@ class _IssueBatchCredentialPageState extends State<IssueBatchCredentialPage> {
   // ─── helpers ─────────────────────────────────────────────────────────────
 
   List<SchemaRecord> get _activeSchemas =>
-      IssuingMockData.schemas.where((s) => s.isActive).toList();
+      SchemaMockData.schemas.where((s) => s.isActive).toList();
 
   int get _validCount =>
       _rows.where((r) => r.state == BatchRowState.valid).length;
@@ -130,7 +131,7 @@ class _IssueBatchCredentialPageState extends State<IssueBatchCredentialPage> {
   }
 
   void _loadDummyRows() {
-    _rows = List<BatchRow>.from(IssuingMockData.batchPreview);
+    _rows = List<BatchRow>.from(BatchMockData.batchPreview);
     _rowSelected = List.filled(_rows.length, false);
     _selectAll = false;
   }

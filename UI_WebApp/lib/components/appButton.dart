@@ -118,6 +118,8 @@ class AppButton extends StatefulWidget {
   /// Leave `null` for no tooltip.
   final String? tooltip;
 
+  final bool active;
+
   const AppButton({
     super.key,
     // required
@@ -153,6 +155,8 @@ class AppButton extends StatefulWidget {
     // behaviour
     this.enabled = true,
     this.tooltip,
+
+    this.active = false,
   });
 
   @override
@@ -171,7 +175,8 @@ class _AppButtonState extends State<AppButton> {
     // Background
     final Color bg;
     if (!isEnabled) {
-      bg = widget.disabledBackgroundColor ??
+      bg =
+          widget.disabledBackgroundColor ??
           widget.backgroundColor.withOpacity(0.35);
     } else if (_hovered && widget.hoverColor != null) {
       bg = widget.hoverColor!;
@@ -180,8 +185,9 @@ class _AppButtonState extends State<AppButton> {
     }
 
     // Text
-    final Color fg =
-        isEnabled ? widget.textColor : (widget.disabledTextColor ?? widget.textColor.withOpacity(0.7));
+    final Color fg = isEnabled
+        ? widget.textColor
+        : (widget.disabledTextColor ?? widget.textColor.withOpacity(0.7));
 
     // Icon (falls back to text colour)
     final Color ic = isEnabled
@@ -191,8 +197,9 @@ class _AppButtonState extends State<AppButton> {
     // Border
     final Color? resolvedBorder = widget.showBorder
         ? (isEnabled
-            ? widget.borderColor
-            : (widget.disabledBorderColor ?? widget.borderColor.withOpacity(0.4)))
+              ? widget.borderColor
+              : (widget.disabledBorderColor ??
+                    widget.borderColor.withOpacity(0.4)))
         : null;
 
     // ── content (label ± icon) ───────────────────────────────────────────
@@ -205,7 +212,7 @@ class _AppButtonState extends State<AppButton> {
 
     Widget content;
     if (widget.icon != null) {
-      if(widget.iconRight == true) {
+      if (widget.iconRight == true) {
         content = Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -231,8 +238,7 @@ class _AppButtonState extends State<AppButton> {
     // ── container ────────────────────────────────────────────────────────
 
     Widget btn = MouseRegion(
-      cursor:
-          isEnabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      cursor: isEnabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(

@@ -25,7 +25,7 @@
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/components/filterButton.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
-import 'package:qportal_webapp/models/verifiying_models.dart';
+import 'package:qportal_webapp/models/VERIFIER/policy_model.dart';
 import 'package:qportal_webapp/screens/verifier/policies_page.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';

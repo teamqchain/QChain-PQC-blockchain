@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:qportal_webapp/components/sidebar.dart';
 import 'package:qportal_webapp/components/topbar.dart';
+import 'package:qportal_webapp/models/ISSUER/credentials_model.dart';
+import 'package:qportal_webapp/models/VERIFIER/policy_model.dart';
+import 'package:qportal_webapp/models/VERIFIER/verificationResult_model.dart';
 import 'package:qportal_webapp/models/dashboard_Model.dart';
-import 'package:qportal_webapp/models/issuing_models.dart';
-import 'package:qportal_webapp/models/verifiying_models.dart';
+import 'package:qportal_webapp/models/ISSUER/schema_model.dart';
 import 'package:qportal_webapp/screens/IT%20Admin/audit_log_page.dart';
 import 'package:qportal_webapp/screens/issuer/all_credentials_page.dart';
 import 'package:qportal_webapp/screens/issuer/schema/create_schema_page.dart';
@@ -291,25 +293,16 @@ class _AppShellState extends State<_AppShell> {
   }
 
   Widget _buildPage() {
-    //TODO
-    // All unimplemented routes fall through to dashboard.
-    // The sidebar highlight still works because _activeRoute drives it — the
-    // page content and the sidebar highlight are independent of each other.
     switch (_activeRoute) {
-      // Uncomment as you build each screen:
-      // case RouteName.issueSingle:
-      //   return const IssueSingleScreen();
-      // case RouteName.scanQR:
-      //   return const ScanQRScreen();
       case RouteName.issueSingle:
         return IssueSingleCredentialPage(
-          onCancel: () => _handleNavigate(RouteName.dashboard),
+          onCancel: () => _handleNavigate(RouteName.allCredentials),
           onIssueAnother: () => _handleNavigate(RouteName.issueSingle),
           reissueFrom: _reissueCredential,
         );
       case RouteName.issueBatch:
         return IssueBatchCredentialPage(
-          onCancel: () => _handleNavigate(RouteName.dashboard),
+          onCancel: () => _handleNavigate(RouteName.allCredentials),
           onIssueAnotherBatch: () => _handleNavigate(RouteName.issueBatch),
         );
       case RouteName.allCredentials:
@@ -360,9 +353,9 @@ class _AppShellState extends State<_AppShell> {
         );
 
       case RouteName.schemaDetail:
-        final schema = IssuingMockData.schemas.firstWhere(
+        final schema = SchemaMockData.schemas.firstWhere(
           (s) => s.id == (_selectedCredentialId ?? ''),
-          orElse: () => IssuingMockData.schemas.first,
+          orElse: () => SchemaMockData.schemas.first,
         );
         return SchemaDetailPage(
           schema: schema,
@@ -375,17 +368,6 @@ class _AppShellState extends State<_AppShell> {
           onReturnToDash: () => _handleNavigate(RouteName.dashboard),
           onAddNewSchema: () => _handleNavigate(RouteName.createSchema),
         );
-
-      // case RouteName.issuingSettings:
-      //   return IssuerSettingsPage(
-      //     onManageProfile: () => _handleNavigate(RouteName.manageProfile),
-      //     onStaffAndPermissions: () =>
-      //         _handleNavigate(RouteName.staffAndPermissions),
-      //     onCryptoSettings: () => _handleNavigate(RouteName.cryptoSettings),
-      //     onRequestCapabilities: () =>
-      //         _handleNavigate(RouteName.requestCapabilities),
-      //   );
-
       // ******************************************************************************************
 
       case RouteName.scanQR:
@@ -415,7 +397,7 @@ class _AppShellState extends State<_AppShell> {
         return ManualVerifyPage(
           onBack: () => _handleNavigate(RouteName.dashboard),
           onVerify: (result) {
-            _selectedVerificationResult = result;
+            _selectedVerificationResult = result as VerificationResult?;
             _verificationResultReturnRoute = RouteName.manualVerify;
             _handleNavigate(RouteName.verificationResult);
           },

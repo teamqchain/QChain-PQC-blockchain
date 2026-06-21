@@ -16,8 +16,8 @@
 //   import from there too, removing the duplicate private classes it defines.
 
 import 'package:flutter/material.dart';
-import 'package:qportal_webapp/components/verifier/policy_shared_widget.dart';
-import 'package:qportal_webapp/models/issuing_models.dart';
+import 'package:qportal_webapp/widgets/policy_shared_widget.dart';
+import 'package:qportal_webapp/models/ISSUER/schema_model.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
 import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
@@ -53,7 +53,7 @@ class _CreatePolicyPageState extends State<CreatePolicyPage> {
   List<String> _specificSchemas = [];
 
   // ── schema names from existing mock data ─────────────────────────────────
-  final List<String> _schemaNames = IssuingMockData.schemas
+  final List<String> _schemaNames = SchemaMockData.schemas
       .map((s) => s.name)
       .toList();
 

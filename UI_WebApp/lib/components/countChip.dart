@@ -39,7 +39,7 @@ class CountChip extends StatelessWidget {
         ),
       ),
       child: Text(
-        '$count $_displayLabel',
+        (zeroLabel == "All acknowledged") ? zeroLabel! : '$count $_displayLabel',
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
