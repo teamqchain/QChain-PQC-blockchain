@@ -55,6 +55,14 @@ var (
 	issuerPubKeyHex  string
 	issuerOrgID      string
 
+	// Track B (Phase 2) — org-level ML-KEM-768 key pair for OFF-CHAIN credential
+	// data encryption (IPFS + MySQL credential_data). Assigned in main() from
+	// ORG_KEM_PUBLIC_KEY_HEX / ORG_KEM_PRIVATE_KEY_HEX. If unset, off-chain
+	// encryption is disabled and the server stores plaintext exactly as before
+	// (safe-by-default). This key does NOT touch the blockchain in any way.
+	orgKemPubHex  string
+	orgKemPrivHex string
+
 	// orgConfig maps an org short-name ("general"/"government") to its Fabric peer
 	// endpoint and MSP ID. `struct { ... }` here is an anonymous struct type — the
 	// map's value type is defined inline because it is only used here.

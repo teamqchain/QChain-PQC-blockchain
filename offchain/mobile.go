@@ -40,8 +40,14 @@ func handleMobileGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) 
 		if c.ExpiryDate.Valid {
 			expiry = c.ExpiryDate.Time.Format(time.RFC3339)
 		}
+		// Track B: credential_data may be an encrypted envelope. Decrypt it
+		// server-side for display (falls through unchanged for legacy plaintext rows).
+		plainData, decErr := decryptCredentialData(c.CredentialData)
+		if decErr != nil {
+			plainData = "{}"
+		}
 		var attrs map[string]any
-		_ = json.Unmarshal([]byte(c.CredentialData), &attrs)
+		_ = json.Unmarshal([]byte(plainData), &attrs)
 		out = append(out, map[string]any{
 			"credentialID":   c.CredentialID,
 			"credentialType": c.CredentialType,

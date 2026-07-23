@@ -38,6 +38,18 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
+	// One-shot: generate an org ML-KEM key pair and exit. Container-friendly — no
+	// cmd/ needed in the image, no liboqs needed on the host. Needs neither the
+	// issuer keys nor the database, so it runs first.
+	//   docker run --rm -e GENERATE_ORG_KEM=1 qchain-api:latest
+	if os.Getenv("GENERATE_ORG_KEM") == "1" {
+		if n := resolveKEMName(); n != "" {
+			kemName = n
+		}
+		generateOrgKEM()
+		return
+	}
+
 	// Load org-level ML-DSA-44 key pair — must be set in .env; fatal if missing.
 	issuerPrivKeyHex = os.Getenv("ISSUER_PRIVATE_KEY_HEX")
 	issuerPubKeyHex = os.Getenv("ISSUER_PUBLIC_KEY_HEX")
@@ -47,8 +59,27 @@ func main() {
 		log.Fatal("ISSUER_PRIVATE_KEY_HEX and ISSUER_PUBLIC_KEY_HEX must be set — run offchain/cmd/keygen/main.go once to generate them")
 	}
 
+	// Track B — org-level ML-KEM key pair for OFF-CHAIN credential-data encryption.
+	// Optional: if unset, off-chain data is stored in plaintext exactly as before.
+	if n := resolveKEMName(); n != "" {
+		kemName = n
+	}
+	orgKemPubHex = os.Getenv("ORG_KEM_PUBLIC_KEY_HEX")
+	orgKemPrivHex = os.Getenv("ORG_KEM_PRIVATE_KEY_HEX")
+	if orgKemPubHex == "" {
+		log.Printf("WARNING: ORG_KEM_PUBLIC_KEY_HEX not set — off-chain credential data will be stored UNENCRYPTED (legacy mode). Run offchain/cmd/kemkeygen/main.go to enable Track B.")
+	}
+
 	// Connect to MySQL (non-fatal if not configured — warnings logged per request)
 	initDB()
+
+	// One-shot maintenance mode: encrypt any legacy plaintext credential_data rows
+	// in place, then exit. Run with RUN_BACKFILL_ENCRYPT=1 after setting the org KEM
+	// key. Does not touch the blockchain. See backfill.go.
+	if os.Getenv("RUN_BACKFILL_ENCRYPT") == "1" {
+		runBackfillEncrypt()
+		return
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /registerHolder", handleRegisterHolder)
@@ -105,6 +136,7 @@ func main() {
 	fmt.Printf("  Chaincode:     %s\n", chaincodeName)
 	fmt.Printf("  IPFS host:     %s\n", ipfsHost)
 	fmt.Printf("  PQC algo:      %s\n", sigName)
+	fmt.Printf("  KEM algo:      %s (off-chain encryption: %v)\n", kemName, orgKemPubHex != "")
 	fmt.Printf("  Issuer org:    %s / %s\n", issuerOrgName, issuerIdentity)
 	fmt.Printf("  Verifier org:  %s / %s\n", verifierOrgName, verifierIdentity)
 	fmt.Printf("  Issuer org ID: %s\n", issuerOrgID)
