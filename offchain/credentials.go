@@ -156,9 +156,25 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5. Upload JSON to IPFS (non-fatal if IPFS unavailable)
+	// 4b. Track B — encrypt the credential body for OFF-CHAIN storage only.
+	// The on-chain payload below (canonicalJSONStr + hash + signature) is left
+	// completely unchanged, so the chaincode and verification path are untouched
+	// and the ledger never has to be modified/restarted. `encBody` replaces the
+	// plaintext body in BOTH off-chain stores (IPFS and MySQL credential_data).
+	// If the org KEM key is unset, encBody == req.Info and behaviour is unchanged.
+	encBody, encErr := encryptCredentialData(credentialHash, req.Info)
+	if encErr != nil {
+		writeError(w, http.StatusInternalServerError, "off-chain encryption failed: "+encErr.Error())
+		return
+	}
+	encVersion := 0
+	if looksLikeEnvelope([]byte(encBody)) {
+		encVersion = 1
+	}
+
+	// 5. Upload the (encrypted) body to IPFS (non-fatal if IPFS unavailable).
 	var ipfsCID string
-	if cid, uploadErr := uploadJSONToIPFS([]byte(canonicalJSONStr)); uploadErr != nil {
+	if cid, uploadErr := uploadJSONToIPFS([]byte(encBody)); uploadErr != nil {
 		log.Printf("IPFS upload failed (proceeding without CID): %v", uploadErr)
 	} else {
 		ipfsCID = cid
@@ -223,7 +239,8 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		Signature:      signature,
 		PublicKey:      issuerPubKeyHex,
 		IPFSCID:        ipfsCID,
-		CredentialData: req.Info,
+		CredentialData: encBody,
+		EncVersion:     encVersion,
 		IssuedAt:       time.Now(),
 		ExpiryDate:     expiryDate,
 	}); dbErr != nil {
