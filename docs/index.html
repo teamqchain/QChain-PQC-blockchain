@@ -103,38 +103,69 @@
 
         /* --- THEME TOGGLE ANIMATION (SUN TO CRESCENT MOON) --- */
         /* This handles the smooth morphing animation of the SVG icon */
-        .theme-toggle { 
-            cursor: pointer; 
-            background: transparent; 
-            border: none; 
-            padding: 0; 
-            outline: none; 
+        /* --- THEME TOGGLE ANIMATION & STYLES --- */
+        .theme-toggle-btn {
+            background-color: var(--sunlit-clay);
+            color: var(--dark-coffee);
+            border: 2px solid var(--border-color);
+            border-radius: 6px;
+            box-shadow: 3px 3px 0px var(--box-shadow);
+            cursor: pointer;
+            padding: 0 1rem; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.1s ease;
         }
+
+        .theme-toggle-btn:active {
+            box-shadow: 0px 0px 0px var(--box-shadow);
+            transform: translate(3px, 3px);
+        }
+
+        /* Base state (Light Mode): Moon */
         .theme-toggle__inner-moon {
+            width: 20px;
+            height: 20px;
             transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
             transform-origin: center;
+            transform: rotate(-100deg); 
         }
-        .dark .theme-toggle__inner-moon { transform: rotate(-100deg); }
-        
+
+        /* Dark Mode: Sun */
+        .dark .theme-toggle__inner-moon { 
+            transform: rotate(0deg); 
+        }
+
         .theme-toggle__inner-moon .sun-rays {
             transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
             transform-origin: center;
+            transform: scale(0.2); 
+            opacity: 0; 
         }
-        .dark .theme-toggle__inner-moon .sun-rays { transform: scale(0.2); opacity: 0; }
-        
+
+        .dark .theme-toggle__inner-moon .sun-rays { 
+            transform: scale(1); 
+            opacity: 1; 
+        }
+
         .theme-toggle__inner-moon .sun-core {
             transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
             transform-origin: center;
+            transform: scale(1.3); 
         }
-        .dark .theme-toggle__inner-moon .sun-core { transform: scale(1.3); }
-        
-        /* This moves a black circle over the sun to create the "crescent" moon shape */
+
+        .dark .theme-toggle__inner-moon .sun-core { 
+            transform: scale(1); 
+        }
+
         .theme-toggle__inner-moon .moon-mask-circle {
             transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-            transform: translate(12px, -12px); /* Off-screen in light mode */
+            transform: translate(0, 0);
         }
+
         .dark .theme-toggle__inner-moon .moon-mask-circle {
-            transform: translate(0, 0); /* Moves into position in dark mode */
+            transform: translate(12px, -12px);
         }
     </style>
 </head>
