@@ -1,9 +1,14 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
+import 'package:qwallet_mobileapp/widgets/QOnboardScaffold.dart';
 
+/// Onboarding step 3 — key generation / wallet ready.
+///
+/// Hero is a hexagonal crystal lattice that assembles node-by-node (a metaphor
+/// for CRYSTALS-Dilithium). Outer ring only — centre is reserved for a solid
+/// badge (progress → green check) so the tick never collides with lattice dots.
+/// Pure-black canvas, no emoji, no rotating key.
 class Onboard3Screen extends StatefulWidget {
   const Onboard3Screen({super.key});
 
@@ -12,21 +17,28 @@ class Onboard3Screen extends StatefulWidget {
 }
 
 class _Onboard3ScreenState extends State<Onboard3Screen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
+    with TickerProviderStateMixin {
+  late AnimationController _latticeCtrl; // drives the assembly animation
+  late AnimationController _doneCtrl; // drives the green-lightup + check
   bool _done = false;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
+    _latticeCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 1),
+      duration: const Duration(milliseconds: 1800),
     )..repeat();
+
+    _doneCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
 
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
-        _ctrl.stop();
+        _latticeCtrl.stop();
+        _doneCtrl.forward();
         setState(() => _done = true);
       }
     });
@@ -34,177 +46,282 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _latticeCtrl.dispose();
+    _doneCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
-
-    return Scaffold(
-      backgroundColor: const Color(0xFF000000),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(28, 16, 28, 32),
-          child: Column(
-            // Text and top elements stay on the left
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Back
-              GestureDetector(
-                onTap: () => Get.back(),
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1A),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFF333333)),
-                  ),
-                  alignment: Alignment.center,
-                  child: const Icon(
-                    Icons.arrow_back_ios_new,
-                    color: Colors.white,
-                    size: 14,
-                  ),
-                ),
+    return QOnboardScaffold(
+      step: 3,
+      onBack: () => Get.back(),
+      onSkip: () => Get.offAllNamed(Routes.SHELL),
+      ctaLabel: _done ? 'Open my wallet' : 'Generating…',
+      ctaEnabled: _done,
+      onCta: () => Get.offAllNamed(Routes.SHELL),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 24),
+          Center(
+            child: SizedBox(
+              width: 200,
+              height: 200,
+              child: _Lattice(
+                latticeCtrl: _latticeCtrl,
+                doneCtrl: _doneCtrl,
+                done: _done,
               ),
-
-              const Spacer(),
-
-              // Spinner / Done — centred
-              Center(
-                child: SizedBox(
-                  width: 130,
-                  height: 130,
-                  child: _done ? _DoneCircle() : _SpinnerCircle(ctrl: _ctrl),
-                ),
-              ),
-
-              const SizedBox(height: 44),
-
-              // ── Fixed-height text block to prevent layout jump ──
-              SizedBox(
-                height: 150,
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 350),
-                  // crossFadeState keeps alignment stable
-                  layoutBuilder: (current, previous) => Stack(
-                    alignment: Alignment.topLeft,
-                    children: [...previous, if (current != null) current],
-                  ),
-                  child: _done
-                      ? const _TextBlock(
-                          key: ValueKey('done'),
-                          heading: 'Your wallet\nis ready',
-                          body:
-                              'Your quantum-resistant keypair is ready.\nAll credentials are encrypted on-device.',
-                        )
-                      : const _TextBlock(
-                          key: ValueKey('loading'),
-                          heading: 'Creating your\nsecure identity',
-                          body:
-                              'Generating your quantum-resistant keypair.\nThis stays on your device — no one else has it.',
-                        ),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // NIST badge
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 11,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF111111),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF222222)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.shield_outlined,
-                      color: Color(0xFF555555),
-                      size: 14,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'CRYSTALS-Dilithium (ML-DSA) · NIST FIPS 204',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.3),
-                        fontSize: 11,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const Spacer(),
-
-              // ── Dots centered ──
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
-                  _Dot(active: false),
-                  SizedBox(width: 6),
-                  _Dot(active: false),
-                  SizedBox(width: 6),
-                  _Dot(active: true),
-                ],
-              ),
-
-              const SizedBox(height: 24),
-
-              // ONLY the button gets centered and constrained
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 350),
-                  child: GestureDetector(
-                    onTap: _done ? () => Get.offAllNamed(Routes.SHELL) : null,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 17),
-                      decoration: BoxDecoration(
-                        color: _done ? Colors.white : const Color(0xFF2A2A2A),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      alignment: Alignment.center,
-                      child: AnimatedDefaultTextStyle(
-                        duration: const Duration(milliseconds: 300),
-                        style: TextStyle(
-                          color: _done
-                              ? const Color(0xFF000000)
-                              : const Color(0xFF555555),
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.3,
-                        ),
-                        child: const Text('Open My Wallet'),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(height: 36),
+          // Fixed-height text block to prevent layout jump during the switch.
+          SizedBox(
+            height: 150,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 350),
+              layoutBuilder: (current, previous) => Stack(
+                alignment: Alignment.topLeft,
+                children: [...previous, if (current != null) current],
+              ),
+              child: _done
+                  ? const _TextBlock(
+                      key: ValueKey('done'),
+                      heading: 'Your wallet\nis ready',
+                      body: 'Your quantum-resistant keypair is ready.\n'
+                          'All credentials are encrypted on-device.',
+                    )
+                  : const _TextBlock(
+                      key: ValueKey('loading'),
+                      heading: 'Creating your\nsecure identity',
+                      body: 'Generating your quantum-resistant keypair.\n'
+                          'This stays on your device — no one else has it.',
+                    ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const _NistBadge(),
+          const SizedBox(height: 16),
+        ],
       ),
     );
   }
 }
 
-// ─── TEXT BLOCK (fixed alignment) ────────────────────────────────────────────
+// ─── Crystal lattice ───────────────────────────────────────────────────────
+//
+// A hexagonal lattice of 7 nodes (centre + 6 around it) connected by edges.
+// During generation each node pops in sequence with a white glow; on completion
+// the whole structure flashes green and a check icon appears at the centre.
+
+class _Lattice extends StatelessWidget {
+  final AnimationController latticeCtrl;
+  final AnimationController doneCtrl;
+  final bool done;
+  const _Lattice({
+    required this.latticeCtrl,
+    required this.doneCtrl,
+    required this.done,
+  });
+
+  // 6 outer nodes on a hex ring (no centre node — that slot is reserved for
+  // the solid check badge so they never collide).
+  static const _nodes = <Offset>[
+    Offset(0.50, 0.10), // top
+    Offset(0.85, 0.30), // top-right
+    Offset(0.85, 0.70), // bottom-right
+    Offset(0.50, 0.90), // bottom
+    Offset(0.15, 0.70), // bottom-left
+    Offset(0.15, 0.30), // top-left
+  ];
+
+  // Ring edges only (no spokes into centre — leaves the middle clean).
+  static const _edges = <(int, int)>[
+    (0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([latticeCtrl, doneCtrl]),
+      builder: (_, __) {
+        final reveal = done ? 1.0 : latticeCtrl.value;
+        final doneProgress = doneCtrl.value;
+
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            // Lattice (outer ring only — centre is empty by design).
+            CustomPaint(
+              size: const Size(200, 200),
+              painter: _LatticePainter(
+                nodes: _nodes,
+                edges: _edges,
+                reveal: reveal,
+                doneProgress: doneProgress,
+              ),
+            ),
+            // Solid centre badge — dims during assembly, lights green on done.
+            // Opaque fill means the check is never covered by lattice nodes.
+            _CentreBadge(doneProgress: doneProgress),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _CentreBadge extends StatelessWidget {
+  final double doneProgress;
+  const _CentreBadge({required this.doneProgress});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDone = doneProgress > 0.01;
+    final borderColor = Color.lerp(
+      obBorderStrong,
+      obGood,
+      doneProgress,
+    )!;
+    final fillColor = Color.lerp(
+      obPanel,
+      const Color(0xFF0A1A10),
+      doneProgress,
+    )!;
+
+    return Container(
+      width: 64,
+      height: 64,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: fillColor,
+        border: Border.all(color: borderColor, width: 2),
+        boxShadow: isDone
+            ? [
+                BoxShadow(
+                  color: obGood.withValues(alpha: 0.35 * doneProgress),
+                  blurRadius: 22,
+                  spreadRadius: 2,
+                ),
+              ]
+            : null,
+      ),
+      alignment: Alignment.center,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 280),
+        child: isDone
+            ? Icon(
+                Icons.check_rounded,
+                key: const ValueKey('check'),
+                size: 30,
+                color: Color.lerp(
+                  obGood,
+                  Colors.white,
+                  doneProgress.clamp(0.0, 1.0),
+                ),
+              )
+            : const SizedBox(
+                key: ValueKey('spin'),
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: obTextDim,
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _LatticePainter extends CustomPainter {
+  final List<Offset> nodes;
+  final List<(int, int)> edges;
+  final double reveal;
+  final double doneProgress;
+
+  const _LatticePainter({
+    required this.nodes,
+    required this.edges,
+    required this.reveal,
+    required this.doneProgress,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final nodeRadius = size.width * 0.028;
+    final nodeCount = nodes.length;
+    double nodeProgress(int i) => ((reveal * nodeCount) - i).clamp(0.0, 1.0);
+
+    bool edgeVisible(int a, int b) =>
+        nodeProgress(a) > 0.5 && nodeProgress(b) > 0.5;
+
+    final baseColor = const Color(0xFF2A2A2A);
+    final activeColor = Color.lerp(Colors.white, obGood, doneProgress)!;
+    final edgeColor = Color.lerp(baseColor, activeColor, doneProgress)!;
+
+    // ── Outer ring edges ─────────────────────────────────────────────
+    for (final (a, b) in edges) {
+      if (!edgeVisible(a, b)) continue;
+      final pa = Offset(nodes[a].dx * size.width, nodes[a].dy * size.height);
+      final pb = Offset(nodes[b].dx * size.width, nodes[b].dy * size.height);
+      canvas.drawLine(
+        pa,
+        pb,
+        Paint()
+          ..color = edgeColor
+          ..strokeWidth = 1.5
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+
+    // ── Outer nodes only (centre is empty) ───────────────────────────
+    for (int i = 0; i < nodes.length; i++) {
+      final p = nodeProgress(i);
+      if (p <= 0) continue;
+
+      final center = Offset(nodes[i].dx * size.width, nodes[i].dy * size.height);
+      final r = nodeRadius * (0.4 + 0.6 * p);
+
+      canvas.drawCircle(
+        center,
+        r * 2.0,
+        Paint()
+          ..color = activeColor.withValues(alpha: 0.12 + 0.28 * p)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+      canvas.drawCircle(
+        center,
+        r,
+        Paint()..color = activeColor.withValues(alpha: 0.55 + 0.45 * p),
+      );
+    }
+
+    // Soft outer ring on completion — does not cover the centre badge.
+    if (doneProgress > 0) {
+      canvas.drawCircle(
+        Offset(size.width / 2, size.height / 2),
+        size.width * 0.48,
+        Paint()
+          ..color = obGood.withValues(alpha: 0.18 * doneProgress)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_LatticePainter old) =>
+      old.reveal != reveal || old.doneProgress != doneProgress;
+}
+
+// ─── Text block ────────────────────────────────────────────────────────────
 
 class _TextBlock extends StatelessWidget {
   final String heading;
   final String body;
-
   const _TextBlock({super.key, required this.heading, required this.body});
 
   @override
@@ -216,125 +333,51 @@ class _TextBlock extends StatelessWidget {
         Text(
           heading,
           style: const TextStyle(
-            color: Colors.white,
-            fontSize: 34,
+            color: obText,
+            fontSize: 30,
             fontWeight: FontWeight.w800,
             height: 1.1,
-            letterSpacing: -1.2,
+            letterSpacing: -0.8,
           ),
         ),
         const SizedBox(height: 10),
-        Text(
-          body,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.45),
-            fontSize: 15,
-            height: 1.6,
-          ),
-        ),
+        Text(body, style: const TextStyle(color: obTextSub, fontSize: 15, height: 1.6)),
       ],
     );
   }
 }
 
-// ─── SPINNER ─────────────────────────────────────────────────────────────────
+// ─── NIST badge ────────────────────────────────────────────────────────────
 
-class _SpinnerCircle extends StatelessWidget {
-  final AnimationController ctrl;
-  const _SpinnerCircle({required this.ctrl});
+class _NistBadge extends StatelessWidget {
+  const _NistBadge();
 
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: ctrl,
-      builder: (_, child) =>
-          Transform.rotate(angle: ctrl.value * 2 * pi, child: child),
-      child: Container(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: const Color(0xFF111111),
-          border: Border.all(color: const Color(0xFF222222), width: 1.5),
-        ),
-        child: CustomPaint(
-          painter: _ArcPainter(),
-          child: const Center(
-            child: Text('🔑', style: TextStyle(fontSize: 44)),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ArcPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawArc(
-      Rect.fromLTWH(4, 4, size.width - 8, size.height - 8),
-      -pi / 2,
-      pi * 1.5,
-      false,
-      Paint()
-        ..color = Colors.white
-        ..strokeWidth = 2.5
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_) => false;
-}
-
-// ─── DONE CIRCLE ─────────────────────────────────────────────────────────────
-
-class _DoneCircle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: const Color(0xFF111111),
-        border: Border.all(
-          color: const Color(0xFF22C55E).withOpacity(0.5),
-          width: 2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF22C55E).withOpacity(0.15),
-            blurRadius: 30,
-            spreadRadius: 4,
+        color: obPanel,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: obBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Icon(Icons.shield_outlined, color: obTextDim, size: 14),
+          SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              'CRYSTALS-Dilithium (ML-DSA) · NIST FIPS 204',
+              style: TextStyle(
+                color: obTextSub,
+                fontSize: 11,
+                letterSpacing: 0.2,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ],
-      ),
-      alignment: Alignment.center,
-      child: const Text(
-        '✓',
-        style: TextStyle(
-          fontSize: 52,
-          color: Color(0xFF22C55E),
-          fontWeight: FontWeight.w300,
-        ),
-      ),
-    );
-  }
-}
-
-// ─── SHARED ──────────────────────────────────────────────────────────────────
-
-class _Dot extends StatelessWidget {
-  final bool active;
-  const _Dot({required this.active});
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      width: active ? 20 : 6,
-      height: 6,
-      decoration: BoxDecoration(
-        color: active ? Colors.white : const Color(0xFF333333),
-        borderRadius: BorderRadius.circular(3),
       ),
     );
   }

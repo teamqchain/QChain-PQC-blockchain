@@ -3,11 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
 import 'package:qwallet_mobileapp/components/emptyState.dart';
-import 'package:qwallet_mobileapp/components/shimmerWave.dart';
 import 'package:qwallet_mobileapp/routes/main_shell.dart';
-import 'package:qwallet_mobileapp/screens/add_document_screen.dart';
-import 'package:qwallet_mobileapp/screens/home_screen.dart';
 import 'package:qwallet_mobileapp/screens/manage_subscriptions_screen.dart';
+import 'package:qwallet_mobileapp/skeletons/activity_skeleton.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/widgets/QSearchBar.dart';
 import 'package:qwallet_mobileapp/model/activity_model.dart';
@@ -107,7 +105,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                   vertical: 16,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF111111), // Black container
+                  color: qPrimary, // Black container
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Row(
@@ -145,9 +143,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(
-                              0xFFE86924,
-                            ), // Orange action badge
+                            color: qEng, // Orange action badge
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
@@ -200,7 +196,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
             child: Obx(() {
               // ─── SKELETON LOADING INJECTION ───
               if (controller.isLoading.value) {
-                return const _SkeletonActivityList();
+                return const SkeletonActivityList();
               }
 
               final grouped = _grouped;
@@ -246,7 +242,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                       if (index < cursor + items.length) {
                         final item = items[index - cursor];
                         final isLast = index == cursor + items.length - 1;
-                        return _ActivityTile(item: item, isLast: isLast);
+                        return ActivityTile(item: item, isLast: isLast);
                       }
                       cursor += items.length;
                     }
@@ -366,11 +362,11 @@ class _GroupHeader extends StatelessWidget {
 // ACTIVITY TILE
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ActivityTile extends StatelessWidget {
+class ActivityTile extends StatelessWidget {
   final ActivityModel item;
   final bool isLast;
 
-  const _ActivityTile({required this.item, required this.isLast});
+  const ActivityTile({super.key, required this.item, required this.isLast});
 
   @override
   Widget build(BuildContext context) {
@@ -444,123 +440,3 @@ class _ActivityTile extends StatelessWidget {
   }
 }
 
-// ─── SKELETON LOADING WIDGETS ────────────────────────────────────────────────
-
-// ─── SKELETON LOADING WIDGETS ────────────────────────────────────────────────
-
-/// A custom animation wrapper that creates a left-to-right "wave" (shimmer) effect.
-/// It uses a ShaderMask to add a sweeping highlight over the underlying shapes
-/// while preserving your custom colors.
-
-class _SkeletonActivityList extends StatelessWidget {
-  const _SkeletonActivityList();
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      physics:
-          const NeverScrollableScrollPhysics(), // Prevent scrolling while loading
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-      children: const [
-        _SkeletonGroupHeader(),
-        SkeletonActivityTile(),
-        SizedBox(height: 8), // Replaces the 'isLast' padding logic temporarily
-        _SkeletonGroupHeader(),
-        SkeletonActivityTile(),
-        SizedBox(height: 8),
-        _SkeletonGroupHeader(),
-        SkeletonActivityTile(),
-        SkeletonActivityTile(),
-      ],
-    );
-  }
-}
-
-class _SkeletonGroupHeader extends StatelessWidget {
-  const _SkeletonGroupHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10, top: 4, right: 320),
-      // Wrap the header container in ShimmerWave
-      child: ShimmerWave(
-        child: Container(
-          width: 60,
-          height: 15, // Match the visual weight of the 10px text
-          decoration: BoxDecoration(
-            color: qDivider,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          // Alignment hack to make it stay on the left like the text
-          alignment: Alignment.centerLeft,
-        ),
-      ),
-    );
-  }
-}
-
-class SkeletonActivityTile extends StatelessWidget {
-  final double myheight; // Made final for best practices
-  const SkeletonActivityTile({super.key, this.myheight = 40});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: qBg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: qBorder),
-          boxShadow: const [
-            BoxShadow(color: qShadow, blurRadius: 4, offset: Offset(0, 1)),
-          ],
-        ),
-        // Wrap the inner Row in ShimmerWave so the border stays static
-        child: ShimmerWave(
-          child: Row(
-            children: [
-              // Icon Placeholder
-              Container(
-                width: 42,
-                height: 42,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: qDivider,
-                ),
-              ),
-              const SizedBox(width: 14),
-              // Text placeholders
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      height: myheight,
-                      decoration: BoxDecoration(
-                        color: qDivider,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: 80, // Shorter line representing the "time ago"
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: qDivider,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

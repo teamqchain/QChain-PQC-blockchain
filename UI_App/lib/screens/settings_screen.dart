@@ -13,7 +13,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   static const _teamMembers = [
     ('Mohammed Bin Ali Maqqavi', 'Project Manager'),
-    ('Mohammed Abdul Haris', 'UI/UX Engineer '),
+    ('Mohammed Abdul Haris', 'Frontend Lead'),
     ('Mohammed Nihal', 'Technical Lead'),
     ('Mohammed Obied', 'Blockchain Specialist'),
   ];
@@ -53,7 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'QChain v1.0.0',
+                        'QChain v2.0.0',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -278,7 +278,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     (
       'About',
       [
-        (Icons.info, 'QChain v1.0.0'),
+        (Icons.info, 'QChain v2.0.0'),
         (Icons.lock_person, 'Algorithm: CRYSTALS-Dilithium3'),
         (Icons.article, 'Documentation'),
       ],

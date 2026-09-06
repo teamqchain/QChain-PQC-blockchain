@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/Headers/categoryHeader.dart';
 import 'package:qwallet_mobileapp/components/CardDetails.dart';
+import 'package:qwallet_mobileapp/components/emptyState.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
 import 'package:qwallet_mobileapp/widgets/wallet_category.dart';
@@ -125,7 +126,13 @@ class _CategoryDocumentsScreenState extends State<CategoryDocumentsScreen> {
                     ),
                   ),
                   child: _categoryDocs.isEmpty
-                      ? const _EmptyFilterState()
+                      ? const EmptyState(
+                          query: '',
+                          mainMessage: 'No documents found',
+                          subMessage: 'Try selecting a different category',
+                          resultMainMessage: 'No documents match this filter',
+                          resultSubMessage: 'Try selecting "All Documents"',
+                        )
                       : (_isStackView
                             ? StackView(
                                 key: const ValueKey('stack'),
@@ -154,47 +161,3 @@ class _CategoryDocumentsScreenState extends State<CategoryDocumentsScreen> {
   }
 }
 
-// ─── EMPTY STATE (When filters return 0 results) ──────────────────────────────
-
-class _EmptyFilterState extends StatelessWidget {
-  const _EmptyFilterState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE5E5EA),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            alignment: Alignment.center,
-            child: const Icon(
-              Icons.filter_alt_off_rounded,
-              size: 32,
-              color: Color(0xFF888888),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'No documents match this filter',
-            style: TextStyle(
-              color: Color(0xFF111111),
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Try selecting "All Documents"',
-            style: TextStyle(color: Color(0xFF888888), fontSize: 13),
-          ),
-        ],
-      ),
-    );
-  }
-}

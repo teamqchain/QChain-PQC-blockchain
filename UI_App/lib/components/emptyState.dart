@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
+
 class EmptyState extends StatelessWidget {
   final String query;
   final String mainMessage;
@@ -9,6 +10,7 @@ class EmptyState extends StatelessWidget {
   final String resultSubMessage;
 
   const EmptyState({
+    super.key,
     required this.query,
     required this.mainMessage,
     required this.subMessage,

@@ -1,15 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:qwallet_mobileapp/components/shimmerWave.dart';
-import 'package:qwallet_mobileapp/model/activity_model.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
-import 'package:qwallet_mobileapp/model/subscription_model.dart';
 import 'package:qwallet_mobileapp/screens/activity_screen.dart';
-import 'package:qwallet_mobileapp/screens/add_document_screen.dart';
 import 'package:qwallet_mobileapp/controllers/activity_controller.dart';
 import 'package:qwallet_mobileapp/controllers/add_document_controller.dart';
-import 'package:qwallet_mobileapp/utils/logger.dart';
+import 'package:qwallet_mobileapp/skeletons/home_skeleton.dart';
 import 'package:qwallet_mobileapp/controllers/manage_subscriptions_controller.dart';
 import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
@@ -55,7 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return Column(
           children: [
             isLoading
-                ? const _SkeletonHeroBox()
+                ? const SkeletonHeroBox()
                 : _HeroBox(
                     userName: controller.credentials.isNotEmpty
                         ? controller.credentials.first.holderName
@@ -129,12 +125,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
                         child: isLoading
-                            ? const _SkeletonList()
+                            ? const SkeletonList()
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   // --- UPDATED RECENT ACTIVITY SECTION ---
-                                  _SectionHeader(
+                                  SectionHeader(
                                     title: 'Recent Activity', // Changed title
                                     onSeeAll: () {
                                       context
@@ -163,14 +159,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                           padding: const EdgeInsets.only(
                                             bottom: 10,
                                           ),
-                                          child: _ActivityCard(
-                                            activity: activity,
-                                          ), // Pass ActivityModel
+                                          child: ActivityTile(
+                                            item: activity,
+                                            isLast: false,
+                                          ),
                                         ),
                                       ),
 
                                   const SizedBox(height: 24),
-                                  _SectionHeader(
+                                  SectionHeader(
                                     title: 'Favourites',
                                     onSeeAll: () {},
                                   ),
@@ -515,11 +512,11 @@ class _StatTile extends StatelessWidget {
 
 // ─── SECTION HEADER ──────────────────────────────────────────────────────────
 
-class _SectionHeader extends StatelessWidget {
+class SectionHeader extends StatelessWidget {
   final String title;
   final VoidCallback onSeeAll;
 
-  const _SectionHeader({required this.title, required this.onSeeAll});
+  const SectionHeader({super.key, required this.title, required this.onSeeAll});
 
   @override
   Widget build(BuildContext context) {
@@ -640,284 +637,4 @@ class _FavouriteCard extends StatelessWidget {
   }
 }
 
-// ─── ACTIVITY CARD ───────────────────────────────────────────────────────────
 
-class _ActivityCard extends StatelessWidget {
-  final ActivityModel activity;
-
-  const _ActivityCard({required this.activity});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFEBEBEB)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A000000),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color:
-                  activity.iconBgColor, // Dynamically use activity icon color
-            ),
-            alignment: Alignment.center,
-            child: Icon(
-              activity.icon, // Dynamically use activity icon
-              color: Colors.white,
-              size: 16,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  activity.credentialID, // E.g., "Issued Bachelor of Science"
-                  style: const TextStyle(
-                    color: Color(0xFF111111),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  activity.actionText, // E.g., "Issued Bachelor of Science"
-                  style: const TextStyle(
-                    color: Color(0xFF111111),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  activity.timeAgo, // E.g., "2 hours ago"
-                  style: const TextStyle(
-                    color: Color(0xFFAAAAAA),
-                    fontSize: 11,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── SKELETON LOADING WIDGETS ────────────────────────────────────────────────
-
-class _SkeletonHeroBox extends StatelessWidget {
-  const _SkeletonHeroBox();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        color: Color(0xFF000000), // Background stays solidly black
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(32),
-          bottomRight: Radius.circular(32),
-        ),
-      ),
-      padding: EdgeInsets.fromLTRB(
-        24,
-        MediaQuery.of(context).padding.top + 20,
-        24,
-        28,
-      ),
-      // Wrap the contents in the shimmer wave
-      child: ShimmerWave(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                // Avatar Placeholder
-                Container(
-                  width: 70,
-                  height: 70,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Color(0xFF222222),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                // Text Placeholders
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 100,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF222222),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        width: 140,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF222222),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Static Notification Bell
-                Stack(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFF1A1A1A),
-                        border: Border.all(
-                          color: const Color(0xFF333333),
-                          width: 1,
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: const Icon(
-                        Icons.notifications_outlined,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    Positioned(
-                      right: 2,
-                      top: 0,
-                      child: Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.red,
-                          border: Border.all(
-                            color: const Color(0xFF000000),
-                            width: 1.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            // Identity Pill Placeholder
-            Container(
-              width: double.infinity,
-              height: 40,
-              decoration: BoxDecoration(
-                color: const Color(0xFF22C55E).withOpacity(0.12),
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          height: 60,
-                          decoration: BoxDecoration(
-                            color: Colors.green,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Container(
-                          height: 60,
-                          decoration: BoxDecoration(
-                            color: Colors.orange,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          height: 60,
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Container(
-                          height: 60,
-                          decoration: BoxDecoration(
-                            color: Colors.grey,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SkeletonList extends StatelessWidget {
-  const _SkeletonList();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Headers remain solid, they don't need to shimmer
-        _SectionHeader(title: 'Favourites', onSeeAll: () {}),
-        const SizedBox(height: 14),
-        // Cards get the wave effect
-        ShimmerWave(child: SkeletonIssuerTile(isHome: true)),
-        const SizedBox(height: 10),
-        ShimmerWave(child: SkeletonIssuerTile(isHome: true)),
-        const SizedBox(height: 24),
-
-        _SectionHeader(title: 'Recent Activity', onSeeAll: () {}),
-        const SizedBox(height: 14),
-        ShimmerWave(child: SkeletonActivityTile(myheight: 15)),
-      ],
-    );
-  }
-}

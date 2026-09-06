@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
+import 'package:qwallet_mobileapp/widgets/QOnboardScaffold.dart';
 
+/// Onboarding step 2 — "How it works".
+///
+/// Numbered step cards: Receive → Store → Present.
+/// Restored first-pass layout, adapted to the black onboarding theme.
 class Onboard2Screen extends StatelessWidget {
   const Onboard2Screen({super.key});
 
@@ -10,235 +14,169 @@ class Onboard2Screen extends StatelessWidget {
     (
       Icons.download_rounded,
       'Receive',
-      'Get credentials issued by universities, governments and banks',
+      'Get credentials issued directly by universities, governments and banks.',
     ),
     (
-      Icons.lock_rounded,
-      'Store Securely',
-      'Encrypted on your device — no company or server has access',
+      Icons.lock_outline_rounded,
+      'Store securely',
+      'Encrypted on your device — no company or server has access.',
     ),
     (
-      Icons.qr_code_2,
-      'Present Anywhere',
-      'Show a one-time QR code for instant blockchain verification',
+      Icons.qr_code_2_rounded,
+      'Present anywhere',
+      'Show a one-time QR code for instant blockchain verification.',
     ),
   ];
 
   @override
   Widget build(BuildContext context) {
-    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
-
-    return Scaffold(
-      backgroundColor: const Color(0xFF000000),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(28, 16, 28, 32),
-          child: Column(
-            // Text and top elements stay on the left
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Back + Skip
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  GestureDetector(
-                    onTap: () => Get.back(),
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1A1A),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: const Color(0xFF333333)),
-                      ),
-                      alignment: Alignment.center,
-                      child: const Icon(
-                        Icons.arrow_back_ios_new,
-                        color: Colors.white,
-                        size: 14,
-                      ),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => Get.offAllNamed(Routes.SHELL),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1A1A),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFF333333)),
-                      ),
-                      child: const Text(
-                        'Skip',
-                        style: TextStyle(
-                          color: Color(0xFF888888),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const Spacer(),
-
-              const Text(
-                'How it\nworks',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 40,
-                  fontWeight: FontWeight.w800,
-                  height: 1.1,
-                  letterSpacing: -1.5,
-                ),
-              ),
-
-              const SizedBox(height: 32),
-
-              for (final step in _steps)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF111111),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: const Color(0xFF222222)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 46,
-                          height: 46,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1A1A1A),
-                            borderRadius: BorderRadius.circular(13),
-                            border: Border.all(color: const Color(0xFF2E2E2E)),
-                          ),
-                          alignment: Alignment.center,
-                          // child: Text(
-                          //   step.$2,
-                          //   style: const TextStyle(fontSize: 22),
-                          // ),
-                          child: Icon(
-                            step.$1,
-                            color: Colors.white,
-                            size: 22,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                step.$2,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                step.$3,
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.4),
-                                  fontSize: 12,
-                                  height: 1.45,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-              const Spacer(),
-
-              // ── Dots centered ──
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
-                  _Dot(active: false),
-                  SizedBox(width: 6),
-                  _Dot(active: true),
-                  SizedBox(width: 6),
-                  _Dot(active: false),
-                ],
-              ),
-
-              const SizedBox(height: 24),
-
-              // ONLY the button gets centered and constrained
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 350),
-                  child: _OnboardBtn(
-                    label: 'Next',
-                    onTap: () => Get.toNamed(Routes.ONBOARD3),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+    return QOnboardScaffold(
+      step: 2,
+      onBack: () => Get.back(),
+      onSkip: () => Get.offAllNamed(Routes.SHELL),
+      ctaLabel: 'Continue',
+      onCta: () => Get.toNamed(Routes.ONBOARD3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 32),
+          const SizedBox(height: 10),
+          const _Headline('Three steps to\na verified identity'),
+          const SizedBox(height: 8),
+          const SizedBox(height: 28),
+          for (var i = 0; i < _steps.length; i++)
+            _StepCard(index: i + 1, data: _steps[i]),
+          const SizedBox(height: 16),
+        ],
       ),
     );
   }
 }
 
-class _Dot extends StatelessWidget {
-  final bool active;
-  const _Dot({required this.active});
+// ─── Step card ─────────────────────────────────────────────────────────────
+
+class _StepCard extends StatelessWidget {
+  final int index;
+  final (IconData, String, String) data;
+  const _StepCard({required this.index, required this.data});
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      width: active ? 20 : 6,
-      height: 6,
-      decoration: BoxDecoration(
-        color: active ? Colors.white : const Color(0xFF333333),
-        borderRadius: BorderRadius.circular(3),
-      ),
-    );
-  }
-}
-
-class _OnboardBtn extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-  const _OnboardBtn({required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
+    final icon = data.$1;
+    final title = data.$2;
+    final body = data.$3;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
       child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 17),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: obPanel,
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: obBorder),
         ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFF000000),
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.3,
-          ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Numbered badge
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: obAccent,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              alignment: Alignment.center,
+              child: Icon(icon, color: Colors.black, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: obText,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    body,
+                    style: const TextStyle(
+                      color: obTextSub,
+                      fontSize: 13,
+                      height: 1.45,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
+  }
+}
+
+// ─── Text atoms ────────────────────────────────────────────────────────────
+
+class _SectionTag extends StatelessWidget {
+  final String text;
+  const _SectionTag(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: obPanelAlt,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: obBorder),
+      ),
+      child: Text(
+        text.toUpperCase(),
+        style: const TextStyle(
+          color: obTextSub,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+}
+
+class _Headline extends StatelessWidget {
+  final String text;
+  const _Headline(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: obText,
+        fontSize: 30,
+        fontWeight: FontWeight.w800,
+        height: 1.1,
+        letterSpacing: -0.8,
+      ),
+    );
+  }
+}
+
+class _Body extends StatelessWidget {
+  final String text;
+  const _Body(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(text, style: const TextStyle(color: obTextSub, fontSize: 15, height: 1.5));
   }
 }
