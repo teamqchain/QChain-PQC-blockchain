@@ -33,6 +33,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_card_swiper: ^7.2.0
+  flutter_launcher_icons: ^0.14.4
   flutter_swiper_view: ^1.1.8
   get: ^4.7.3
   http: ^1.6.0
@@ -43,6 +44,13 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   flutter_test:
     sdk: flutter
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/QWallet_logo_uae.png"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/images/android_foreground.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
