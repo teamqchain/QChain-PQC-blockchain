@@ -22,6 +22,8 @@ pnpm-debug.log*
 # Environment and local overrides
 .env
 .env.*
+# Track B2: holder KEM private keys (testing only — production keys live on holder devices)
+.env.holder_keys
 *.local
 
 # Node / JavaScript

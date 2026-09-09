@@ -55,13 +55,22 @@ var (
 	issuerPubKeyHex  string
 	issuerOrgID      string
 
-	// Track B (Phase 2) — org-level ML-KEM-768 key pair for OFF-CHAIN credential
-	// data encryption (IPFS + MySQL credential_data). Assigned in main() from
-	// ORG_KEM_PUBLIC_KEY_HEX / ORG_KEM_PRIVATE_KEY_HEX. If unset, off-chain
-	// encryption is disabled and the server stores plaintext exactly as before
-	// (safe-by-default). This key does NOT touch the blockchain in any way.
+	// Track B (Phase 2) — LEGACY org-level ML-KEM-768 key pair. These are a
+	// fallback for decrypting credentials that were encrypted under the old B3
+	// (org-held-key) scheme. New issuances use holder-held keys (B2). If unset,
+	// legacy org-key envelopes cannot be decrypted (which is fine if B3 was
+	// never deployed). This key does NOT touch the blockchain in any way.
 	orgKemPubHex  string
 	orgKemPrivHex string
+
+	// Track B2 (Phase 2) — holder KEM private keys loaded from .env.holder_keys
+	// at startup. Maps holderID → ML-KEM-768 private key hex.
+	//
+	// TESTING ONLY: In production, holder private keys live exclusively on the
+	// holder's device (QWallet). This server-side map exists only so the
+	// backend can decrypt on behalf of holders during development/testing,
+	// before the Flutter wallet gains liboqs bindings for client-side crypto.
+	holderKemKeys map[string]string
 
 	// orgConfig maps an org short-name ("general"/"government") to its Fabric peer
 	// endpoint and MSP ID. `struct { ... }` here is an anonymous struct type — the

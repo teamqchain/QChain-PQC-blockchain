@@ -84,6 +84,50 @@ func holderInfoByID(holderID string) (fullName, email, emiratesID string, err er
 	return
 }
 
+// holderKemPubByID looks up a holder's registered ML-KEM public key by holder_id.
+// Returns ("", nil) if the holder exists but has no key registered.
+func holderKemPubByID(holderID string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("database not configured")
+	}
+	var pub sql.NullString
+	err := db.QueryRow(`SELECT kem_public_key FROM holders WHERE holder_id = ?`, holderID).Scan(&pub)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("holder %q not found", holderID)
+	}
+	if err != nil {
+		return "", err
+	}
+	return pub.String, nil
+}
+
+// holderKemPubByEmiratesID looks up a holder's ML-KEM public key via Emirates ID.
+func holderKemPubByEmiratesID(emiratesID string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("database not configured")
+	}
+	var pub sql.NullString
+	err := db.QueryRow(`SELECT kem_public_key FROM holders WHERE emirates_id = ?`, emiratesID).Scan(&pub)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("holder with Emirates ID %q not found", emiratesID)
+	}
+	if err != nil {
+		return "", err
+	}
+	return pub.String, nil
+}
+
+// updateHolderKemPub stores a holder's ML-KEM-768 public key in the holders table.
+// The private key is NOT stored in the database — it lives on the holder's device
+// (or in .env.holder_keys for testing).
+func updateHolderKemPub(holderID, pubHex string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	_, err := db.Exec(`UPDATE holders SET kem_public_key = ? WHERE holder_id = ?`, pubHex, holderID)
+	return err
+}
+
 // searchHolders runs a LIKE search against full_name/emirates_id/email with optional type filter.
 // `typeFilterDB` is the raw DB ENUM value (bachelor_student, etc.) — caller maps from camelCase.
 func searchHolders(searchQuery, typeFilterDB string) ([]HolderRow, error) {

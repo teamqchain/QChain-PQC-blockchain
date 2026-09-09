@@ -1,14 +1,18 @@
 package main
 
-// kem.go — Track B (Phase 2) low-level cryptographic primitives for OFF-CHAIN
-// confidentiality of credential data.
+// kem.go — Track B2 (Phase 2) post-quantum Key Encapsulation Mechanism primitives.
 //
-// This file adds the post-quantum key-establishment + symmetric-encryption
-// building blocks used by envelope.go. It deliberately does NOT touch anything
-// on-chain: the Hyperledger Fabric chaincode, the ledger record, the on-chain
-// signature/hash and the verification path are all unchanged. These primitives
-// only protect the two OFF-CHAIN copies of the credential body (IPFS + the
-// MySQL `credential_data` column).
+// All ML-KEM-768 operations live here: key generation, encapsulation (public-key
+// encryption of a shared secret), decapsulation, and the HKDF key derivation and
+// AES-256-GCM encryption / key-wrapping used by envelope.go.
+//
+// These primitives are RECIPIENT-AGNOSTIC — they work identically whether the
+// recipient is the holder (B2, primary), the org (B3, legacy), or a verifier
+// (future B3 re-wrap). The caller decides who to encrypt to; this file just
+// handles the raw crypto.
+//
+// ML-KEM-768 comes from liboqs via CGo (Go calling a C library). That C
+// dependency is why the Docker image takes longer to build the first time.
 //
 // Design (hybrid KEM-DEM, the same shape TLS 1.3 / HPKE / age use):
 //   • ML-KEM-768 (FIPS 203, "Kyber") establishes a 32-byte shared secret.

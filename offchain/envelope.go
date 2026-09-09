@@ -1,32 +1,32 @@
 package main
 
-// envelope.go — Track B (Phase 2) per-field envelope encryption for the
-// OFF-CHAIN credential body.
+// envelope.go — Track B2 (Phase 2) per-field envelope encryption for the
+// OFF-CHAIN credential body, using HOLDER-HELD KEYS.
 //
 // WHAT THIS DOES (and does not do):
 //   • It encrypts the credential attribute payload (the inner `info` JSON that is
 //     stored in IPFS and in the MySQL `credential_data` column) so those two
 //     off-chain stores no longer hold plaintext at rest.
+//   • Each credential is encrypted to the HOLDER's ML-KEM-768 public key, not to
+//     an organisation key. Only the holder (or, during testing, the server with
+//     the holder's private key from .env.holder_keys) can decrypt it.
 //   • It does NOT change anything on-chain. The chaincode, the on-chain `Info`
 //     field (still plaintext), the SHA3-256 hash, the ML-DSA-44 signature, and the
 //     verification flow are untouched. On-chain confidentiality is deferred to
-//     Track A (see the handoff doc). This is a deliberate scope boundary: the
-//     blockchain never has to be modified or restarted.
+//     Track A (see the handoff doc).
 //
-// The envelope is a versioned JSON object with per-field ciphertexts, so that a
-// future phase can (a) add a second recipient wrap for the holder's own ML-KEM
-// key (true B2 / holder-held decryption) and (b) implement real selective
-// disclosure by handing over only the keys for disclosed fields. Today there is a
-// single recipient: the organisation ("org") key held by the backend.
+// The envelope is a versioned JSON object with per-field ciphertexts. The
+// recipient is "holder:<holderID>" so the envelope is cryptographically bound to
+// one specific holder. A future phase can add verifier re-wrapping (Track B3).
 //
 // Format (stored in IPFS and in credential_data):
 //   {
 //     "_qc_env": "qchain-env", "v": 1,
 //     "kemAlg": "ML-KEM-768", "aeadAlg": "AES-256-GCM", "kdf": "HKDF-SHA3-256",
 //     "credId": "<hkdf context id>",
-//     "wraps":  [ { "recipient": "org", "kemCt": "<hex>" } ],
+//     "wraps":  [ { "recipient": "holder:H-0001", "kemCt": "<hex>" } ],
 //     "fields": [ { "key": "gpa", "nonce": "<hex>", "ct": "<hex>",
-//                   "wrap": { "org": "<hex wrapped per-field key>" } } ]
+//                   "wrap": { "holder:H-0001": "<hex wrapped per-field key>" } } ]
 //   }
 
 import (
@@ -35,13 +35,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 )
 
 const (
-	envelopeMagic   = "qchain-env" // marker distinguishing an envelope from legacy plaintext JSON
-	envelopeVersion = 1
-	recipientOrg    = "org" // the only recipient today; holder/verifier come later (B2)
+	envelopeMagic         = "qchain-env" // marker distinguishing an envelope from legacy plaintext JSON
+	envelopeVersion       = 1
+	recipientHolderPrefix = "holder:" // B2: holder-held key recipient prefix
+	recipientOrg          = "org"     // legacy B3 org-key recipient (for backward-compat reads only)
 )
+
+// holderRecipientName returns the envelope recipient name for a given holder ID.
+func holderRecipientName(holderID string) string {
+	return recipientHolderPrefix + holderID
+}
 
 // KemWrap is one recipient's ML-KEM encapsulation of the shared secret.
 type KemWrap struct {
@@ -182,20 +189,26 @@ func openAttributes(env *Envelope, recipient, kemSecHex string) (map[string]json
 // ─────────────────────────────────────────────
 
 // encryptCredentialData converts a plaintext attribute JSON string into an
-// envelope JSON string wrapped to the org key. If off-chain encryption is
-// disabled (ORG_KEM_PUBLIC_KEY_HEX unset), it returns the input unchanged so the
-// system behaves exactly as before Track B (safe-by-default; never blocks issuance).
+// envelope JSON string wrapped to the HOLDER's ML-KEM-768 public key.
+//
+// holderID identifies the holder (used as part of the recipient name in the
+// envelope). holderKemPubHex is the holder's ML-KEM-768 public key, looked up
+// from the `holders.kem_public_key` column at issuance time.
+//
+// If holderKemPubHex is empty, encryption fails with an error — a holder key is
+// required for issuance under Track B2.
 //
 // credID is an HKDF context binding — issuance passes the credential hash.
-func encryptCredentialData(credID, attrsJSON string) (string, error) {
-	if orgKemPubHex == "" {
-		return attrsJSON, nil // encryption disabled — legacy plaintext behaviour
+func encryptCredentialData(credID, attrsJSON, holderID, holderKemPubHex string) (string, error) {
+	if holderKemPubHex == "" {
+		return "", fmt.Errorf("holder %q has no KEM public key — register a key before issuing", holderID)
 	}
 	attrs, err := splitFields(attrsJSON)
 	if err != nil {
 		return "", err
 	}
-	env, err := sealAttributes(credID, attrs, []Recipient{{Name: recipientOrg, PubHex: orgKemPubHex}})
+	recipientName := holderRecipientName(holderID)
+	env, err := sealAttributes(credID, attrs, []Recipient{{Name: recipientName, PubHex: holderKemPubHex}})
 	if err != nil {
 		return "", err
 	}
@@ -208,19 +221,59 @@ func encryptCredentialData(credID, attrsJSON string) (string, error) {
 
 // decryptCredentialData reverses encryptCredentialData. Legacy plaintext rows
 // (no envelope marker) pass through untouched, so old and new credentials coexist.
-func decryptCredentialData(stored string) (string, error) {
+//
+// It first looks for a "holder:<holderID>" wrap and decrypts with holderKemPrivHex.
+// If no holder wrap exists, it falls back to a legacy "org" wrap using the global
+// orgKemPrivHex (for credentials encrypted under the old B3 org-key scheme).
+//
+// holderKemPrivHex may be empty if the holder's private key is not available on
+// the server (e.g. production mode where keys live on the device). In that case,
+// only the legacy org-key fallback is attempted.
+func decryptCredentialData(stored, holderID, holderKemPrivHex string) (string, error) {
 	b := []byte(stored)
 	if !looksLikeEnvelope(b) {
-		return stored, nil // legacy plaintext
-	}
-	if orgKemPrivHex == "" {
-		return "", fmt.Errorf("credential_data is encrypted but ORG_KEM_PRIVATE_KEY_HEX is not set")
+		return stored, nil // legacy plaintext — pass through unchanged
 	}
 	var env Envelope
 	if err := json.Unmarshal(b, &env); err != nil {
 		return "", fmt.Errorf("parse envelope: %w", err)
 	}
-	attrs, err := openAttributes(&env, recipientOrg, orgKemPrivHex)
+
+	// Try holder-key decryption first (B2).
+	holderRecip := holderRecipientName(holderID)
+	if holderKemPrivHex != "" {
+		for _, w := range env.Wraps {
+			if w.Recipient == holderRecip {
+				return decryptEnvelopeAs(&env, holderRecip, holderKemPrivHex)
+			}
+		}
+	}
+
+	// Fallback: try legacy org-key decryption (B3 backward compat).
+	if orgKemPrivHex != "" {
+		for _, w := range env.Wraps {
+			if w.Recipient == recipientOrg {
+				return decryptEnvelopeAs(&env, recipientOrg, orgKemPrivHex)
+			}
+		}
+	}
+
+	// Also try matching any holder:* wrap if the holderID didn't match exactly
+	// (defensive — shouldn't happen in practice).
+	if holderKemPrivHex != "" {
+		for _, w := range env.Wraps {
+			if strings.HasPrefix(w.Recipient, recipientHolderPrefix) {
+				return decryptEnvelopeAs(&env, w.Recipient, holderKemPrivHex)
+			}
+		}
+	}
+
+	return "", fmt.Errorf("cannot decrypt: no matching recipient wrap (holder=%q, org-key-available=%v)", holderID, orgKemPrivHex != "")
+}
+
+// decryptEnvelopeAs decrypts an envelope using a specific recipient name and key.
+func decryptEnvelopeAs(env *Envelope, recipient, kemPrivHex string) (string, error) {
+	attrs, err := openAttributes(env, recipient, kemPrivHex)
 	if err != nil {
 		return "", err
 	}

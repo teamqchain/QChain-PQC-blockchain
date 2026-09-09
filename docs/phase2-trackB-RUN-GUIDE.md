@@ -1,11 +1,15 @@
-# QChain — Track B Off-Chain Encryption · Run & Deploy Guide (Ubuntu VM + Docker)
+# QChain — Track B2 Off-Chain Encryption (Holder-Held Keys) · Run & Deploy Guide (Ubuntu VM + Docker)
 
-This is the step-by-step guide to deploy the Track B off-chain-encryption changes on the
+This is the step-by-step guide to deploy the Track B2 off-chain-encryption changes on the
 Ubuntu VM, where the Go backend runs inside the `qchain-api` Docker container.
 
+**B2 key change:** Encryption recipients are now **per-holder** (`"holder:<holderID>"`). Each
+credential is encrypted to its holder's ML-KEM-768 public key. The org key from B3 is no
+longer used for new issuances.
+
 **Nothing here touches the blockchain.** No chaincode change, no `peer`/`orderer` restart, no
-channel redeploy. You only rebuild the backend container, run one additive SQL migration, and
-add two lines to `.env`. Fabric, IPFS, and MySQL keep running as-is.
+channel redeploy. You only rebuild the backend container, run one additive SQL migration,
+generate holder keys, and start the server. Fabric, IPFS, and MySQL keep running as-is.
 
 **Time:** ~20–25 min (most of it is the one-time liboqs compile in the Docker build).
 
@@ -36,13 +40,15 @@ docker ps --filter name=qchain-api
 The changed/added files (already written into your repo by this session):
 
 ```
-offchain/kem.go                    (new)   offchain/config.go             (edited)
-offchain/envelope.go               (new)   offchain/server.go             (edited)
-offchain/backfill.go               (new)   offchain/credentials.go        (edited)
-offchain/envelope_test.go          (new)   offchain/db_credentials.go     (edited)
-offchain/cmd/kemkeygen/main.go     (new)   offchain/mobile.go             (edited)
-qchain-network/scripts/migrations/2026-07_trackB_offchain_encryption.sql   (new)
-docs/phase2-trackB-*.md            (new docs)
+offchain/kem.go                    (B1)    offchain/config.go             (edited B2)
+offchain/envelope.go               (B1/B2) offchain/server.go             (edited B2)
+offchain/backfill.go               (B1/B2) offchain/credentials.go        (edited B2)
+offchain/envelope_test.go          (B2)    offchain/db_credentials.go     (edited B1)
+offchain/holder_keys.go            (new B2) offchain/mobile.go            (edited B2)
+offchain/cmd/kemkeygen/main.go     (B1)    offchain/db_holders.go         (edited B2)
+qchain-network/scripts/migrations/2026-07_trackB_offchain_encryption.sql   (B1)
+qchain-network/scripts/migrations/2026-09_trackB2_holder_keys.sql          (B2 marker)
+docs/phase2-trackB-*.md            (updated docs)
 ```
 
 Push these from your machine and pull on the VM (or `scp`/`rsync` them across). Typical git flow:
@@ -97,39 +103,37 @@ ends with `Image: qchain-api:latest`.
 
 ---
 
-## 4. Generate the organisation ML-KEM key (one-shot, from the image)
+## 4. Generate holder ML-KEM keys (one-shot, from the image)
 
-Because `cmd/` is **not** included in the Docker image, use the built-in one-shot mode instead —
-it runs the same image and needs no extra tooling on the host:
-
-```bash
-docker run --rm -e GENERATE_ORG_KEM=1 qchain-api:latest
-```
-
-Output looks like:
-
-```
-# ─── Organisation ML-KEM Key Pair (Track B off-chain encryption) ──────────────
-# Append these two lines to offchain/.env. Keep .env in .gitignore; never commit.
-# Algorithm: ML-KEM-768
-ORG_KEM_PUBLIC_KEY_HEX=....
-ORG_KEM_PRIVATE_KEY_HEX=....
-```
-
-> Alternative (only if the host has Go + liboqs + pkg-config set up):
-> `go run offchain/cmd/kemkeygen/main.go`. On the VM, the `docker run` method above is preferred.
-
-**Append the two `ORG_KEM_*` lines to `offchain/.env`.** Treat the private key like the signing
-key — it can decrypt every off-chain credential body. Keep it in `.env` only (already git-ignored),
-never commit it, and back it up somewhere safe (if it is lost, existing encrypted rows can't be
-read).
-
-Verify they're set (mask the value):
+This generates an ML-KEM-768 key pair for every holder that doesn't already have one. Public
+keys go into the `holders.kem_public_key` column; private keys go into `offchain/.env.holder_keys`
+(for testing only — production keys live on the holder's device).
 
 ```bash
-grep -c ORG_KEM_PUBLIC_KEY_HEX offchain/.env     # → 1
-grep -c ORG_KEM_PRIVATE_KEY_HEX offchain/.env    # → 1
+docker run --rm --network host \
+  --env-file offchain/.env \
+  -e GENERATE_HOLDER_KEYS=1 \
+  -v "$PWD/offchain:/app" \
+  qchain-api:latest
 ```
+
+> Alternative: `GENERATE_HOLDER_KEYS=1 MYSQL_DSN=<dsn> go run ./offchain/...` if Go + liboqs are
+> available on the host.
+
+The output logs each holder's key generation status and writes the private keys to
+`offchain/.env.holder_keys`. **This file is already in `.gitignore` — never commit it.**
+
+Verify keys are registered in the DB:
+
+```bash
+mysql -u root -p qchain_db -e "SELECT holder_id, LEFT(kem_public_key, 30) AS kem_pub FROM holders LIMIT 5;"
+```
+
+You should see non-NULL `kem_pub` values for all holders.
+
+> **(Optional) Org key for legacy B3 envelopes:** If you have credentials encrypted under the old
+> B3 org key, also generate/set `ORG_KEM_PUBLIC_KEY_HEX` and `ORG_KEM_PRIVATE_KEY_HEX` in
+> `offchain/.env`. If B3 was never deployed, skip this — you don't need the org key.
 
 ---
 
@@ -149,11 +153,12 @@ Look for:
 
 ```
 PQC algo:      ML-DSA-44
-KEM algo:      ML-KEM-768 (off-chain encryption: true)
+KEM algo:      ML-KEM-768 (off-chain encryption: holder-key B2, holder-keys-loaded: N)
 ```
 
-`off-chain encryption: true` is the confirmation. If it says `false`, the `ORG_KEM_PUBLIC_KEY_HEX`
-line didn't reach the container — re-check `.env` and that `docker-run.sh` passes `--env-file`.
+`holder-keys-loaded: N` should match the number of holders with keys in `.env.holder_keys`.
+If it says `0`, the `.env.holder_keys` file didn't reach the container — re-check the volume
+mount and that `GENERATE_HOLDER_KEYS=1` was run.
 
 Health check:
 

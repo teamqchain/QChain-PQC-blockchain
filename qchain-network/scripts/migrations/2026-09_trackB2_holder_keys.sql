@@ -1,0 +1,15 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- QChain — Phase 2 · Track B2 (Holder-held key off-chain encryption)
+-- Migration: no schema changes needed.
+--
+-- The holders.kem_public_key column was already added by the B1 migration
+-- (2026-07_trackB_offchain_encryption.sql). Holder private keys are stored
+-- in offchain/.env.holder_keys (gitignored) for testing purposes; in
+-- production they live exclusively on the holder's device.
+--
+-- This file is a no-op migration marker documenting the Track B2 transition
+-- from org-held keys to holder-held keys. No ALTER TABLE is needed.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- No schema changes required for Track B2.
+-- See docs/phase2-trackB-offchain-encryption.md for the architecture.

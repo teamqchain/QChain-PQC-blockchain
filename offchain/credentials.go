@@ -138,6 +138,17 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 1b. Track B2 — look up the holder's ML-KEM public key for off-chain encryption.
+	// A holder must have a registered KEM key before credentials can be issued to them.
+	holderKemPub, kemErr := holderKemPubByID(holderID)
+	if kemErr != nil {
+		log.Printf("WARNING: holder %s KEM key lookup failed: %v", holderID, kemErr)
+	}
+	if holderKemPub == "" {
+		writeError(w, http.StatusBadRequest, "holder does not have a registered encryption key (kem_public_key) — register a key via /mobile/registerHolderKey or run GENERATE_HOLDER_KEYS=1 first")
+		return
+	}
+
 	// 2. Build signed canonical JSON
 	issuedAt := time.Now().In(mustLoadLocation("Asia/Dubai")).Format("2006-01-02T15:04:05")
 	canonicalJSONStr, err := credentialCanonicalJSON(fabricHolderID, req.CredentialType, req.Info, issuedAt, issuerOrgID)
@@ -162,7 +173,7 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 	// and the ledger never has to be modified/restarted. `encBody` replaces the
 	// plaintext body in BOTH off-chain stores (IPFS and MySQL credential_data).
 	// If the org KEM key is unset, encBody == req.Info and behaviour is unchanged.
-	encBody, encErr := encryptCredentialData(credentialHash, req.Info)
+	encBody, encErr := encryptCredentialData(credentialHash, req.Info, holderID, holderKemPub)
 	if encErr != nil {
 		writeError(w, http.StatusInternalServerError, "off-chain encryption failed: "+encErr.Error())
 		return
