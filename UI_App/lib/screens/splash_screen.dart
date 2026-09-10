@@ -4,6 +4,10 @@ import 'package:get/get.dart';
 // ignore: depend_on_referenced_packages
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
+import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
+import 'package:qwallet_mobileapp/controllers/activity_controller.dart';
+import 'package:qwallet_mobileapp/controllers/add_document_controller.dart';
+import 'package:qwallet_mobileapp/controllers/manage_subscriptions_controller.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -118,7 +122,29 @@ class _SplashScreenState extends State<SplashScreen>
                     width: double.infinity,
                     height: 56,
                     child: ElevatedButton(
-                      onPressed: () => Get.toNamed(Routes.ONBOARD1),
+                      onPressed: () {
+                        // Pre-warm the core controllers so their onInit fetches
+                        // run in the background while the user goes through
+                        // onboarding. By the time they reach the Home screen the
+                        // data is already loaded, avoiding the loading wait.
+                        // permanent: true keeps them alive across Get.offAllNamed.
+                        if (!Get.isRegistered<WalletController>()) {
+                          Get.put(WalletController(), permanent: true);
+                        }
+                        if (!Get.isRegistered<ActivityController>()) {
+                          Get.put(ActivityController(), permanent: true);
+                        }
+                        if (!Get.isRegistered<AddDocumentController>()) {
+                          Get.put(AddDocumentController(), permanent: true);
+                        }
+                        if (!Get.isRegistered<ManageSubscriptionsController>()) {
+                          Get.put(
+                            ManageSubscriptionsController(),
+                            permanent: true,
+                          );
+                        }
+                        Get.toNamed(Routes.ONBOARD1);
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: qPrimary,
                         foregroundColor: qBg,

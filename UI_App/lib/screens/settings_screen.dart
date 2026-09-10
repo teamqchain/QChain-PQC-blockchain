@@ -341,7 +341,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 icon: icon,
                                 label: label,
                                 isLast: isLast,
-                                onTap: label == 'QChain v1.0.0'
+                                onTap: label == 'QChain v2.0.0'
                                     ? () => _showTeamDialog(context)
                                     : () {},
                               );
