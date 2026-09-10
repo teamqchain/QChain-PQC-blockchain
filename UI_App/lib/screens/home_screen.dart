@@ -20,14 +20,24 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final WalletController controller = Get.put(WalletController());
-  final ActivityController activityController = Get.put(ActivityController());
-  final AddDocumentController addDocumentController = Get.put(
-    AddDocumentController(),
-  );
-  final ManageSubscriptionsController subscriptionController = Get.put(
-    ManageSubscriptionsController(),
-  );
+  // Reuse controllers pre-warmed from the splash screen if available,
+  // otherwise create them on demand. This prevents re-fetching data that
+  // was already loaded in the background during onboarding.
+  final WalletController controller = Get.isRegistered<WalletController>()
+      ? Get.find<WalletController>()
+      : Get.put(WalletController());
+  final ActivityController activityController =
+      Get.isRegistered<ActivityController>()
+          ? Get.find<ActivityController>()
+          : Get.put(ActivityController());
+  final AddDocumentController addDocumentController =
+      Get.isRegistered<AddDocumentController>()
+          ? Get.find<AddDocumentController>()
+          : Get.put(AddDocumentController());
+  final ManageSubscriptionsController subscriptionController =
+      Get.isRegistered<ManageSubscriptionsController>()
+          ? Get.find<ManageSubscriptionsController>()
+          : Get.put(ManageSubscriptionsController());
 
   @override
   Widget build(BuildContext context) {
