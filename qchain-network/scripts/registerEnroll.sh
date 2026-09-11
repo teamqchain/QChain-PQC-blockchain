@@ -291,4 +291,75 @@ fabric-ca-client enroll \
 cp $NETWORK_ROOT/crypto-material/ordererOrganizations/orderer.example.com/msp/config.yaml \
    $NETWORK_ROOT/crypto-material/ordererOrganizations/orderer.example.com/users/Admin@orderer.example.com/msp/config.yaml
 
-echo "Enrollment complete. crypto-material/ is ready."
+echo "========== Registering and Enrolling General Issuer1 User =========="
+export FABRIC_CA_CLIENT_HOME=$NETWORK_ROOT/crypto-material/peerOrganizations/general.uae.com
+
+fabric-ca-client register \
+  --caname GeneralCA \
+  --id.name issuer1 \
+  --id.secret issuer1pw \
+  --id.type client \
+  --id.attrs 'role=issuer:ecert' \
+  --tls.certfiles $NETWORK_ROOT/fabric-ca/general/ca-cert.pem || true
+
+mkdir -p $NETWORK_ROOT/crypto-material/peerOrganizations/general.uae.com/users/issuer1@general.uae.com
+export FABRIC_CA_CLIENT_HOME=$NETWORK_ROOT/crypto-material/peerOrganizations/general.uae.com/users/issuer1@general.uae.com
+
+fabric-ca-client enroll \
+  -u https://issuer1:issuer1pw@ca.general.uae.com:8054 \
+  --caname GeneralCA \
+  --enrollment.attrs "role" \
+  --tls.certfiles $NETWORK_ROOT/fabric-ca/general/ca-cert.pem
+
+cp $NETWORK_ROOT/crypto-material/peerOrganizations/general.uae.com/msp/config.yaml \
+   $NETWORK_ROOT/crypto-material/peerOrganizations/general.uae.com/users/issuer1@general.uae.com/msp/config.yaml
+
+echo "========== Registering and Enrolling General Verifier1 User =========="
+export FABRIC_CA_CLIENT_HOME=$NETWORK_ROOT/crypto-material/peerOrganizations/general.uae.com
+
+fabric-ca-client register \
+  --caname GeneralCA \
+  --id.name verifier1 \
+  --id.secret verifier1pw \
+  --id.type client \
+  --id.attrs 'role=verifier:ecert' \
+  --tls.certfiles $NETWORK_ROOT/fabric-ca/general/ca-cert.pem || true
+
+mkdir -p $NETWORK_ROOT/crypto-material/peerOrganizations/general.uae.com/users/verifier1@general.uae.com
+export FABRIC_CA_CLIENT_HOME=$NETWORK_ROOT/crypto-material/peerOrganizations/general.uae.com/users/verifier1@general.uae.com
+
+fabric-ca-client enroll \
+  -u https://verifier1:verifier1pw@ca.general.uae.com:8054 \
+  --caname GeneralCA \
+  --enrollment.attrs "role" \
+  --tls.certfiles $NETWORK_ROOT/fabric-ca/general/ca-cert.pem
+
+cp $NETWORK_ROOT/crypto-material/peerOrganizations/general.uae.com/msp/config.yaml \
+   $NETWORK_ROOT/crypto-material/peerOrganizations/general.uae.com/users/verifier1@general.uae.com/msp/config.yaml
+
+echo "========== Generating Fabric Gateway Wallet Identities =========="
+mkdir -p $NETWORK_ROOT/wallet/general
+mkdir -p $NETWORK_ROOT/wallet/government
+
+CERT_ISSUER=$(cat $NETWORK_ROOT/crypto-material/peerOrganizations/general.uae.com/users/issuer1@general.uae.com/msp/signcerts/*.pem | sed ':a;N;$!ba;s/\n/\\n/g')
+KEY_ISSUER=$(cat $NETWORK_ROOT/crypto-material/peerOrganizations/general.uae.com/users/issuer1@general.uae.com/msp/keystore/*_sk | sed ':a;N;$!ba;s/\n/\\n/g')
+
+cat > $NETWORK_ROOT/wallet/general/issuer1.id <<EOF
+{"credentials":{"certificate":"$CERT_ISSUER","privateKey":"$KEY_ISSUER"},"mspId":"GeneralMSP","type":"X.509","version":1}
+EOF
+
+CERT_VERIFIER=$(cat $NETWORK_ROOT/crypto-material/peerOrganizations/general.uae.com/users/verifier1@general.uae.com/msp/signcerts/*.pem | sed ':a;N;$!ba;s/\n/\\n/g')
+KEY_VERIFIER=$(cat $NETWORK_ROOT/crypto-material/peerOrganizations/general.uae.com/users/verifier1@general.uae.com/msp/keystore/*_sk | sed ':a;N;$!ba;s/\n/\\n/g')
+
+cat > $NETWORK_ROOT/wallet/general/verifier1.id <<EOF
+{"credentials":{"certificate":"$CERT_VERIFIER","privateKey":"$KEY_VERIFIER"},"mspId":"GeneralMSP","type":"X.509","version":1}
+EOF
+
+CERT_GOV=$(cat $NETWORK_ROOT/crypto-material/peerOrganizations/government.uae.com/users/Admin@government.uae.com/msp/signcerts/*.pem | sed ':a;N;$!ba;s/\n/\\n/g')
+KEY_GOV=$(cat $NETWORK_ROOT/crypto-material/peerOrganizations/government.uae.com/users/Admin@government.uae.com/msp/keystore/*_sk | sed ':a;N;$!ba;s/\n/\\n/g')
+
+cat > $NETWORK_ROOT/wallet/government/admin.id <<EOF
+{"credentials":{"certificate":"$CERT_GOV","privateKey":"$KEY_GOV"},"mspId":"GovernmentMSP","type":"X.509","version":1}
+EOF
+
+echo "Enrollment complete. crypto-material/ and wallet/ are ready."
