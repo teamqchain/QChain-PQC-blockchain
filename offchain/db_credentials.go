@@ -115,7 +115,13 @@ func fabricCredIDByDisplay(displayID string) (string, error) {
 	if err == sql.ErrNoRows {
 		return "", fmt.Errorf("credential %q not found", displayID)
 	}
-	return fabricID, err
+	if err != nil {
+		return "", err
+	}
+	if fabricID == "" {
+		return "", fmt.Errorf("credential %q has no on-chain Fabric ID (blockchain issuance failed)", displayID)
+	}
+	return fabricID, nil
 }
 
 // markCredentialRevoked updates the credential status to revoked in MySQL.

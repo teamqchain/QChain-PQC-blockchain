@@ -138,6 +138,17 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 1b. Track B2 — look up the holder's ML-KEM public key for off-chain encryption.
+	// A holder must have a registered KEM key before credentials can be issued to them.
+	holderKemPub, kemErr := holderKemPubByID(holderID)
+	if kemErr != nil {
+		log.Printf("WARNING: holder %s KEM key lookup failed: %v", holderID, kemErr)
+	}
+	if holderKemPub == "" {
+		writeError(w, http.StatusBadRequest, "holder does not have a registered encryption key (kem_public_key) — register a key via /mobile/registerHolderKey or run GENERATE_HOLDER_KEYS=1 first")
+		return
+	}
+
 	// 2. Build signed canonical JSON
 	issuedAt := time.Now().In(mustLoadLocation("Asia/Dubai")).Format("2006-01-02T15:04:05")
 	canonicalJSONStr, err := credentialCanonicalJSON(fabricHolderID, req.CredentialType, req.Info, issuedAt, issuerOrgID)
@@ -162,7 +173,7 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 	// and the ledger never has to be modified/restarted. `encBody` replaces the
 	// plaintext body in BOTH off-chain stores (IPFS and MySQL credential_data).
 	// If the org KEM key is unset, encBody == req.Info and behaviour is unchanged.
-	encBody, encErr := encryptCredentialData(credentialHash, req.Info)
+	encBody, encErr := encryptCredentialData(credentialHash, req.Info, holderID, holderKemPub)
 	if encErr != nil {
 		writeError(w, http.StatusInternalServerError, "off-chain encryption failed: "+encErr.Error())
 		return
@@ -205,10 +216,25 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 
 	// 7. Extract fabric cred ID from chaincode response
 	var chainResp map[string]any
-	_ = json.Unmarshal(result, &chainResp)
+	if err := json.Unmarshal(result, &chainResp); err != nil {
+		writeError(w, http.StatusInternalServerError, "invalid JSON response from chaincode: "+err.Error())
+		return
+	}
+	if success, ok := chainResp["success"].(bool); ok && !success {
+		errMsg, _ := chainResp["error"].(string)
+		if errMsg == "" {
+			errMsg = "chaincode returned failure status"
+		}
+		writeError(w, http.StatusInternalServerError, "chaincode issueCredential failed: "+errMsg)
+		return
+	}
 	fabricCredID := ""
 	if cred, ok := chainResp["credential"].(map[string]any); ok {
 		fabricCredID, _ = cred["ID"].(string)
+	}
+	if fabricCredID == "" {
+		writeError(w, http.StatusInternalServerError, "chaincode did not return a valid credential ID")
+		return
 	}
 
 	// 8. Generate display credential ID and persist to MySQL
