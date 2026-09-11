@@ -10,5 +10,4 @@ const String kApiBaseUrl = String.fromEnvironment(
   defaultValue: 'http://localhost:3000',
 );
 
-const String userEmiratesID = '784-1990-1234567-1';
-//'784-2004-7654321-1';
+const String userEmiratesID = '784-2004-7654321-1';
