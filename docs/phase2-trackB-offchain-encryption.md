@@ -53,12 +53,17 @@ This limitation is intentional and bounded by the "don't touch on-chain / don't 
 |---|---|
 | `offchain/config.go` | `orgKemPubHex` / `orgKemPrivHex` are now documented as **legacy fallback**. Added `holderKemKeys map[string]string` — in-memory map of holderID → private key hex, loaded from `.env.holder_keys`. Testing only — production keys live on the holder's device. |
 | `offchain/server.go` | `main()` loads holder keys from `.env.holder_keys`, adds `GENERATE_HOLDER_KEYS=1` one-shot mode, registers `POST /mobile/registerHolderKey`, and updates the startup log to show B2 status. Org KEM key warning downgraded to INFO. |
+| `offchain/holder_keys.go` | **Path resolution & Permissions Fixes:** `holderKeysFilePath()` resolves via `HOLDER_KEYS_FILE` env var, `/app/` mount, and working directory (preventing ephemeral `/build` path writes when containerized). `runGenerateHolderKeys()` supports `FORCE_GENERATE_HOLDER_KEYS=1` and queries all holders if `.env.holder_keys` is missing. Creates file with `0666` permissions so host users can read it. |
+| `offchain/Dockerfile` | Installed binaries to `/usr/local/bin/qchain-server` and `/usr/local/bin/keygen` (in system PATH) so volume-mounting `-v "$PWD/offchain:/app"` during key generation does not mask the container binaries. Added `-DOQS_MINIMAL_BUILD` for fast ARM64 compilation. |
+| `offchain/docker-run.sh` | Automatically detects and mounts `offchain/.env.holder_keys` into `/app/.env.holder_keys:ro` when starting the backend container. |
 | `offchain/envelope.go` | **Core B2 change:** `encryptCredentialData(credID, attrs, holderID, holderKemPubHex)` wraps to `"holder:<holderID>"` instead of `"org"`. `decryptCredentialData(stored, holderID, holderKemPrivHex)` decrypts with holder key (falls back to org key for legacy envelopes). |
-| `offchain/credentials.go` | `handleIssueCredential` now looks up the holder's KEM public key and **requires it** — issuance fails with a clear error if the holder has no key. Passes holderID + holderKemPub to `encryptCredentialData`. |
+| `offchain/credentials.go` | `handleIssueCredential` looks up holder's KEM public key and requires it. Added strict chaincode response checking: aborts immediately if chaincode returns failure or empty `fabricCredID` (preventing corrupted DB rows). |
+| `offchain/db_credentials.go` | Updated `fabricCredIDByDisplay` to detect empty `fabric_cred_id` and return a descriptive error before querying CouchDB. |
 | `offchain/mobile.go` | `handleMobileGetCredentialsByHolder` looks up the holder's KEM private key and passes it to `decryptCredentialData` for server-side decryption. |
 | `offchain/backfill.go` | `runBackfillEncrypt()` now encrypts each credential to its **holder's** KEM public key (looked up from DB), not to a single org key. Skips credentials whose holder has no key. |
 | `offchain/db_holders.go` | Added `holderKemPubByID`, `holderKemPubByEmiratesID`, `updateHolderKemPub` functions. |
 | `offchain/envelope_test.go` | Tests updated for holder-key model: round-trip, tamper detection, holder key required, recipient verification. |
+| `qchain-network/scripts/registerEnroll.sh` | Enrolls `issuer1` and `verifier1` with `--id.attrs 'role=issuer:ecert'` and `--id.attrs 'role=verifier:ecert'` so chaincode `checkAccess` passes attribute verification. |
 
 **Nothing else was touched.** No file under `qchain-network/chaincode/` was modified. No `configtx`, `core.yaml`, docker, or channel artifact was modified.
 
@@ -89,10 +94,20 @@ Order matters, but every step is safe on a live system and none touches the bloc
    ```
 
 2. **Generate holder KEM keys** for all existing holders (one-shot, writes public keys to DB and private keys to `.env.holder_keys`):
+   ```bash
+   # Via Docker:
+   docker run --rm \
+     --network host \
+     --user "$(id -u):$(id -g)" \
+     --env-file offchain/.env \
+     -v "$PWD/offchain:/app" \
+     -e GENERATE_HOLDER_KEYS=1 \
+     qchain-api:latest
+
+   # Or natively:
+   GENERATE_HOLDER_KEYS=1 MYSQL_DSN=<dsn> ./qchain-server
    ```
-   GENERATE_HOLDER_KEYS=1 MYSQL_DSN=<dsn> <your normal backend start command>
-   ```
-   This generates an ML-KEM-768 key pair for every holder without one. Public keys go to `holders.kem_public_key` in MySQL; private keys go to `offchain/.env.holder_keys`. The server then exits.
+   This generates an ML-KEM-768 key pair for every holder without one (or force regeneration with `FORCE_GENERATE_HOLDER_KEYS=1` if the file was deleted). Public keys go to `holders.kem_public_key` in MySQL; private keys go to `offchain/.env.holder_keys`. The server then exits.
    
    **Keep `.env.holder_keys` out of git** (already gitignored). Private keys are for **testing only** — in production they live on the holder's device.
 

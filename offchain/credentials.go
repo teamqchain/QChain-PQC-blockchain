@@ -216,10 +216,25 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 
 	// 7. Extract fabric cred ID from chaincode response
 	var chainResp map[string]any
-	_ = json.Unmarshal(result, &chainResp)
+	if err := json.Unmarshal(result, &chainResp); err != nil {
+		writeError(w, http.StatusInternalServerError, "invalid JSON response from chaincode: "+err.Error())
+		return
+	}
+	if success, ok := chainResp["success"].(bool); ok && !success {
+		errMsg, _ := chainResp["error"].(string)
+		if errMsg == "" {
+			errMsg = "chaincode returned failure status"
+		}
+		writeError(w, http.StatusInternalServerError, "chaincode issueCredential failed: "+errMsg)
+		return
+	}
 	fabricCredID := ""
 	if cred, ok := chainResp["credential"].(map[string]any); ok {
 		fabricCredID, _ = cred["ID"].(string)
+	}
+	if fabricCredID == "" {
+		writeError(w, http.StatusInternalServerError, "chaincode did not return a valid credential ID")
+		return
 	}
 
 	// 8. Generate display credential ID and persist to MySQL

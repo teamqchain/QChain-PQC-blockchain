@@ -39,10 +39,18 @@ const holderKeysFileName = ".env.holder_keys"
 // holderKeysFilePath returns the absolute path to the holder keys file, located
 // in the same directory as this source file (i.e. offchain/).
 func holderKeysFilePath() string {
-	// Try working directory first (Docker / normal run), fall back to source dir.
+	if envPath := os.Getenv("HOLDER_KEYS_FILE"); envPath != "" {
+		return envPath
+	}
 	if _, err := os.Stat(holderKeysFileName); err == nil {
 		abs, _ := filepath.Abs(holderKeysFileName)
 		return abs
+	}
+	if fi, err := os.Stat("/app"); err == nil && fi.IsDir() {
+		return filepath.Join("/app", holderKeysFileName)
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		return filepath.Join(cwd, holderKeysFileName)
 	}
 	_, src, _, _ := runtime.Caller(0)
 	return filepath.Join(filepath.Dir(src), holderKeysFileName)
@@ -197,7 +205,13 @@ func runGenerateHolderKeys() {
 		log.Fatal("generate-holder-keys: database not configured (set MYSQL_DSN)")
 	}
 
-	rows, err := db.Query(`SELECT holder_id FROM holders WHERE kem_public_key IS NULL OR kem_public_key = ''`)
+	keyFilePath := holderKeysFilePath()
+	query := `SELECT holder_id FROM holders WHERE kem_public_key IS NULL OR kem_public_key = ''`
+	if _, err := os.Stat(keyFilePath); os.IsNotExist(err) || os.Getenv("FORCE_GENERATE_HOLDER_KEYS") == "1" {
+		query = `SELECT holder_id FROM holders`
+	}
+
+	rows, err := db.Query(query)
 	if err != nil {
 		log.Fatalf("generate-holder-keys: query holders: %v", err)
 	}
@@ -213,15 +227,14 @@ func runGenerateHolderKeys() {
 	}
 	rows.Close()
 
-	log.Printf("generate-holder-keys: %d holder(s) without KEM keys", len(holderIDs))
+	log.Printf("generate-holder-keys: %d holder(s) to process", len(holderIDs))
 	if len(holderIDs) == 0 {
 		log.Println("generate-holder-keys: nothing to do")
 		return
 	}
 
 	// Open the env file for appending (create if not exists).
-	keyFilePath := holderKeysFilePath()
-	f, err := os.OpenFile(keyFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(keyFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		log.Fatalf("generate-holder-keys: cannot open %s: %v", keyFilePath, err)
 	}
