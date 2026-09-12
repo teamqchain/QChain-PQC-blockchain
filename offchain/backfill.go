@@ -23,22 +23,20 @@ func runBackfillEncrypt() {
 	if db == nil {
 		log.Fatal("backfill: database not configured (set MYSQL_DSN)")
 	}
-	if orgKemPubHex == "" {
-		log.Fatal("backfill: ORG_KEM_PUBLIC_KEY_HEX not set — nothing to encrypt to")
-	}
 
-	rows, err := db.Query(`SELECT credential_id, credential_hash, credential_data
-	                         FROM credentials
-	                        WHERE enc_version = 0`)
+	rows, err := db.Query(`SELECT c.credential_id, c.credential_hash, c.credential_data, c.holder_id, COALESCE(h.kem_public_key, '')
+	                         FROM credentials c
+	                         JOIN holders h ON c.holder_id = h.holder_id
+	                        WHERE c.enc_version = 0`)
 	if err != nil {
 		log.Fatalf("backfill: query legacy rows: %v", err)
 	}
 
-	type row struct{ id, hash, data string }
+	type row struct{ id, hash, data, holderID, holderKemPub string }
 	var todo []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.hash, &r.data); err != nil {
+		if err := rows.Scan(&r.id, &r.hash, &r.data, &r.holderID, &r.holderKemPub); err != nil {
 			rows.Close()
 			log.Fatalf("backfill: scan: %v", err)
 		}
@@ -57,7 +55,12 @@ func runBackfillEncrypt() {
 			skipped++
 			continue
 		}
-		enc, err := encryptCredentialData(r.hash, r.data)
+		if r.holderKemPub == "" {
+			log.Printf("backfill: %s: skipping — holder %s has no kem_public_key (run GENERATE_HOLDER_KEYS=1 first)", r.id, r.holderID)
+			skipped++
+			continue
+		}
+		enc, err := encryptCredentialData(r.hash, r.data, r.holderID, r.holderKemPub)
 		if err != nil {
 			log.Printf("backfill: %s: encrypt failed: %v", r.id, err)
 			continue
@@ -69,5 +72,5 @@ func runBackfillEncrypt() {
 		}
 		done++
 	}
-	log.Printf("backfill: done. encrypted=%d already-envelope=%d total=%d", done, skipped, len(todo))
+	log.Printf("backfill: done. encrypted=%d skipped=%d total=%d", done, skipped, len(todo))
 }
