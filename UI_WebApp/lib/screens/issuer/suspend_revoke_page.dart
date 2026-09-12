@@ -161,7 +161,7 @@ class _RevokeSuspendPageState extends State<RevokeSuspendPage> {
               ? kCurrentUser
               : null,
           revokedDate: newStatus == CredentialStatus.revoked
-              ? DateFormatter.formatIsoDate(DateTime.now() as String?)
+              ? DateTime.now().toIso8601String()
               : null,
           auditTrail: old.auditTrail,
           attributes: old.attributes,

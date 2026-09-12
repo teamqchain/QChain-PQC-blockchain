@@ -200,7 +200,7 @@ class CredentialPreviewCard extends StatelessWidget {
                           noExpiry
                               ? 'No Expiry'
                               : expiryDate != null
-                              ? DateFormatter.formatIsoDate(expiryDate! as String?)
+                              ? DateFormatter.formatDate(expiryDate!)
                               : '—',
                           style: const TextStyle(
                             fontSize: 10,
