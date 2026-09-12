@@ -6,6 +6,7 @@ import 'package:qwallet_mobileapp/components/emptyState.dart';
 import 'package:qwallet_mobileapp/components/shimmerWave.dart';
 import 'package:qwallet_mobileapp/skeletons/addDoc_skeleton.dart';
 import 'package:qwallet_mobileapp/utils/app_config.dart';
+import 'package:qwallet_mobileapp/utils/haptics.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/widgets/QSearchBar.dart';
 import 'package:qwallet_mobileapp/model/catalog_model.dart';
@@ -182,6 +183,7 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
 
                                     if (result['success'] == true) {
                                       walletCtrl.fetchMyCredentials();
+                                      await QHaptics.success();
                                       Get.snackbar(
                                         'Success',
                                         'Document added to your wallet!',
@@ -190,6 +192,7 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
                                         colorText: Colors.white,
                                       );
                                     } else {
+                                      await QHaptics.error();
                                       Get.snackbar(
                                         'Not Found',
                                         result['message'],
@@ -201,6 +204,7 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
                                   } catch (e) {
                                     setStateSheet(() => isFetching = false);
                                     if (context.mounted) Navigator.pop(ctx);
+                                    await QHaptics.error();
                                     Get.snackbar(
                                       'Network Error',
                                       e.toString(),
@@ -310,6 +314,7 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
               return RefreshIndicator(
                 color: qPrimary,
                 onRefresh: () async {
+                  await QHaptics.refresh();
                   await controller.loadCatalog();
                   if (controller.errorMessage.value.isNotEmpty) {
                     Get.snackbar(

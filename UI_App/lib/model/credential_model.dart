@@ -12,6 +12,9 @@ class CredentialModel {
   final String status;
   bool isFavorite;
   final String category;
+  final Map<String, dynamic> attributes;
+  final String? txHash;
+  final String? cid;
 
   CredentialModel({
     required this.credentialID,
@@ -24,9 +27,20 @@ class CredentialModel {
     required this.status,
     this.isFavorite = false,
     required this.category,
+    this.attributes = const {},
+    this.txHash,
+    this.cid,
   });
 
   factory CredentialModel.fromJson(Map<String, dynamic> json) {
+    final rawAttrs = json['attributes'];
+    final attrs = <String, dynamic>{};
+    if (rawAttrs is Map) {
+      rawAttrs.forEach((k, v) {
+        if (k != null) attrs[k.toString()] = v;
+      });
+    }
+
     return CredentialModel(
       credentialID: json['credentialID'] ?? '',
       credentialType: json['credentialType'] ?? 'Document',
@@ -38,6 +52,9 @@ class CredentialModel {
       status: json['status'] ?? 'active',
       isFavorite: json['isFavorite'] == true || json['isFavorite'] == 1,
       category: json['category'] ?? 'General',
+      attributes: attrs,
+      txHash: json['txHash']?.toString(),
+      cid: json['cid']?.toString(),
     );
   }
 

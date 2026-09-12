@@ -10,6 +10,7 @@ import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/widgets/QSearchBar.dart';
 import 'package:qwallet_mobileapp/model/activity_model.dart';
 import 'package:qwallet_mobileapp/controllers/activity_controller.dart'; // <-- Import new controller
+import 'package:qwallet_mobileapp/utils/haptics.dart';
 
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
@@ -215,6 +216,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
               return RefreshIndicator(
                 color: qPrimary,
                 onRefresh: () async {
+                  await QHaptics.refresh();
                   await controller.fetchActivity();
                   if (controller.errorMessage.value.isNotEmpty) {
                     Get.snackbar(

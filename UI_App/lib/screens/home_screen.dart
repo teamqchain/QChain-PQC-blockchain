@@ -11,6 +11,7 @@ import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
 import 'package:qwallet_mobileapp/routes/main_shell.dart';
+import 'package:qwallet_mobileapp/utils/haptics.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -103,6 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   : RefreshIndicator(
                       color: Colors.black,
                       onRefresh: () async {
+                        await QHaptics.refresh();
                         // Refresh both on pull-down
                         await controller.fetchMyCredentials();
                         await activityController.fetchActivity();
