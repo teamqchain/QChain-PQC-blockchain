@@ -5,8 +5,10 @@ import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/screens/selective_screen.dart';
+import 'package:qwallet_mobileapp/screens/certificate_viewer_screen.dart';
 import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
+import 'package:qchain_shared/certificate_template.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DOCUMENT DETAIL SCREEN
@@ -210,7 +212,7 @@ class _DocHeroBox extends StatelessWidget {
           bottomRight: Radius.circular(32),
         ),
       ),
-      padding: EdgeInsets.fromLTRB(24, topPad + 16, 24, 28),
+      padding: EdgeInsets.fromLTRB(24, topPad + 16, 24, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -291,13 +293,13 @@ class _DocHeroBox extends StatelessWidget {
                 color: Colors.white.withOpacity(0.08),
                 width: 1.5,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: doc.cardColor.withOpacity(0.5),
-                  blurRadius: 30,
-                  offset: const Offset(0, 8),
-                ),
-              ],
+              // boxShadow: [
+              //   BoxShadow(
+              //     color: doc.cardColor.withOpacity(0.5),
+              //     blurRadius: 30,
+              //     offset: const Offset(0, 8),
+              //   ),
+              // ],
             ),
             child: Stack(
               children: [
@@ -460,6 +462,32 @@ class _DocHeroBox extends StatelessWidget {
               ],
             ),
           ),
+          // const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: _ActionBtn(
+              icon: Icons.remove_red_eye,
+              label: 'View Certificate',
+              bgColor: const Color.fromARGB(0, 255, 255, 255),
+              fgColor: qBg,
+              // border: const Color(0xFFEBEBEB),
+              onTap: () {
+                final fieldMap = <String, String>{};
+                doc.attributes.forEach((k, v) {
+                  fieldMap[k] = v?.toString() ?? '';
+                });
+
+                final certData = CertificateData.fromFields(
+                  holderName: doc.holderName,
+                  issueDate: doc.formattedIssueDate,
+                  fields: fieldMap,
+                  credentialType: doc.credentialType,
+                );
+
+                Get.to(() => CertificateViewerScreen(data: certData));
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -594,10 +622,10 @@ class _DetailsSection extends StatelessWidget {
       final finalKey =
           formattedKey[0].toUpperCase() + formattedKey.substring(1);
 
-      fields.insert(
-        fields.length - 1,
-        _DetailRow(label: finalKey, value: value.toString()),
-      );
+      // fields.insert(
+      //   fields.length - 1,
+      //   _DetailRow(label: finalKey, value: value.toString()),
+      // );
     });
 
     return Column(
@@ -792,46 +820,46 @@ class _BottomActions extends StatelessWidget {
     //   return const SizedBox.shrink(); // Hide if revoked/suspended/expired
     // }
 
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _ActionBtn(
-            icon: Icons.qr_code_scanner,
-            label: 'Present',
-            bgColor: Colors.white,
-            fgColor: const Color(0xFF111111),
-            border: const Color(0xFFEBEBEB),
-            // onTap: () {
-            //   Get.toNamed('/present', arguments: doc.raw);
-            // },
-            onTap: () {
-              Get.to(
-                () => SelectiveShareScreen(doc: doc.raw, mode: ShareMode.qr),
-              );
-              // _close();
-            },
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _ActionBtn(
-            icon: Icons.pin_outlined,
-            label: 'Generate OTP',
-            bgColor: const Color(0xFF111111),
-            fgColor: Colors.white,
-            // onTap: () => _handleGenerateOTP(context),
-            onTap: () {
-              // Navigator.of(context).push(
-              //   MaterialPageRoute(
-              //     builder: (_) =>
-              //         SelectiveShareScreen(doc: doc.raw, mode: ShareMode.otp),
-              //   ),
-              // );
-              Get.to(
-                () => SelectiveShareScreen(doc: doc.raw, mode: ShareMode.otp),
-              );
-            },
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: 
+
+              _ActionBtn(
+                icon: Icons.pin_outlined,
+                label: 'Generate OTP',
+                
+
+                bgColor: Colors.white,
+                fgColor: const Color(0xFF111111),
+                border: const Color(0xFFEBEBEB),
+                onTap: () {
+                  Get.to(
+                    () =>
+                        SelectiveShareScreen(doc: doc.raw, mode: ShareMode.otp),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: 
+              _ActionBtn(
+                icon: Icons.qr_code_scanner,
+                label: 'Present',
+                bgColor: const Color(0xFF111111),
+                fgColor: Colors.white,
+                onTap: () {
+                  Get.to(
+                    () =>
+                        SelectiveShareScreen(doc: doc.raw, mode: ShareMode.qr),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ],
     );

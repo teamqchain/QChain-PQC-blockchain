@@ -7,6 +7,7 @@ import 'package:qwallet_mobileapp/components/emptyState.dart';
 import 'package:qwallet_mobileapp/components/shimmerWave.dart';
 import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
+import 'package:qwallet_mobileapp/utils/haptics.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -74,6 +75,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   : RefreshIndicator(
                       color: qPrimary,
                       onRefresh: () async {
+                        await QHaptics.refresh();
                         await _walletController.fetchMyCredentials();
                         if (_walletController.errorMessage.value.isNotEmpty) {
                           Get.snackbar(

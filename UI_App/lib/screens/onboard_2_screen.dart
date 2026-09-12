@@ -95,12 +95,15 @@ class _StepCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          color: obText,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15,
+                      Flexible(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            color: obText,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            // overflow: TextOverflow.ellipsis
+                          ),
                         ),
                       ),
                     ],

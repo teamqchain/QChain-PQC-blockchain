@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:qportal_webapp/models/dashboard_Model.dart';
 import 'package:qportal_webapp/services/core_api.dart';
 import 'package:qportal_webapp/theme/appColours.dart';
@@ -204,28 +205,11 @@ class _AppSidebarState extends State<AppSidebar> {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 22, 16, 18),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: const BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage('assets/images/QChain_logo_white.png'),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Text(
-              'QPortal',
-              style: AppTextStyles.navLabelActive.copyWith(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1,
-                fontFamily: 'formula',
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
+          SvgPicture.asset(
+            'assets/images/QPortal_logo_complete.svg',
+            width: 150,
           ),
         ],
       ),

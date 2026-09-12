@@ -46,132 +46,134 @@ class _SplashScreenState extends State<SplashScreen>
       backgroundColor: qBgSurface,
       appBar: AppBar(
         systemOverlayStyle: SystemUiOverlayStyle.dark,
-        toolbarHeight: 0, // Removed the negative sign here
+        toolbarHeight: 0,
       ),
       body: SafeArea(
-        // 1. We wrap the Column in a SizedBox to force it to full width
-        child: SizedBox(
-          width: double.infinity,
-          child: Column(
-            // 2. This guarantees everything inside stays centered horizontally
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const Spacer(flex: 2),
-
-              // ── Logo area ────────────────────────────────────────────────────
-              Stack(
-                alignment: Alignment.center,
+        child: Center(
+          // Keeps the splash content centered on fold / wide screens.
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: SizedBox(
+              width: double.infinity,
+              height: double.infinity,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Outer glow ring
-                  AnimatedBuilder(
-                    animation: _pulse,
-                    builder: (_, __) => SizedBox(width: 160, height: 160),
-                  ),
-                  // Middle ring
-                  AnimatedBuilder(
-                    animation: _pulse,
-                    builder: (_, __) => SizedBox(width: 120, height: 120),
-                  ),
-                  // Core
-                  Container(
-                    width: 200,
-                    height: 200,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
+                  const Spacer(flex: 2),
+
+                  // ── Logo area ────────────────────────────────────────────────
+                  Stack(
                     alignment: Alignment.center,
-                    child: Image.asset(
-                      'assets/images/QChain_logo.png',
-                      width: 400,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ],
-              ),
-
-              const Text(
-                'QWallet',
-                style: TextStyle(
-                  fontSize: 36,
-                  color: Colors.black,
-                  letterSpacing: -1,
-                  fontFamily: 'formula',
-                ),
-              ),
-              const SizedBox(height: 3),
-              const Text(
-                'security redefined',
-                style: TextStyle(
-                  fontSize: 8,
-                  color: qText,
-                  letterSpacing: 2,
-                  fontFamily: 'formula',
-                ),
-              ),
-
-              const Spacer(flex: 2),
-
-              // ── Button ───────────────────────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: ConstrainedBox(
-                  // Capping the width so it looks good on wide screens
-                  constraints: const BoxConstraints(maxWidth: 350),
-                  child: SizedBox(
-                    // Stretching the button to fill the constraint
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        // Pre-warm the core controllers so their onInit fetches
-                        // run in the background while the user goes through
-                        // onboarding. By the time they reach the Home screen the
-                        // data is already loaded, avoiding the loading wait.
-                        // permanent: true keeps them alive across Get.offAllNamed.
-                        if (!Get.isRegistered<WalletController>()) {
-                          Get.put(WalletController(), permanent: true);
-                        }
-                        if (!Get.isRegistered<ActivityController>()) {
-                          Get.put(ActivityController(), permanent: true);
-                        }
-                        if (!Get.isRegistered<AddDocumentController>()) {
-                          Get.put(AddDocumentController(), permanent: true);
-                        }
-                        if (!Get.isRegistered<ManageSubscriptionsController>()) {
-                          Get.put(
-                            ManageSubscriptionsController(),
-                            permanent: true,
-                          );
-                        }
-                        Get.toNamed(Routes.ONBOARD1);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: qPrimary,
-                        foregroundColor: qBg,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
+                    children: [
+                      AnimatedBuilder(
+                        animation: _pulse,
+                        builder: (_, __) =>
+                            const SizedBox(width: 160, height: 160),
+                      ),
+                      AnimatedBuilder(
+                        animation: _pulse,
+                        builder: (_, __) =>
+                            const SizedBox(width: 120, height: 120),
+                      ),
+                      Container(
+                        width: 200,
+                        height: 200,
+                        decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(30),
                         ),
+                        alignment: Alignment.center,
+                        child: Image.asset(
+                          'assets/images/QChain_logo.png',
+                          width: 200,
+                          fit: BoxFit.contain,
+                        ),
                       ),
-                      child: const Text(
-                        'Get Started',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.5,
+                    ],
+                  ),
+
+                  const Text(
+                    'QWallet',
+                    style: TextStyle(
+                      fontSize: 36,
+                      color: Colors.black,
+                      letterSpacing: -1,
+                      fontFamily: 'formula',
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  const Text(
+                    'security redefined',
+                    style: TextStyle(
+                      fontSize: 8,
+                      color: qText,
+                      letterSpacing: 2,
+                      fontFamily: 'formula',
+                    ),
+                  ),
+
+                  const Spacer(flex: 2),
+
+                  // ── Button ───────────────────────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 350),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            if (!Get.isRegistered<WalletController>()) {
+                              Get.put(WalletController(), permanent: true);
+                            }
+                            if (!Get.isRegistered<ActivityController>()) {
+                              Get.put(ActivityController(), permanent: true);
+                            }
+                            if (!Get.isRegistered<AddDocumentController>()) {
+                              Get.put(
+                                AddDocumentController(),
+                                permanent: true,
+                              );
+                            }
+                            if (!Get.isRegistered<
+                                ManageSubscriptionsController>()) {
+                              Get.put(
+                                ManageSubscriptionsController(),
+                                permanent: true,
+                              );
+                            }
+                            Get.toNamed(Routes.ONBOARD1);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: qPrimary,
+                            foregroundColor: qBg,
+                            elevation: 0,
+                            minimumSize: const Size(0, 56),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                          ),
+                          child: const Text(
+                            'Get Started',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Powered by QChain',
+                    style: TextStyle(color: qDimmed, fontSize: 11),
+                  ),
+                  const SizedBox(height: 40),
+                ],
               ),
-              const SizedBox(height: 20),
-              const Text(
-                'Powered by QChain',
-                style: TextStyle(color: qDimmed, fontSize: 11),
-              ),
-              const SizedBox(height: 40),
-            ],
+            ),
           ),
         ),
       ),

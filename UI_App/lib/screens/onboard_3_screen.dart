@@ -78,7 +78,6 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
           const SizedBox(height: 36),
           // Fixed-height text block to prevent layout jump during the switch.
           SizedBox(
-            height: 150,
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 350),
               layoutBuilder: (current, previous) => Stack(

@@ -1,0 +1,37 @@
+name: qchain_shared
+description: Shared QChain frontend helpers (certificate template + A4 viewer).
+publish_to: "none"
+version: 1.0.0
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_svg: ^2.3.0
+
+dev_dependencies:
+  lints: ^5.0.0
+
+flutter:
+  assets:
+    - assets/images/
+  fonts:
+    - family: 29LT Bukra
+      fonts:
+        - asset: assets/fonts/29lt-bukra.ttf
+          weight: 400
+        - asset: assets/fonts/29lt-bukra-medium.otf
+          weight: 500
+        - asset: assets/fonts/29lt-bukra-bold.ttf
+          weight: 700
+    - family: Times New Roman
+      fonts:
+        - asset: assets/fonts/TimesNewRoman.ttf
+          weight: 400
+        - asset: assets/fonts/TimesNewRoman-Italic.ttf
+          weight: 400
+          style: italic
+        - asset: assets/fonts/TimesNewRoman-Bold.ttf
+          weight: 700

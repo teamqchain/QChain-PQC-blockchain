@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:qwallet_mobileapp/components/card_widgets.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
+import 'package:qwallet_mobileapp/utils/haptics.dart';
 
 class StackView extends StatefulWidget {
   final List<CredentialModel> docs;
@@ -57,15 +58,23 @@ class StackViewState extends State<StackView>
   void _onPanEnd(DragEndDetails details) {
     if (widget.docs.length <= 1) return;
 
+    var didChangeCard = false;
+
     if (_dragOffset > 60 || details.primaryVelocity! > 300) {
       setState(() {
         _currentIndex = (_currentIndex + 1) % widget.docs.length;
       });
+      didChangeCard = true;
     } else if (_dragOffset < -60 || details.primaryVelocity! < -300) {
       setState(() {
         _currentIndex =
             (_currentIndex - 1 + widget.docs.length) % widget.docs.length;
       });
+      didChangeCard = true;
+    }
+
+    if (didChangeCard) {
+      QHaptics.cardSwipe();
     }
 
     setState(() {

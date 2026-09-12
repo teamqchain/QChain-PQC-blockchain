@@ -7,8 +7,9 @@ import 'package:qportal_webapp/services/issuer_api.dart';
 import 'package:qportal_webapp/utils/currentUser.dart';
 import 'package:qportal_webapp/utils/dateFormatter.dart';
 import 'package:qportal_webapp/tables/holder_table.dart';
-import 'package:qportal_webapp/widgets/previewCard.dart';
+import 'package:qportal_webapp/widgets/certificate_viewer.dart';
 import 'package:qportal_webapp/widgets/schemeType.dart';
+import 'package:qchain_shared/certificate_template.dart';
 import 'package:qportal_webapp/components/searchBar.dart';
 import 'package:qportal_webapp/components/stepper.dart';
 import 'package:qportal_webapp/models/ISSUER/credentials_model.dart';
@@ -1102,21 +1103,33 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
   // ══════════════════════════════════════════════════════════════════════════
 
   Widget _buildStep4() {
+    final schema = _selectedSchema!;
+    final holder = _selectedHolder!;
+
+    // Build label → value map the same way issuance builds infoMap.
+    final fieldsByLabel = <String, String>{};
+    for (final f in schema.fields) {
+      fieldsByLabel[f.label] = _fieldValues[f.id] ?? '';
+    }
+
+    final certData = CertificateData.fromFields(
+      holderName: holder.fullName,
+      issueDate: DateFormatter.formatIsoDate(DateTime.now().toIso8601String()),
+      fields: fieldsByLabel,
+      credentialType: fieldsByLabel['Degree Title']?.isNotEmpty == true
+          ? fieldsByLabel['Degree Title']
+          : schema.name,
+    );
+
+    // Fill the step area; CertificateSheet keeps A4 aspect and scales
+    // the fixed canvas down to fit (no scroll, no stretch).
     return _card(
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(28),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 460),
-            child: CredentialPreviewCard(
-              schema: _selectedSchema!,
-              holder: _selectedHolder!,
-              fieldValues: Map.from(_fieldValues),
-              expiryDate: _noExpiry ? null : _expiryDate,
-              noExpiry: _noExpiry,
-              orgName: kOrgName,
-              issuerName: kCurrentUser,
-            ),
+      child: SizedBox.expand(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: CertificateViewer(
+            data: certData,
+            showWatermark: true,
           ),
         ),
       ),

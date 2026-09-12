@@ -34,11 +34,14 @@ dependencies:
     sdk: flutter
   flutter_card_swiper: ^7.2.0
   flutter_launcher_icons: ^0.14.4
+  flutter_svg: ^2.3.0
   flutter_swiper_view: ^1.1.8
   get: ^4.7.3
   http: ^1.6.0
   phosphor_flutter: ^2.1.0
   qr_flutter: ^4.1.0
+  qchain_shared:
+    path: ../shared
 
 dev_dependencies:
   flutter_lints: ^5.0.0
