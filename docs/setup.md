@@ -244,7 +244,7 @@ cd $REPO_ROOT
 bash offchain/docker-build.sh
 
 # 2. Generate organisation ML-DSA-44 keys via Docker
-docker run --rm qchain-api:latest /app/keygen
+docker run --rm qchain-api:latest keygen
 
 # 3. Create the .env configuration file
 cat > offchain/.env <<'ENV'
