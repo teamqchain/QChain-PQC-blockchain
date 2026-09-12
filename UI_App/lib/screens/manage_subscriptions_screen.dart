@@ -9,6 +9,7 @@ import 'package:qwallet_mobileapp/model/subscription_model.dart';
 import 'package:qwallet_mobileapp/controllers/manage_subscriptions_controller.dart';
 import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
 import 'package:qwallet_mobileapp/widgets/QSearchBar.dart';
+import 'package:qwallet_mobileapp/utils/haptics.dart';
 
 class ManageSubscriptionsScreen extends StatefulWidget {
   const ManageSubscriptionsScreen({super.key});
@@ -204,7 +205,10 @@ class _ManageSubscriptionsScreenState extends State<ManageSubscriptionsScreen> {
 
               return RefreshIndicator(
                 color: qPrimary,
-                onRefresh: () => controller.fetchSubscriptions(),
+                onRefresh: () async {
+                  await QHaptics.refresh();
+                  await controller.fetchSubscriptions();
+                },
                 child: ListView(
                   padding: const EdgeInsets.all(20),
                   children: [
