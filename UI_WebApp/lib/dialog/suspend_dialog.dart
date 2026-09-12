@@ -105,7 +105,7 @@ class _SuspendDialogState extends State<SuspendDialog> {
             acked: _acked,
             mode: _mode,
             untilDate: _untilDate,
-            dateLabel: _untilDate != null ? DateFormatter.formatIsoDate(_untilDate! as String) : null,
+            dateLabel: _untilDate != null ? DateFormatter.formatDate(_untilDate!) : null,
             reasons: _kSuspendReasons,
             onReasonChanged: (v) => setState(() => _reason = v),
             onAckedChanged: (v) => setState(() => _acked = v),

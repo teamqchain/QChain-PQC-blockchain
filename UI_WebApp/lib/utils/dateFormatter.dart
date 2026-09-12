@@ -39,6 +39,14 @@ class DateFormatter {
     }
   }
 
+  /// Formats a [DateTime] directly into "DD MMM YYYY" (e.g., "15 Jan 2025").
+  /// Use this instead of [formatIsoDate] when you already have a DateTime
+  /// (e.g. from showDatePicker) to avoid an invalid `as String` cast.
+  static String formatDate(DateTime dt) {
+    final local = dt.toLocal();
+    return '${local.day.toString().padLeft(2, '0')} ${getMonthName(local.month)} ${local.year}';
+  }
+
   /// Parses an ISO string and returns BOTH date and time (e.g., "15 Jan 2025, 10:00 AM")
   static String formatIsoDateAndTime(String? iso) {
     if (iso == null || iso.isEmpty) return '';
