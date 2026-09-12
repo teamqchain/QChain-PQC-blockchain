@@ -182,20 +182,18 @@ func openAttributes(env *Envelope, recipient, kemSecHex string) (map[string]json
 // ─────────────────────────────────────────────
 
 // encryptCredentialData converts a plaintext attribute JSON string into an
-// envelope JSON string wrapped to the org key. If off-chain encryption is
-// disabled (ORG_KEM_PUBLIC_KEY_HEX unset), it returns the input unchanged so the
-// system behaves exactly as before Track B (safe-by-default; never blocks issuance).
-//
+// envelope JSON string wrapped to the holder's ML-KEM public key (recipient "holder:<holderID>").
 // credID is an HKDF context binding — issuance passes the credential hash.
-func encryptCredentialData(credID, attrsJSON string) (string, error) {
-	if orgKemPubHex == "" {
-		return attrsJSON, nil // encryption disabled — legacy plaintext behaviour
+func encryptCredentialData(credID, attrsJSON, holderID, holderKemPubHex string) (string, error) {
+	if holderKemPubHex == "" {
+		return "", fmt.Errorf("encryptCredentialData: holder %q has no registered KEM public key", holderID)
 	}
 	attrs, err := splitFields(attrsJSON)
 	if err != nil {
 		return "", err
 	}
-	env, err := sealAttributes(credID, attrs, []Recipient{{Name: recipientOrg, PubHex: orgKemPubHex}})
+	recipientName := fmt.Sprintf("holder:%s", holderID)
+	env, err := sealAttributes(credID, attrs, []Recipient{{Name: recipientName, PubHex: holderKemPubHex}})
 	if err != nil {
 		return "", err
 	}
@@ -206,24 +204,41 @@ func encryptCredentialData(credID, attrsJSON string) (string, error) {
 	return string(b), nil
 }
 
-// decryptCredentialData reverses encryptCredentialData. Legacy plaintext rows
-// (no envelope marker) pass through untouched, so old and new credentials coexist.
-func decryptCredentialData(stored string) (string, error) {
+// decryptCredentialData reverses encryptCredentialData.
+// First tries decrypting using the holder's KEM private key (recipient "holder:<holderID>").
+// If holder key is not available or fails, falls back to legacy "org" recipient (B3 fallback).
+// Legacy plaintext rows (no envelope marker) pass through untouched.
+func decryptCredentialData(stored, holderID, holderKemPrivHex string) (string, error) {
 	b := []byte(stored)
 	if !looksLikeEnvelope(b) {
 		return stored, nil // legacy plaintext
-	}
-	if orgKemPrivHex == "" {
-		return "", fmt.Errorf("credential_data is encrypted but ORG_KEM_PRIVATE_KEY_HEX is not set")
 	}
 	var env Envelope
 	if err := json.Unmarshal(b, &env); err != nil {
 		return "", fmt.Errorf("parse envelope: %w", err)
 	}
-	attrs, err := openAttributes(&env, recipientOrg, orgKemPrivHex)
-	if err != nil {
-		return "", err
+
+	// 1. Try holder key first (Track B2)
+	recipientHolder := fmt.Sprintf("holder:%s", holderID)
+	if holderKemPrivHex != "" {
+		attrs, err := openAttributes(&env, recipientHolder, holderKemPrivHex)
+		if err == nil {
+			return formatDecryptedAttrs(attrs)
+		}
 	}
+
+	// 2. Fallback to legacy org key (B3 fallback if deployed)
+	if orgKemPrivHex != "" {
+		attrs, err := openAttributes(&env, recipientOrg, orgKemPrivHex)
+		if err == nil {
+			return formatDecryptedAttrs(attrs)
+		}
+	}
+
+	return "", fmt.Errorf("could not decrypt envelope for holder %q (no matching private key available)", holderID)
+}
+
+func formatDecryptedAttrs(attrs map[string]json.RawMessage) (string, error) {
 	// Single-field raw fallback (non-object payloads were wrapped under "_raw").
 	if len(attrs) == 1 {
 		if raw, ok := attrs["_raw"]; ok {

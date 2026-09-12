@@ -15,8 +15,7 @@ import (
 	"testing"
 )
 
-// setupKEM resolves the KEM name and generates a throwaway org key for the test.
-func setupKEM(t *testing.T) {
+func setupTestKeys(t *testing.T) (holderID, holderPub, holderPriv string) {
 	t.Helper()
 	if n := resolveKEMName(); n != "" {
 		kemName = n
@@ -27,14 +26,14 @@ func setupKEM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kemGenerateKeypair: %v", err)
 	}
-	orgKemPubHex, orgKemPrivHex = pub, sec
+	return "H-0001", pub, sec
 }
 
 func TestEnvelopeRoundTrip(t *testing.T) {
-	setupKEM(t)
+	holderID, pub, priv := setupTestKeys(t)
 
 	plain := `{"degree":"BSc Computer Science","gpa":3.8,"expiryDate":"2030-06-30","nested":{"a":1}}`
-	enc, err := encryptCredentialData("hash-abc", plain)
+	enc, err := encryptCredentialData("hash-abc", plain, holderID, pub)
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
@@ -45,7 +44,7 @@ func TestEnvelopeRoundTrip(t *testing.T) {
 		t.Fatal("ciphertext equals plaintext")
 	}
 
-	got, err := decryptCredentialData(enc)
+	got, err := decryptCredentialData(enc, holderID, priv)
 	if err != nil {
 		t.Fatalf("decrypt: %v", err)
 	}
@@ -56,10 +55,10 @@ func TestEnvelopeRoundTrip(t *testing.T) {
 }
 
 func TestLegacyPlaintextPassthrough(t *testing.T) {
-	setupKEM(t)
+	holderID, _, priv := setupTestKeys(t)
 	plain := `{"a":1}`
 	// A legacy (non-envelope) value must pass through decrypt untouched.
-	got, err := decryptCredentialData(plain)
+	got, err := decryptCredentialData(plain, holderID, priv)
 	if err != nil {
 		t.Fatalf("decrypt legacy: %v", err)
 	}
@@ -68,21 +67,17 @@ func TestLegacyPlaintextPassthrough(t *testing.T) {
 	}
 }
 
-func TestEncryptionDisabledFallsBackToPlaintext(t *testing.T) {
-	orgKemPubHex, orgKemPrivHex = "", "" // encryption disabled
+func TestEncryptionRequiresHolderKey(t *testing.T) {
 	plain := `{"a":1}`
-	got, err := encryptCredentialData("h", plain)
-	if err != nil {
-		t.Fatalf("encrypt disabled: %v", err)
-	}
-	if got != plain {
-		t.Fatalf("expected plaintext passthrough when disabled, got %q", got)
+	_, err := encryptCredentialData("h", plain, "H-0001", "")
+	if err == nil {
+		t.Fatal("expected error when holder KEM key is empty, got nil")
 	}
 }
 
 func TestTamperedFieldFailsAuth(t *testing.T) {
-	setupKEM(t)
-	enc, err := encryptCredentialData("h", `{"secret":"value"}`)
+	holderID, pub, priv := setupTestKeys(t)
+	enc, err := encryptCredentialData("h", `{"secret":"value"}`, holderID, pub)
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
@@ -99,7 +94,7 @@ func TestTamperedFieldFailsAuth(t *testing.T) {
 	}
 	env.Fields[0].Ct = string(ct)
 	bad, _ := json.Marshal(env)
-	if _, err := decryptCredentialData(string(bad)); err == nil {
+	if _, err := decryptCredentialData(string(bad), holderID, priv); err == nil {
 		t.Fatal("expected auth failure on tampered ciphertext, got nil error")
 	}
 }

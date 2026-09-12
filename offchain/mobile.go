@@ -29,6 +29,12 @@ func handleMobileGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "missing emiratesID")
 		return
 	}
+	// Track B2: look up holder's KEM private key for server-side decryption.
+	// In production, the holder decrypts on their device; the server-side key
+	// is only used during testing (loaded from .env.holder_keys).
+	holderID, _, _ := holderByEmiratesID(emiratesID)
+	holderKemPriv, _ := holderKemPrivByID(holderID)
+
 	rows, err := getMobileCredentials(emiratesID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error")
@@ -42,7 +48,7 @@ func handleMobileGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) 
 		}
 		// Track B: credential_data may be an encrypted envelope. Decrypt it
 		// server-side for display (falls through unchanged for legacy plaintext rows).
-		plainData, decErr := decryptCredentialData(c.CredentialData)
+		plainData, decErr := decryptCredentialData(c.CredentialData, holderID, holderKemPriv)
 		if decErr != nil {
 			plainData = "{}"
 		}
