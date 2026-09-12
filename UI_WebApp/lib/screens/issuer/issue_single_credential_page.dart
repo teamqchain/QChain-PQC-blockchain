@@ -290,7 +290,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
       infoMap[f.label] = _fieldValues[f.id] ?? '';
     }
     if (!_noExpiry && _expiryDate != null) {
-      infoMap['expiryDate'] = DateFormatter.formatIsoDate(_expiryDate! as String?);
+      infoMap['expiryDate'] = DateFormatter.formatDate(_expiryDate!);
     }
 
 
@@ -1042,7 +1042,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
                   ? null
                   : _fieldValues[f.id],
               onPick: (picked) => setState(() {
-                _fieldValues[f.id] = DateFormatter.formatIsoDate(picked as String?);
+                _fieldValues[f.id] = DateFormatter.formatDate(picked);
                 _step3Error = false;
               }),
             ),
@@ -1064,7 +1064,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
               DatePickerButton(
                 value: _noExpiry
                     ? 'No expiry set'
-                    : (_expiryDate != null ? DateFormatter.formatIsoDate(_expiryDate! as String?) : null),
+                    : (_expiryDate != null ? DateFormatter.formatDate(_expiryDate!) : null),
                 disabled: _noExpiry,
                 hint: 'Select expiry date',
                 onPick: (picked) => setState(() {
@@ -1175,7 +1175,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
               _noExpiry
                   ? 'No expiry'
                   : _expiryDate != null
-                  ? DateFormatter.formatIsoDate(_expiryDate! as String?)
+                  ? DateFormatter.formatDate(_expiryDate!)
                   : '—',
             ),
             _summaryRow('Issued By', kCurrentUser),
