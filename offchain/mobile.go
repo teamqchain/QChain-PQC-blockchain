@@ -46,8 +46,21 @@ func handleMobileGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) 
 		if c.ExpiryDate.Valid {
 			expiry = c.ExpiryDate.Time.Format(time.RFC3339)
 		}
-		// Track B: credential_data may be an encrypted envelope. Decrypt it
-		// server-side for display (falls through unchanged for legacy plaintext rows).
+		// ─────────────────────────────────────────────────────────────────────────────
+		// ⚠️ TRANSITION NOTICE: SERVER-SIDE DECRYPTION vs CLIENT-SIDE DECRYPTION
+		//
+		// 1. "attributes" is a TEMPORARY development fallback. The server decrypts
+		//    using .env.holder_keys so the current Flutter UI continues to display
+		//    certificates during development.
+		//
+		// 2. "envelope" contains the RAW ML-KEM-768 encrypted JSON string. The
+		//    Flutter mobile app should decrypt THIS field on-device using its
+		//    local hardware-stored private key.
+		//
+		// 3. IN PRODUCTION: Once on-device decryption is verified, DELETE
+		//    .env.holder_keys and REMOVE "attributes" from this response so the
+		//    server becomes 100% ZERO-KNOWLEDGE.
+		// ─────────────────────────────────────────────────────────────────────────────
 		plainData, decErr := decryptCredentialData(c.CredentialData, holderID, holderKemPriv)
 		if decErr != nil {
 			plainData = "{}"
@@ -65,7 +78,8 @@ func handleMobileGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) 
 			"status":         c.Status,
 			"isFavorite":     c.IsFavorite,
 			"category":       c.Category,
-			"attributes":     attrs,
+			"attributes":     attrs,            // ⚠️ TEMPORARY FALLBACK (Remove in Production)
+			"envelope":       c.CredentialData, // 🔒 PRODUCTION ENCRYPTED ENVELOPE (Decrypt on-device)
 			"signature":      c.Signature,
 			"txHash":         c.FabricCredID,
 			"cid":            c.IPFSCID,
