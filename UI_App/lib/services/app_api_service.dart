@@ -17,6 +17,75 @@ class ConnectionException implements Exception {
 class ApiService {
   static final _client = http.Client();
 
+  // GET /mobile/checkKeys — has this holder already registered PQC public keys?
+  static Future<Map<String, bool>> checkKeys(String emiratesID) async {
+    logDebug('[ApiService] checkKeys called for $emiratesID');
+    try {
+      final res = await _client
+          .get(
+            Uri.parse(
+              '$kApiBaseUrl/mobile/checkKeys?emiratesID=$emiratesID',
+            ),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        final hasKemKey = body['hasKemKey'] == true;
+        final hasSigningKey = body['hasSigningKey'] == true;
+        logDebug(
+          '[ApiService] checkKeys success: hasKemKey=$hasKemKey hasSigningKey=$hasSigningKey',
+        );
+        return {
+          'hasKemKey': hasKemKey,
+          'hasSigningKey': hasSigningKey,
+        };
+      }
+      logDebug('[ApiService] checkKeys failed: HTTP ${res.statusCode}');
+      throw ConnectionException('Failed to check wallet keys.');
+    } catch (e) {
+      if (e is ConnectionException) rethrow;
+      logDebug('[ApiService] checkKeys exception: $e');
+      throw ConnectionException('Failed to check wallet keys.');
+    }
+  }
+
+  // POST /mobile/registerHolderKeys — public keys only. Never send private keys.
+  static Future<bool> registerHolderKeys({
+    required String emiratesID,
+    required String kemPublicKey,
+    required String dsaPublicKey,
+  }) async {
+    logDebug('[ApiService] registerHolderKeys called for $emiratesID');
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$kApiBaseUrl/mobile/registerHolderKeys'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'emiratesID': emiratesID,
+              'kemPublicKey': kemPublicKey,
+              'dsaPublicKey': dsaPublicKey,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        final success = body['success'] == true;
+        logDebug('[ApiService] registerHolderKeys result: success=$success');
+        return success;
+      }
+      logDebug(
+        '[ApiService] registerHolderKeys failed: HTTP ${res.statusCode}',
+      );
+      return false;
+    } catch (e) {
+      logDebug('[ApiService] registerHolderKeys exception: $e');
+      throw ConnectionException('Failed to register wallet keys.');
+    }
+  }
+
   // Fetch live credentials for the dashboard
   static Future<List<CredentialModel>> getMyCredentials(
     String emiratesID,

@@ -16,6 +16,7 @@ const Color obTextSub = Color(0xFF8A8A8A);
 const Color obTextDim = Color(0xFF555555);
 const Color obAccent = Color(0xFFFFFFFF);
 const Color obGood = Color(0xFF22C55E);
+const Color obBad = Color(0xFFEF4444);
 
 /// Shared scaffolding for every onboarding step.
 ///
