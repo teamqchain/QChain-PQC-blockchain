@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
+import 'package:qwallet_mobileapp/services/app_api_service.dart';
+import 'package:qwallet_mobileapp/services/crypto_service.dart';
+import 'package:qwallet_mobileapp/utils/app_config.dart';
+import 'package:qwallet_mobileapp/utils/logger.dart';
 import 'package:qwallet_mobileapp/widgets/QOnboardScaffold.dart';
 
 /// Onboarding step 3 — key generation / wallet ready.
 ///
 /// Hero is a hexagonal crystal lattice that assembles node-by-node (a metaphor
 /// for CRYSTALS-Dilithium). Outer ring only — centre is reserved for a solid
-/// badge (progress → green check) so the tick never collides with lattice dots.
-/// Pure-black canvas, no emoji, no rotating key.
+/// badge (progress → green check, or a snapped red cross on failure) so the
+/// mark never collides with lattice dots. Pure-black canvas, no emoji.
 class Onboard3Screen extends StatefulWidget {
   const Onboard3Screen({super.key});
 
@@ -21,6 +25,8 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
   late AnimationController _latticeCtrl; // drives the assembly animation
   late AnimationController _doneCtrl; // drives the green-lightup + check
   bool _done = false;
+  bool _failed = false;
+  String _errorMessage = '';
 
   @override
   void initState() {
@@ -35,13 +41,78 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
       duration: const Duration(milliseconds: 700),
     );
 
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        _latticeCtrl.stop();
-        _doneCtrl.forward();
-        setState(() => _done = true);
+    _bootstrapKeys();
+  }
+
+  Future<void> _bootstrapKeys() async {
+    if (_failed && mounted) {
+      setState(() {
+        _failed = false;
+        _errorMessage = '';
+      });
+      _latticeCtrl
+        ..reset()
+        ..repeat();
+    }
+    logDebug('[Onboard3] key generation started');
+    try {
+      final status = await ApiService.checkKeys(userEmiratesID);
+      final backendReady =
+          status['hasKemKey'] == true && status['hasSigningKey'] == true;
+      final localReady = await CryptoService.hasLocalPrivateKeys();
+
+      if (backendReady && localReady) {
+        logDebug('[Onboard3] keys already registered; skipping generation');
+        _markReady();
+        return;
       }
+
+      // Private keys never leave the phone. Only public hex is sent to the API.
+      final kem = CryptoService.generateKemKeyPair();
+      final dsa = CryptoService.generateSigningKeyPair();
+      await CryptoService.storePrivateKeys(
+        kemPrivHex: kem.privHex,
+        dsaPrivHex: dsa.privHex,
+      );
+
+      final registered = await ApiService.registerHolderKeys(
+        emiratesID: userEmiratesID,
+        kemPublicKey: kem.pubHex,
+        dsaPublicKey: dsa.pubHex,
+      );
+      if (!registered) {
+        throw ConnectionException('Failed to register wallet keys.');
+      }
+
+      logDebug('[Onboard3] public keys registered');
+      _markReady();
+    } catch (e) {
+      logDebug('[Onboard3] key generation failed: $e');
+      if (!mounted) return;
+      _latticeCtrl.stop();
+      setState(() {
+        _failed = true;
+        _errorMessage = e is ConnectionException
+            ? e.message
+            : 'Could not create your keys. Please try again.';
+      });
+    }
+  }
+
+  void _markReady() {
+    if (!mounted) return;
+    _latticeCtrl.stop();
+    _doneCtrl.forward();
+    setState(() {
+      _done = true;
+      _failed = false;
     });
+  }
+
+  String get _ctaLabel {
+    if (_done) return 'Open my wallet';
+    if (_failed) return 'Try again';
+    return 'Generating…';
   }
 
   @override
@@ -57,9 +128,11 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
       step: 3,
       onBack: () => Get.back(),
       onSkip: () => Get.offAllNamed(Routes.SHELL),
-      ctaLabel: _done ? 'Open my wallet' : 'Generating…',
-      ctaEnabled: _done,
-      onCta: () => Get.offAllNamed(Routes.SHELL),
+      ctaLabel: _ctaLabel,
+      ctaEnabled: _done || _failed,
+      onCta: _done
+          ? () => Get.offAllNamed(Routes.SHELL)
+          : _bootstrapKeys,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -72,6 +145,7 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
                 latticeCtrl: _latticeCtrl,
                 doneCtrl: _doneCtrl,
                 done: _done,
+                failed: _failed,
               ),
             ),
           ),
@@ -91,12 +165,19 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
                       body: 'Your quantum-resistant keypair is ready.\n'
                           'All credentials are encrypted on-device.',
                     )
-                  : const _TextBlock(
-                      key: ValueKey('loading'),
-                      heading: 'Creating your\nsecure identity',
-                      body: 'Generating your quantum-resistant keypair.\n'
-                          'This stays on your device — no one else has it.',
-                    ),
+                  : _failed
+                      ? _TextBlock(
+                          key: const ValueKey('failed'),
+                          heading: 'Could not\ncreate keys',
+                          body: _errorMessage,
+                        )
+                      : const _TextBlock(
+                          key: ValueKey('loading'),
+                          heading: 'Creating your\nsecure identity',
+                          body:
+                              'Generating your quantum-resistant keypair.\n'
+                              'This stays on your device — no one else has it.',
+                        ),
             ),
           ),
           const SizedBox(height: 20),
@@ -113,15 +194,18 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
 // A hexagonal lattice of 7 nodes (centre + 6 around it) connected by edges.
 // During generation each node pops in sequence with a white glow; on completion
 // the whole structure flashes green and a check icon appears at the centre.
+// On failure the ring snaps fully connected in red with a cross at the centre.
 
 class _Lattice extends StatelessWidget {
   final AnimationController latticeCtrl;
   final AnimationController doneCtrl;
   final bool done;
+  final bool failed;
   const _Lattice({
     required this.latticeCtrl,
     required this.doneCtrl,
     required this.done,
+    required this.failed,
   });
 
   // 6 outer nodes on a hex ring (no centre node — that slot is reserved for
@@ -145,7 +229,7 @@ class _Lattice extends StatelessWidget {
     return AnimatedBuilder(
       animation: Listenable.merge([latticeCtrl, doneCtrl]),
       builder: (_, __) {
-        final reveal = done ? 1.0 : latticeCtrl.value;
+        final reveal = (done || failed) ? 1.0 : latticeCtrl.value;
         final doneProgress = doneCtrl.value;
 
         return Stack(
@@ -159,11 +243,12 @@ class _Lattice extends StatelessWidget {
                 edges: _edges,
                 reveal: reveal,
                 doneProgress: doneProgress,
+                failed: failed,
               ),
             ),
-            // Solid centre badge — dims during assembly, lights green on done.
-            // Opaque fill means the check is never covered by lattice nodes.
-            _CentreBadge(doneProgress: doneProgress),
+            // Solid centre badge — spinner while assembling, green check on
+            // success, red cross on failure. Opaque fill keeps the mark clear.
+            _CentreBadge(doneProgress: doneProgress, failed: failed),
           ],
         );
       },
@@ -173,21 +258,19 @@ class _Lattice extends StatelessWidget {
 
 class _CentreBadge extends StatelessWidget {
   final double doneProgress;
-  const _CentreBadge({required this.doneProgress});
+  final bool failed;
+  const _CentreBadge({required this.doneProgress, required this.failed});
 
   @override
   Widget build(BuildContext context) {
     final isDone = doneProgress > 0.01;
-    final borderColor = Color.lerp(
-      obBorderStrong,
-      obGood,
-      doneProgress,
-    )!;
-    final fillColor = Color.lerp(
-      obPanel,
-      const Color(0xFF0A1A10),
-      doneProgress,
-    )!;
+    final accent = failed ? obBad : obGood;
+    final fillTarget = failed
+        ? const Color(0xFF1A0A0A)
+        : const Color(0xFF0A1A10);
+    final settle = failed ? 1.0 : doneProgress;
+    final borderColor = Color.lerp(obBorderStrong, accent, settle)!;
+    final fillColor = Color.lerp(obPanel, fillTarget, settle)!;
 
     return Container(
       width: 64,
@@ -196,10 +279,10 @@ class _CentreBadge extends StatelessWidget {
         shape: BoxShape.circle,
         color: fillColor,
         border: Border.all(color: borderColor, width: 2),
-        boxShadow: isDone
+        boxShadow: isDone || failed
             ? [
                 BoxShadow(
-                  color: obGood.withValues(alpha: 0.35 * doneProgress),
+                  color: accent.withValues(alpha: 0.35 * settle),
                   blurRadius: 22,
                   spreadRadius: 2,
                 ),
@@ -209,7 +292,14 @@ class _CentreBadge extends StatelessWidget {
       alignment: Alignment.center,
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 280),
-        child: isDone
+        child: failed
+            ? const Icon(
+                Icons.close_rounded,
+                key: ValueKey('cross'),
+                size: 30,
+                color: Colors.white,
+              )
+            : isDone
             ? Icon(
                 Icons.check_rounded,
                 key: const ValueKey('check'),
@@ -239,12 +329,14 @@ class _LatticePainter extends CustomPainter {
   final List<(int, int)> edges;
   final double reveal;
   final double doneProgress;
+  final bool failed;
 
   const _LatticePainter({
     required this.nodes,
     required this.edges,
     required this.reveal,
     required this.doneProgress,
+    required this.failed,
   });
 
   @override
@@ -257,8 +349,10 @@ class _LatticePainter extends CustomPainter {
         nodeProgress(a) > 0.5 && nodeProgress(b) > 0.5;
 
     final baseColor = const Color(0xFF2A2A2A);
-    final activeColor = Color.lerp(Colors.white, obGood, doneProgress)!;
-    final edgeColor = Color.lerp(baseColor, activeColor, doneProgress)!;
+    final settleColor = failed ? obBad : obGood;
+    final settle = failed ? 1.0 : doneProgress;
+    final activeColor = Color.lerp(Colors.white, settleColor, settle)!;
+    final edgeColor = Color.lerp(baseColor, activeColor, settle)!;
 
     // ── Outer ring edges ─────────────────────────────────────────────
     for (final (a, b) in edges) {
@@ -297,13 +391,13 @@ class _LatticePainter extends CustomPainter {
       );
     }
 
-    // Soft outer ring on completion — does not cover the centre badge.
-    if (doneProgress > 0) {
+    // Soft outer ring on completion / failure — does not cover the centre badge.
+    if (settle > 0) {
       canvas.drawCircle(
         Offset(size.width / 2, size.height / 2),
         size.width * 0.48,
         Paint()
-          ..color = obGood.withValues(alpha: 0.18 * doneProgress)
+          ..color = settleColor.withValues(alpha: 0.18 * settle)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
@@ -313,7 +407,9 @@ class _LatticePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_LatticePainter old) =>
-      old.reveal != reveal || old.doneProgress != doneProgress;
+      old.reveal != reveal ||
+      old.doneProgress != doneProgress ||
+      old.failed != failed;
 }
 
 // ─── Text block ────────────────────────────────────────────────────────────
