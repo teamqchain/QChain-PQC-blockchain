@@ -107,6 +107,16 @@ class StackViewState extends State<StackView>
         topOffset += _dragOffset;
       }
 
+      // Calculate how "faded" the card should be based on its depth position.
+      // i = 0 (top) -> 0.0 opacity (fully clear)
+      // i = 1 (middle) -> 0.4 opacity white overlay
+      // i = 2 (bottom) -> 0.8 opacity white overlay
+      double depthWashOpacity = (i * 0.27).clamp(0.0, 1.0);
+
+      // NOTE: If your app has a dark background, change Colors.white to your background color
+      // (e.g., Theme.of(context).scaffoldBackgroundColor)
+      Color targetWashColor = Colors.white.withOpacity(depthWashOpacity);
+
       stackItems.add(
         AnimatedPositioned(
           key: ValueKey(doc.credentialID),
@@ -126,11 +136,28 @@ class StackViewState extends State<StackView>
             child: SizedBox(
               width: cardWidth,
               height: cardHeight,
-              child: WalletCard(
-                doc: doc,
-                isFav: widget.favIds.contains(doc.credentialID),
-                onFav: () => widget.onFav(doc.credentialID),
-                onTap: () => widget.onTap(doc),
+              // We use TweenAnimationBuilder to smoothly animate the fading effect when you swipe
+              child: TweenAnimationBuilder<Color?>(
+                tween: ColorTween(end: targetWashColor),
+                duration: isTopCard && _dragOffset != 0
+                    ? Duration.zero
+                    : const Duration(milliseconds: 350),
+                builder: (context, color, child) {
+                  return ColorFiltered(
+                    colorFilter: ColorFilter.mode(
+                      color ?? Colors.transparent,
+                      BlendMode
+                          .srcATop, // This guarantees it overlays without breaking the card's corners
+                    ),
+                    child: child,
+                  );
+                },
+                child: WalletCard(
+                  doc: doc,
+                  isFav: widget.favIds.contains(doc.credentialID),
+                  onFav: () => widget.onFav(doc.credentialID),
+                  onTap: () => widget.onTap(doc),
+                ),
               ),
             ),
           ),
