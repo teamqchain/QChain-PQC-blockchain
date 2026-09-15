@@ -86,6 +86,38 @@ class ApiService {
     }
   }
 
+  // GET /mobile/getEnvelope — encrypted credential body. Backend does not decrypt.
+  static Future<Map<String, dynamic>> getEnvelope(String credentialID) async {
+    logDebug('[ApiService] getEnvelope called for $credentialID');
+    try {
+      final res = await _client
+          .get(
+            Uri.parse(
+              '$kApiBaseUrl/mobile/getEnvelope?credentialID=$credentialID',
+            ),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        if (body is Map<String, dynamic>) {
+          logDebug('[ApiService] getEnvelope success');
+          return body;
+        }
+        if (body is Map) {
+          return Map<String, dynamic>.from(body);
+        }
+        throw ConnectionException('Invalid envelope response.');
+      }
+      logDebug('[ApiService] getEnvelope failed: HTTP ${res.statusCode}');
+      throw ConnectionException('Failed to load credential envelope.');
+    } catch (e) {
+      if (e is ConnectionException) rethrow;
+      logDebug('[ApiService] getEnvelope exception: $e');
+      throw ConnectionException('Failed to load credential envelope.');
+    }
+  }
+
   // Fetch live credentials for the dashboard
   static Future<List<CredentialModel>> getMyCredentials(
     String emiratesID,

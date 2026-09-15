@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
+import 'package:qwallet_mobileapp/services/crypto_service.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -261,6 +262,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  void _showPublicKeysDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => const _PublicKeysDialog(),
+    );
+  }
+
   static const _sections = [
     (
       'Security',
@@ -343,7 +351,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 isLast: isLast,
                                 onTap: label == 'QChain v2.0.0'
                                     ? () => _showTeamDialog(context)
-                                    : () {},
+                                    : label == 'View My Public Key'
+                                        ? () => _showPublicKeysDialog(context)
+                                        : () {},
                               );
                             }).toList(),
                           ),
@@ -590,6 +600,234 @@ class _SettingsTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC KEYS DIALOG — same style as the QChain v2.0.0 team dialog
+// ─────────────────────────────────────────────────────────────────────────────
+class _PublicKeysDialog extends StatefulWidget {
+  const _PublicKeysDialog();
+
+  @override
+  State<_PublicKeysDialog> createState() => _PublicKeysDialogState();
+}
+
+class _PublicKeysDialogState extends State<_PublicKeysDialog> {
+  bool _loading = true;
+  String? _kemPubHex;
+  String? _dsaPubHex;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadKeys();
+  }
+
+  Future<void> _loadKeys() async {
+    final keys = await CryptoService.readAllPublicKeys();
+    if (!mounted) return;
+    setState(() {
+      _kemPubHex = keys.kemPubHex;
+      _dsaPubHex = keys.dsaPubHex;
+      _loading = false;
+    });
+  }
+
+  String _truncate(String hex, {int head = 28, int tail = 20}) {
+    if (hex.length <= head + tail + 3) return hex;
+    return '${hex.substring(0, head)}…${hex.substring(hex.length - tail)}';
+  }
+
+  Future<void> _copy(String label, String value) async {
+    await Clipboard.setData(ClipboardData(text: value));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label copied'),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF111111),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+        side: BorderSide(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withOpacity(0.08)),
+                  ),
+                  child: const Icon(Icons.key, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 12),
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'My Public Keys',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    Text(
+                      'Registered with QChain',
+                      style: TextStyle(
+                        color: Color(0xFF888888),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Divider(color: Colors.white.withOpacity(0.08), height: 1),
+            const SizedBox(height: 18),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+              )
+            else ...[
+              _PublicKeyBlock(
+                title: 'ML-KEM-768 (encryption)',
+                value: _kemPubHex,
+                truncated: _kemPubHex == null || _kemPubHex!.isEmpty
+                    ? null
+                    : _truncate(_kemPubHex!),
+                onCopy: _kemPubHex == null || _kemPubHex!.isEmpty
+                    ? null
+                    : () => _copy('KEM public key', _kemPubHex!),
+              ),
+              const SizedBox(height: 14),
+              _PublicKeyBlock(
+                title: 'ML-DSA-44 (signing)',
+                value: _dsaPubHex,
+                truncated: _dsaPubHex == null || _dsaPubHex!.isEmpty
+                    ? null
+                    : _truncate(_dsaPubHex!),
+                onCopy: _dsaPubHex == null || _dsaPubHex!.isEmpty
+                    ? null
+                    : () => _copy('DSA public key', _dsaPubHex!),
+              ),
+            ],
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: TextButton.styleFrom(
+                  backgroundColor: qSecondary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                ),
+                child: const Text(
+                  'Close',
+                  style: TextStyle(
+                    color: qPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PublicKeyBlock extends StatelessWidget {
+  final String title;
+  final String? value;
+  final String? truncated;
+  final VoidCallback? onCopy;
+
+  const _PublicKeyBlock({
+    required this.title,
+    required this.value,
+    required this.truncated,
+    required this.onCopy,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final missing = value == null || value!.isEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: Color(0xFFAAAAAA),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (onCopy != null)
+              GestureDetector(
+                onTap: onCopy,
+                child: const Icon(
+                  Icons.copy_rounded,
+                  color: Color(0xFF888888),
+                  size: 16,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.08)),
+          ),
+          child: SelectableText(
+            missing
+                ? 'Not found — complete onboarding first'
+                : '${value!.length} hex chars (${value!.length ~/ 2} bytes)\n$truncated',
+            style: TextStyle(
+              color: missing ? const Color(0xFFEF4444) : Colors.white,
+              fontSize: 11,
+              fontFamily: 'monospace',
+              height: 1.5,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

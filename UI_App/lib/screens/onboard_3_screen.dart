@@ -70,9 +70,18 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
       // Private keys never leave the phone. Only public hex is sent to the API.
       final kem = CryptoService.generateKemKeyPair();
       final dsa = CryptoService.generateSigningKeyPair();
+
+      // DEBUG: dump full private keys to console so we can confirm generation.
+      logDebug('[Onboard3] kem_priv_key (${kem.privHex.length} hex chars):\n${kem.privHex}');
+      logDebug('[Onboard3] dsa_priv_key (${dsa.privHex.length} hex chars):\n${dsa.privHex}');
+      logDebug('[Onboard3] kem_pub_key (${kem.pubHex.length} hex chars):\n${kem.pubHex}');
+      logDebug('[Onboard3] dsa_pub_key (${dsa.pubHex.length} hex chars):\n${dsa.pubHex}');
+
       await CryptoService.storePrivateKeys(
         kemPrivHex: kem.privHex,
         dsaPrivHex: dsa.privHex,
+        kemPubHex: kem.pubHex,
+        dsaPubHex: dsa.pubHex,
       );
 
       final registered = await ApiService.registerHolderKeys(
