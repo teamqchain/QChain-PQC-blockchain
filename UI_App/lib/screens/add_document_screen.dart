@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
 import 'package:qwallet_mobileapp/components/emptyState.dart';
-import 'package:qwallet_mobileapp/components/shimmerWave.dart';
 import 'package:qwallet_mobileapp/skeletons/addDoc_skeleton.dart';
 import 'package:qwallet_mobileapp/utils/app_config.dart';
 import 'package:qwallet_mobileapp/utils/haptics.dart';
@@ -410,7 +409,7 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
                                     ),
                                   ),
                                   subtitle: Text(
-                                    '${issuer.services.length} documents available',
+                                    '${issuer.services.length} services available',
                                     style: const TextStyle(
                                       color: Color(0xFFAAAAAA),
                                       fontSize: 12,

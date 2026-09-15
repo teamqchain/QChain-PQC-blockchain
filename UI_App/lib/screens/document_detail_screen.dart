@@ -7,7 +7,10 @@ import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/screens/selective_screen.dart';
 import 'package:qwallet_mobileapp/screens/certificate_viewer_screen.dart';
 import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
+import 'package:qwallet_mobileapp/services/app_api_service.dart';
+import 'package:qwallet_mobileapp/services/crypto_service.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
+import 'package:qwallet_mobileapp/utils/logger.dart';
 import 'package:qchain_shared/certificate_template.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -155,10 +158,57 @@ class DocumentDetailScreen extends StatefulWidget {
 class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   late final DocWrapper doc;
 
+  /// Locally decrypted attributes (memory only). Never cached to disk.
+  Map<String, dynamic> _decryptedAttrs = const {};
+  bool _decrypting = false;
+  String? _decryptError;
+
   @override
   void initState() {
     super.initState();
     doc = DocWrapper(Get.arguments);
+    _decryptedAttrs = Map<String, dynamic>.from(doc.attributes);
+    _loadDecryptedAttributes();
+  }
+
+  Future<void> _loadDecryptedAttributes() async {
+    final credentialID = doc.credentialID;
+    if (credentialID.isEmpty || credentialID == 'DOC-UNKNOWN') return;
+
+    setState(() {
+      _decrypting = true;
+      _decryptError = null;
+    });
+
+    try {
+      final envelope = await ApiService.getEnvelope(credentialID);
+      final kemPrivHex = await CryptoService.readKemPrivateKey();
+      if (kemPrivHex == null || kemPrivHex.isEmpty) {
+        throw StateError('ML-KEM private key not found on this device');
+      }
+
+      final attrs = CryptoService.decryptEnvelope(envelope, kemPrivHex);
+      if (!mounted) return;
+      setState(() {
+        _decryptedAttrs = attrs;
+        _decrypting = false;
+        _decryptError = null;
+      });
+      logDebug(
+        '[DocumentDetail] decrypted ${attrs.length} fields for $credentialID',
+      );
+    } catch (e) {
+      logDebug('[DocumentDetail] decrypt failed: $e');
+      if (!mounted) return;
+      setState(() {
+        _decrypting = false;
+        _decryptError = e.toString();
+        // Keep any attributes already present (e.g. legacy plaintext list).
+        if (_decryptedAttrs.isEmpty) {
+          _decryptedAttrs = Map<String, dynamic>.from(doc.attributes);
+        }
+      });
+    }
   }
 
   @override
@@ -169,7 +219,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       backgroundColor: const Color(0xFFF7F7F7),
       body: Column(
         children: [
-          _DocHeroBox(doc: doc),
+          _DocHeroBox(doc: doc, attributes: _decryptedAttrs),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
@@ -178,7 +228,13 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 children: [
                   _ValidBar(doc: doc),
                   const SizedBox(height: 24),
-                  _DetailsSection(doc: doc),
+                  _DetailsSection(
+                    doc: doc,
+                    attributes: _decryptedAttrs,
+                    decrypting: _decrypting,
+                    decryptError: _decryptError,
+                    onRetryDecrypt: _loadDecryptedAttributes,
+                  ),
                   const SizedBox(height: 28),
                   _BottomActions(doc: doc),
                 ],
@@ -197,7 +253,8 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
 
 class _DocHeroBox extends StatelessWidget {
   final DocWrapper doc;
-  const _DocHeroBox({required this.doc});
+  final Map<String, dynamic> attributes;
+  const _DocHeroBox({required this.doc, this.attributes = const {}});
 
   @override
   Widget build(BuildContext context) {
@@ -473,7 +530,9 @@ class _DocHeroBox extends StatelessWidget {
               // border: const Color(0xFFEBEBEB),
               onTap: () {
                 final fieldMap = <String, String>{};
-                doc.attributes.forEach((k, v) {
+                final src =
+                    attributes.isNotEmpty ? attributes : doc.attributes;
+                src.forEach((k, v) {
                   fieldMap[k] = v?.toString() ?? '';
                 });
 
@@ -595,7 +654,18 @@ class _ValidBarState extends State<_ValidBar>
 
 class _DetailsSection extends StatelessWidget {
   final DocWrapper doc;
-  const _DetailsSection({required this.doc});
+  final Map<String, dynamic> attributes;
+  final bool decrypting;
+  final String? decryptError;
+  final VoidCallback? onRetryDecrypt;
+
+  const _DetailsSection({
+    required this.doc,
+    this.attributes = const {},
+    this.decrypting = false,
+    this.decryptError,
+    this.onRetryDecrypt,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -617,16 +687,20 @@ class _DetailsSection extends StatelessWidget {
       ),
     ];
 
-    doc.attributes.forEach((key, value) {
+    // Insert decrypted attribute rows before the date fields.
+    final attrEntries = attributes.entries.toList();
+    for (var i = 0; i < attrEntries.length; i++) {
+      final key = attrEntries[i].key;
+      final value = attrEntries[i].value;
       final formattedKey = key.replaceAll(RegExp(r'(?<!^)(?=[A-Z])'), ' ');
-      final finalKey =
-          formattedKey[0].toUpperCase() + formattedKey.substring(1);
-
-      // fields.insert(
-      //   fields.length - 1,
-      //   _DetailRow(label: finalKey, value: value.toString()),
-      // );
-    });
+      final finalKey = formattedKey.isEmpty
+          ? key
+          : formattedKey[0].toUpperCase() + formattedKey.substring(1);
+      fields.insert(
+        fields.length - 2,
+        _DetailRow(label: finalKey, value: value?.toString() ?? ''),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -641,6 +715,51 @@ class _DetailsSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
+        if (decrypting)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 10),
+                Text(
+                  'Decrypting attributes…',
+                  style: TextStyle(
+                    color: Color(0xFF666666),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (decryptError != null && !decrypting)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Could not decrypt attributes',
+                    style: TextStyle(
+                      color: Color(0xFFB45309),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (onRetryDecrypt != null)
+                  TextButton(
+                    onPressed: onRetryDecrypt,
+                    child: const Text('Retry'),
+                  ),
+              ],
+            ),
+          ),
         Container(
           decoration: BoxDecoration(
             color: Colors.white,
