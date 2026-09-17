@@ -197,6 +197,7 @@ class _PrimaryCard extends StatelessWidget {
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.5,
+                  fontFamily: "formula"
                 ),
               ),
               Icon(Icons.qr_code_2_rounded, color: obBg, size: 16),
