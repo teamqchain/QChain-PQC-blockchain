@@ -135,8 +135,7 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
   Widget build(BuildContext context) {
     return QOnboardScaffold(
       step: 3,
-      onBack: () => Get.back(),
-      onSkip: () => Get.offAllNamed(Routes.SHELL),
+      // onBack: () => Get.back(),
       ctaLabel: _ctaLabel,
       ctaEnabled: _done || _failed,
       onCta: _done

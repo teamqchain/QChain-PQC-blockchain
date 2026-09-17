@@ -15,7 +15,7 @@ class Onboard1Screen extends StatelessWidget {
   Widget build(BuildContext context) {
     return QOnboardScaffold(
       step: 1,
-      onSkip: () => Get.offAllNamed(Routes.SHELL),
+      // onSkip: () => Get.offAllNamed(Routes.SHELL),
       ctaLabel: 'Continue',
       onCta: () => Get.toNamed(Routes.ONBOARD2),
       child: const Column(
