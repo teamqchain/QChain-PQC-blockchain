@@ -106,6 +106,90 @@ class CryptoService {
     return (kemPubHex: kem, dsaPubHex: dsa);
   }
 
+  /// Sorted-key JSON with no extra whitespace (matches Go json.Marshal maps).
+  static String canonicalJsonEncode(Map<String, dynamic> map) {
+    return jsonEncode(_canonicalize(map));
+  }
+
+  /// SHA3-256 hex digest of [data] (UTF-8).
+  static String sha3Hex(String data) {
+    return hexEncode(_Sha3Digest.hash(utf8.encode(data)));
+  }
+
+  /// ML-DSA-44 sign of the raw hash bytes. Private key never leaves the phone.
+  /// [payloadHashHex] is the SHA3-256 hex of the canonical disclosed payload.
+  static String signPayload(String payloadHashHex, String dsaPrivHex) {
+    init();
+    if (!Signature.isSupported(dsaAlgorithm)) {
+      throw StateError('$dsaAlgorithm is not supported on this device');
+    }
+    final sig = Signature.create(dsaAlgorithm);
+    try {
+      final signature = sig.sign(hexDecode(payloadHashHex), hexDecode(dsaPrivHex));
+      return hexEncode(signature);
+    } finally {
+      sig.dispose();
+    }
+  }
+
+  /// Build disclosed payload, hash, and sign. Returns the JSON string to send
+  /// as `disclosedPayload` plus the hex `holderSignature`.
+  static Future<({String disclosedPayloadJson, String holderSignatureHex})>
+      buildSignedDisclosedPayload({
+    required String credentialID,
+    required Map<String, dynamic> disclosedFields,
+  }) async {
+    final dsaPrivHex = await readDsaPrivateKey();
+    if (dsaPrivHex == null || dsaPrivHex.isEmpty) {
+      throw StateError('ML-DSA private key not found on this device');
+    }
+
+    final disclosedPayload = <String, dynamic>{
+      'credentialID': credentialID,
+      'disclosedFields': disclosedFields,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    final payloadJson = canonicalJsonEncode(disclosedPayload);
+    final payloadHash = sha3Hex(payloadJson);
+    final holderSignatureHex = signPayload(payloadHash, dsaPrivHex);
+    return (
+      disclosedPayloadJson: payloadJson,
+      holderSignatureHex: holderSignatureHex,
+    );
+  }
+
+  /// Parse backend `expiresAt` (Asia/Dubai local, no Z) → UTC DateTime.
+  /// Guide: append +04:00 (Dubai has no DST).
+  static DateTime? parseExpiresAt(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final s = raw.trim();
+    try {
+      if (s.endsWith('Z') ||
+          RegExp(r'[+-]\d{2}:\d{2}$').hasMatch(s) ||
+          RegExp(r'[+-]\d{4}$').hasMatch(s)) {
+        return DateTime.parse(s).toUtc();
+      }
+      return DateTime.parse('$s+04:00').toUtc();
+    } catch (_) {
+      return DateTime.tryParse(s)?.toUtc();
+    }
+  }
+
+  static dynamic _canonicalize(dynamic value) {
+    if (value is Map) {
+      final keys = value.keys.map((k) => k.toString()).toList()..sort();
+      final out = <String, dynamic>{};
+      for (final k in keys) {
+        out[k] = _canonicalize(value[k]);
+      }
+      return out;
+    }
+    if (value is List) {
+      return value.map(_canonicalize).toList();
+    }
+    return value;
+  }
+
   /// Decrypt a Track B/H envelope locally. Plaintext stays in memory only.
   static Map<String, dynamic> decryptEnvelope(
     Map<String, dynamic> envelope,

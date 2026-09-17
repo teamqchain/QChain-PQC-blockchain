@@ -5,6 +5,7 @@ import 'package:qwallet_mobileapp/model/catalog_model.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/model/subscription_model.dart';
 import 'package:qwallet_mobileapp/utils/app_config.dart';
+import 'package:qwallet_mobileapp/utils/alice_inspector.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
 
 class ConnectionException implements Exception {
@@ -15,7 +16,8 @@ class ConnectionException implements Exception {
 }
 
 class ApiService {
-  static final _client = http.Client();
+  // Alice-backed client in debug; plain http.Client in release.
+  static final http.Client _client = createAliceHttpClient();
 
   // GET /mobile/checkKeys — has this holder already registered PQC public keys?
   static Future<Map<String, bool>> checkKeys(String emiratesID) async {
@@ -147,16 +149,16 @@ class ApiService {
     }
   }
 
-  // Request a live OTP for verification (Now with Selective Disclosure)
-  static Future<Map<String, dynamic>?> generateVerificationOTP(
-    String credentialID,
-    List<String> hiddenFields, // <-- ADD THIS PARAMETER
-    int expiresIn,
-  ) async {
+  // POST /mobile/generateOTP — holder-signed disclosed payload. No expiresIn.
+  static Future<Map<String, dynamic>?> generateVerificationOTP({
+    required String credentialID,
+    required List<String> hiddenFields,
+    required String disclosedPayload,
+    required String holderSignature,
+  }) async {
     logDebug(
       '[ApiService] generateVerificationOTP called for $credentialID with ${hiddenFields.length} hidden fields',
     );
-    logDebug('[ApiService] OTP time-to-live: $expiresIn seconds');
     try {
       final res = await _client
           .post(
@@ -164,11 +166,12 @@ class ApiService {
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'credentialID': credentialID,
-              'hiddenFields': hiddenFields, // <-- SEND TO BACKEND
-              'expiresIn': expiresIn,
+              'hiddenFields': hiddenFields,
+              'disclosedPayload': disclosedPayload,
+              'holderSignature': holderSignature,
             }),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 15));
 
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
@@ -176,7 +179,7 @@ class ApiService {
           logDebug('[ApiService] generateVerificationOTP success');
           return {
             'otp': body['otp']?.toString(),
-            'expiresAt': body['expiresAt'],
+            'expiresAt': body['expiresAt']?.toString(),
           };
         } else {
           logDebug(
@@ -266,16 +269,16 @@ class ApiService {
     }
   }
 
-  // Generate a selective disclosure presentation session
-  static Future<Map<String, dynamic>?> generatePresentation(
-    String credentialID,
-    List<String> hiddenFields,
-    int expiresIn,
-  ) async {
+  // POST /mobile/generatePresentation — holder-signed disclosed payload. No expiresIn.
+  static Future<Map<String, dynamic>?> generatePresentation({
+    required String credentialID,
+    required List<String> hiddenFields,
+    required String disclosedPayload,
+    required String holderSignature,
+  }) async {
     logDebug(
       '[ApiService] generatePresentation called for $credentialID with ${hiddenFields.length} hidden fields',
     );
-    logDebug('[ApiService] qr time-to-live: $expiresIn seconds');
     try {
       final res = await _client
           .post(
@@ -284,10 +287,11 @@ class ApiService {
             body: jsonEncode({
               'credentialID': credentialID,
               'hiddenFields': hiddenFields,
-              'expiresIn': expiresIn,
+              'disclosedPayload': disclosedPayload,
+              'holderSignature': holderSignature,
             }),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 15));
 
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
@@ -296,8 +300,8 @@ class ApiService {
             '[ApiService] generatePresentation success: ID ${body['presentationID']}',
           );
           return {
-            'presentationID': body['presentationID'],
-            'expiresAt': body['expiresAt'],
+            'presentationID': body['presentationID']?.toString(),
+            'expiresAt': body['expiresAt']?.toString(),
           };
         } else {
           logDebug(
