@@ -105,8 +105,12 @@ class VerificationResult {
         passed: checks['signatureValid'] as bool? ?? false,
       ),
       PolicyCheck(
-        label: 'Hash Matches',
-        passed: checks['hashMatches'] as bool? ?? false,
+        label: 'Field Hashes Valid',
+        passed: checks['fieldHashesValid'] as bool? ?? false,
+      ),
+      PolicyCheck(
+        label: 'Holder Signature Valid (ML-DSA-44)',
+        passed: checks['holderSignatureValid'] as bool? ?? false,
       ),
     ];
 

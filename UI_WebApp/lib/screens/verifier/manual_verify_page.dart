@@ -10,16 +10,18 @@ import 'package:qportal_webapp/theme/appTextStyle.dart';
 import 'package:qportal_webapp/components/appButton.dart';
 
 // ─── VERIFICATION MODE ────────────────────────────────────────────────────────
+// Credential ID mode was removed (portal.md §1.2 Option A). After Track B,
+// credentials are encrypted and verification requires a holder presentation
+// (disclosedPayload + holder signature) via QR/OTP. Credential-ID-only verify
+// can no longer perform field-level integrity checks.
 
-enum _VerifyMode { credentialId, otp, document }
+enum _VerifyMode { otp, document }
 
 enum _DocProcessing { none, reading, verifying, failed }
 
 extension _VerifyModeX on _VerifyMode {
   String get label {
     switch (this) {
-      case _VerifyMode.credentialId:
-        return 'Credential ID';
       case _VerifyMode.otp:
         return 'OTP';
       case _VerifyMode.document:
@@ -29,8 +31,6 @@ extension _VerifyModeX on _VerifyMode {
 
   IconData get icon {
     switch (this) {
-      case _VerifyMode.credentialId:
-        return Icons.badge_outlined;
       case _VerifyMode.otp:
         return Icons.pin_outlined;
       case _VerifyMode.document:
@@ -64,20 +64,16 @@ class ManualVerifyPage extends StatefulWidget {
 }
 
 class _ManualVerifyPageState extends State<ManualVerifyPage> {
-  _VerifyMode _mode = _VerifyMode.credentialId;
+  _VerifyMode _mode = _VerifyMode.otp;
   bool _verifying = false;
   bool _hasConnectionError = false;
 
-  // ── Mode 1 ────────────────────────────────────────────────────────────────
-  final _credIdCtrl = TextEditingController();
-  bool _credIdError = false;
-
-  // ── Mode 2 ────────────────────────────────────────────────────────────────
+  // ── OTP mode ──────────────────────────────────────────────────────────────
   final _otpCtrl = TextEditingController();
   bool _otpError = false;
   String _otpErrorMessage = 'Please enter the OTP code.'; // Dynamic error msg
 
-  // ── Mode 3 ────────────────────────────────────────────────────────────────
+  // ── Upload Document mode ──────────────────────────────────────────────────
   bool _fileUploaded = false;
   String _uploadedFileName = '';
   bool _isDragOver = false;
@@ -98,84 +94,51 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
       return;
     }
 
-    switch (_mode) {
-      // ─── CREDENTIAL ID LOGIC ──────────────────────────────────────────────
-      case _VerifyMode.credentialId:
-        final credID = _credIdCtrl.text.trim();
-        if (credID.isEmpty) {
-          setState(() => _credIdError = true);
-          return;
-        }
-        setState(() {
-          _verifying = true;
-          _hasConnectionError = false;
-        });
-        try {
-          final result = await VerifierApi.verifyCredential(credID);
-          if (!mounted) return;
-          setState(() => _verifying = false);
-          widget.onVerify(result);
-        } catch (e) {
-          if (!mounted) return;
-          setState(() {
-            _verifying = false;
-            _hasConnectionError = true;
-          });
-        }
-        return;
+    // ─── OTP LOGIC ────────────────────────────────────────────────────────
+    final otpCode = _otpCtrl.text.trim();
 
-      // ─── OTP LOGIC ────────────────────────────────────────────────────────
-      case _VerifyMode.otp:
-        final otpCode = _otpCtrl.text.trim();
-
-        // 1. Length validation before hitting the network
-        if (otpCode.isEmpty) {
-          setState(() {
-            _otpError = true;
-            _otpErrorMessage = 'Please enter the 6-digit OTP.';
-          });
-          return;
-        }
-        if (otpCode.length != 6) {
-          setState(() {
-            _otpError = true;
-            _otpErrorMessage = 'OTP must be exactly 6 digits.';
-          });
-          return;
-        }
-
-        // 2. Start loading
-        setState(() {
-          _verifying = true;
-          _hasConnectionError = false;
-          _otpError = false;
-        });
-
-        // 3. API Call
-        try {
-          // Prepend OTP- so the backend finds the session
-          final result = await VerifierApi.resolveSession('OTP-$otpCode');
-
-          if (!mounted) return;
-          setState(() => _verifying = false);
-
-          // Route to success page
-          widget.onVerify(result);
-        } catch (e) {
-          if (!mounted) return;
-          setState(() {
-            _verifying = false;
-            _otpError = true;
-            // Clean up the exception text to display nicely to the user
-            _otpErrorMessage = e.toString().replaceAll('Exception: ', '');
-          });
-        }
-        return;
-
-      default:
-        break;
+    // 1. Length validation before hitting the network
+    if (otpCode.isEmpty) {
+      setState(() {
+        _otpError = true;
+        _otpErrorMessage = 'Please enter the 6-digit OTP.';
+      });
+      return;
+    }
+    if (otpCode.length != 6) {
+      setState(() {
+        _otpError = true;
+        _otpErrorMessage = 'OTP must be exactly 6 digits.';
+      });
+      return;
     }
 
+    // 2. Start loading
+    setState(() {
+      _verifying = true;
+      _hasConnectionError = false;
+      _otpError = false;
+    });
+
+    // 3. API Call
+    try {
+      // Prepend OTP- so the backend finds the session
+      final result = await VerifierApi.resolveSession('OTP-$otpCode');
+
+      if (!mounted) return;
+      setState(() => _verifying = false);
+
+      // Route to success page
+      widget.onVerify(result);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _verifying = false;
+        _otpError = true;
+        // Clean up the exception text to display nicely to the user
+        _otpErrorMessage = e.toString().replaceAll('Exception: ', '');
+      });
+    }
   }
 
   /// Starts the document verification processing sequence (success path).
@@ -249,7 +212,6 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
             onSelect: (m) => setState(() {
               _mode = m;
               _otpError = false;
-              _credIdError = false;
             }),
           ),
           const SizedBox(height: 14),
@@ -343,8 +305,6 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
     }
 
     switch (_mode) {
-      case _VerifyMode.credentialId:
-        return _buildCredentialIdMode();
       case _VerifyMode.otp:
         return _buildOtpMode();
       case _VerifyMode.document:
@@ -353,54 +313,7 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //  MODE 1 — CREDENTIAL ID
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  Widget _buildCredentialIdMode() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Input section
-          Label(text: 'Enter Credential ID', required: true),
-          const SizedBox(height: 8),
-          _InputField(
-            controller: _credIdCtrl,
-            hint: 'e.g. CRED-0000',
-            hasError: _credIdError,
-            onChanged: (_) => setState(() => _credIdError = false),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9\-]')),
-              LengthLimitingTextInputFormatter(9),
-            ],
-
-          ),
-          if (_credIdError) ...[
-            const SizedBox(height: 5),
-            const _ErrorRow('Please enter a Credential ID.'),
-          ],
-          const SizedBox(height: 28),
-
-          // Instructions
-          const _InstructionCard(
-            title: 'How to find the Credential ID',
-            subtitle:
-                'Guide the credential holder to locate the Credential ID using these steps:',
-            steps: [
-              'Open the QWallet app',
-              'Go to the Wallet tab',
-              'Locate the credential based on its category',
-              'Click Details to find the Credential ID',
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  MODE 2 — OTP
+  //  OTP MODE
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _buildOtpMode() {
@@ -744,7 +657,6 @@ class _ManualVerifyPageState extends State<ManualVerifyPage> {
 
   @override
   void dispose() {
-    _credIdCtrl.dispose();
     _otpCtrl.dispose();
     super.dispose();
   }
