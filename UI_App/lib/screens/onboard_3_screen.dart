@@ -189,8 +189,6 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
             ),
           ),
           const SizedBox(height: 20),
-          const _NistBadge(),
-          const SizedBox(height: 16),
         ],
       ),
     );
@@ -446,42 +444,6 @@ class _TextBlock extends StatelessWidget {
         const SizedBox(height: 10),
         Text(body, style: const TextStyle(color: obTextSub, fontSize: 15, height: 1.6)),
       ],
-    );
-  }
-}
-
-// ─── NIST badge ────────────────────────────────────────────────────────────
-
-class _NistBadge extends StatelessWidget {
-  const _NistBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-      decoration: BoxDecoration(
-        color: obPanel,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: obBorder),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: const [
-          Icon(Icons.shield_outlined, color: obTextDim, size: 14),
-          SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              'CRYSTALS-Dilithium (ML-DSA) · NIST FIPS 204',
-              style: TextStyle(
-                color: obTextSub,
-                fontSize: 11,
-                letterSpacing: 0.2,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
