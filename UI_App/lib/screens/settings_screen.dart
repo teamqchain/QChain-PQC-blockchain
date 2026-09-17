@@ -714,7 +714,7 @@ class _PublicKeysDialogState extends State<_PublicKeysDialog> {
               )
             else ...[
               _PublicKeyBlock(
-                title: 'ML-KEM-768 (encryption)',
+                title: 'ML-KEM-768',
                 value: _kemPubHex,
                 truncated: _kemPubHex == null || _kemPubHex!.isEmpty
                     ? null
@@ -725,7 +725,7 @@ class _PublicKeysDialogState extends State<_PublicKeysDialog> {
               ),
               const SizedBox(height: 14),
               _PublicKeyBlock(
-                title: 'ML-DSA-44 (signing)',
+                title: 'ML-DSA-44',
                 value: _dsaPubHex,
                 truncated: _dsaPubHex == null || _dsaPubHex!.isEmpty
                     ? null

@@ -18,24 +18,10 @@ const Color obAccent = Color(0xFFFFFFFF);
 const Color obGood = Color(0xFF22C55E);
 const Color obBad = Color(0xFFEF4444);
 
-/// Shared scaffolding for every onboarding step.
-///
-///   ┌──────────────────────────────────────────┐
-///   │  ◄ (back)            step 1/3      Skip › │  ← top bar
-///   │                                          │
-///   │             [ scrollable hero ]          │
-///   │                                          │
-///   │           ● — —                          │  ← dots
-///   │      [   Continue   ]                    │  ← CTA
-///   └──────────────────────────────────────────┘
-///
-/// Pure-black background, white CTA, dark panels. Uses SafeArea + a maxWidth
-/// gutter so it reads correctly on phones, large Android devices, and iPhone
-/// Pro Max alike. Works on both Android and iOS (Material tap targets).
+
 class QOnboardScaffold extends StatelessWidget {
   final int step; // 1-based step index (1..3)
   final VoidCallback? onBack; // null → no back button (first screen)
-  final VoidCallback onSkip; // skip to shell
   final VoidCallback onCta; // primary action
   final String ctaLabel;
   final bool ctaEnabled;
@@ -43,7 +29,6 @@ class QOnboardScaffold extends StatelessWidget {
 
   const QOnboardScaffold({
     required this.step,
-    required this.onSkip,
     required this.onCta,
     required this.ctaLabel,
     required this.child,
@@ -70,7 +55,7 @@ class QOnboardScaffold extends StatelessWidget {
             // ── Top bar ─────────────────────────────────────────────
             Padding(
               padding: EdgeInsets.fromLTRB(20, topPad, 20, 0),
-              child: _OnboardTopBar(step: step, onBack: onBack, onSkip: onSkip),
+              child: _OnboardTopBar(step: step, onBack: onBack),
             ),
 
             // ── Hero content (scrollable, fills remaining space) ────
@@ -117,12 +102,10 @@ class QOnboardScaffold extends StatelessWidget {
 class _OnboardTopBar extends StatelessWidget {
   final int step;
   final VoidCallback? onBack;
-  final VoidCallback onSkip;
 
   const _OnboardTopBar({
     required this.step,
     required this.onBack,
-    required this.onSkip,
   });
 
   @override
@@ -134,19 +117,19 @@ class _OnboardTopBar extends StatelessWidget {
         onBack != null
             ? _CircleButton(icon: Icons.arrow_back_ios_new_rounded, onTap: onBack!)
             : const SizedBox(width: 40, height: 40),
-        TextButton(
-          onPressed: onSkip,
-          style: TextButton.styleFrom(
-            foregroundColor: obTextSub,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            minimumSize: const Size(0, 32),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: const Text(
-            'Skip',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-          ),
-        ),
+        // TextButton(
+        //   onPressed: onSkip,
+        //   style: TextButton.styleFrom(
+        //     foregroundColor: obTextSub,
+        //     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        //     minimumSize: const Size(0, 32),
+        //     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        //   ),
+        //   child: const Text(
+        //     'Skip',
+        //     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        //   ),
+        // ),
       ],
     );
   }

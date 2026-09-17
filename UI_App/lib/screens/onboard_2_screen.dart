@@ -33,7 +33,6 @@ class Onboard2Screen extends StatelessWidget {
     return QOnboardScaffold(
       step: 2,
       onBack: () => Get.back(),
-      onSkip: () => Get.offAllNamed(Routes.SHELL),
       ctaLabel: 'Continue',
       onCta: () => Get.toNamed(Routes.ONBOARD3),
       child: Column(

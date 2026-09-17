@@ -7,6 +7,8 @@ import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/screens/selective_screen.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
+import 'package:qwallet_mobileapp/services/crypto_service.dart';
+import 'package:qwallet_mobileapp/utils/logger.dart';
 
 
 class PresentScreen extends StatefulWidget {
@@ -21,11 +23,9 @@ class _PresentScreenState extends State<PresentScreen> {
   late String _presentationID;
   late List<String> _hiddenFields;
 
-  static const int _expiryDuration = 60; // 1 minute
-
   DateTime? _expiresAt;
   int _secondsLeft = 0;
-  int _totalSeconds = _expiryDuration;
+  int _totalSeconds = 60;
   Timer? _timer;
   bool _expired = false;
   bool _isRefreshing = false;
@@ -44,8 +44,13 @@ class _PresentScreenState extends State<PresentScreen> {
     } else if (args is Map<String, dynamic>) {
       doc = args['doc'];
       _presentationID = args['presentationID'] ?? '';
-      _hiddenFields = args['hiddenFields'] ?? [];
-      _expiresAt = DateTime.tryParse(args['expiresAt'] ?? '');
+      _hiddenFields = List<String>.from(args['hiddenFields'] ?? const []);
+      _expiresAt = CryptoService.parseExpiresAt(args['expiresAt']?.toString());
+    } else if (args is Map) {
+      doc = args['doc'];
+      _presentationID = args['presentationID']?.toString() ?? '';
+      _hiddenFields = List<String>.from(args['hiddenFields'] ?? const []);
+      _expiresAt = CryptoService.parseExpiresAt(args['expiresAt']?.toString());
     } else {
       throw Exception('Invalid arguments passed to PresentScreen');
     }
@@ -63,22 +68,51 @@ class _PresentScreenState extends State<PresentScreen> {
     }
   }
 
+  Map<String, dynamic> _disclosedFieldsMap() {
+    final hidden = _hiddenFields.toSet();
+    final out = <String, dynamic>{
+      if (!hidden.contains('credentialType')) 'credentialType': doc.credentialType,
+      if (!hidden.contains('status')) 'status': doc.status,
+      if (!hidden.contains('issuedBy')) 'issuedBy': doc.issuedBy,
+      if (!hidden.contains('holderEID')) 'holderEID': doc.holderEID,
+      if (!hidden.contains('holderName')) 'holderName': doc.holderName,
+      if (!hidden.contains('issuedAt')) 'issuedAt': doc.issuedAt,
+    };
+    if (doc.expiryDate != null && !hidden.contains('expiryDate')) {
+      out['expiryDate'] = doc.expiryDate;
+    }
+    doc.attributes.forEach((k, v) {
+      if (!hidden.contains(k)) out[k] = v;
+    });
+    return out;
+  }
+
+  Future<Map<String, dynamic>?> _signedGeneratePresentation() async {
+    final signed = await CryptoService.buildSignedDisclosedPayload(
+      credentialID: doc.credentialID,
+      disclosedFields: _disclosedFieldsMap(),
+    );
+    return ApiService.generatePresentation(
+      credentialID: doc.credentialID,
+      hiddenFields: _hiddenFields,
+      disclosedPayload: signed.disclosedPayloadJson,
+      holderSignature: signed.holderSignatureHex,
+    );
+  }
+
   Future<void> _initializePresentation() async {
     setState(() => _isRefreshing = true);
 
     try {
-      final result = await ApiService.generatePresentation(
-        doc.credentialID,
-        _hiddenFields,
-        _expiryDuration, 
-      );
+      final result = await _signedGeneratePresentation();
 
+      if (!mounted) return;
       setState(() => _isRefreshing = false);
 
       if (result != null) {
         setState(() {
-          _presentationID = result['presentationID'];
-          _expiresAt = DateTime.tryParse(result['expiresAt']);
+          _presentationID = result['presentationID']?.toString() ?? '';
+          _expiresAt = CryptoService.parseExpiresAt(result['expiresAt']?.toString());
           if (_expiresAt != null) {
             final diff = _expiresAt!.difference(DateTime.now().toUtc()).inSeconds;
             if (diff > 0) _totalSeconds = diff;
@@ -95,6 +129,8 @@ class _PresentScreenState extends State<PresentScreen> {
         );
       }
     } catch (e) {
+      logDebug('[PresentScreen] initialize failed: $e');
+      if (!mounted) return;
       setState(() => _isRefreshing = false);
       Get.snackbar(
         'Network Error',
@@ -110,18 +146,15 @@ class _PresentScreenState extends State<PresentScreen> {
     setState(() => _isRefreshing = true);
 
     try {
-      final result = await ApiService.generatePresentation(
-        doc.credentialID,
-        _hiddenFields,
-        _expiryDuration,
-      );
+      final result = await _signedGeneratePresentation();
 
+      if (!mounted) return;
       setState(() => _isRefreshing = false);
 
       if (result != null) {
         setState(() {
-          _presentationID = result['presentationID'];
-          _expiresAt = DateTime.tryParse(result['expiresAt']);
+          _presentationID = result['presentationID']?.toString() ?? '';
+          _expiresAt = CryptoService.parseExpiresAt(result['expiresAt']?.toString());
           if (_expiresAt != null) {
             final diff = _expiresAt!.difference(DateTime.now().toUtc()).inSeconds;
             if (diff > 0) _totalSeconds = diff;
@@ -138,6 +171,8 @@ class _PresentScreenState extends State<PresentScreen> {
         );
       }
     } catch (e) {
+      logDebug('[PresentScreen] refresh failed: $e');
+      if (!mounted) return;
       setState(() => _isRefreshing = false);
       Get.snackbar(
         'Network Error',

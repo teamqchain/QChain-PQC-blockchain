@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/utils/app_config.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
+import 'package:qwallet_mobileapp/services/crypto_service.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/widgets/wallet_category.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart'; // Added logger import
@@ -45,12 +46,50 @@ class WalletController extends GetxController {
     }
   }
 
-  Future<Map<String, dynamic>?> requestOTP(String credentialID, [List<String> hiddenFields = const []]) async {
+  Future<Map<String, dynamic>?> requestOTP(
+    String credentialID, [
+    List<String> hiddenFields = const [],
+  ]) async {
     logDebug(
       '[WalletController] requestOTP started for credential: $credentialID',
     );
     try {
-      final result = await ApiService.generateVerificationOTP(credentialID, hiddenFields, 300);
+      final cred = credentials.firstWhereOrNull(
+        (c) => c.credentialID == credentialID,
+      );
+      final hidden = hiddenFields.toSet();
+      final disclosed = <String, dynamic>{};
+      if (cred != null) {
+        if (!hidden.contains('credentialType')) {
+          disclosed['credentialType'] = cred.credentialType;
+        }
+        if (!hidden.contains('status')) disclosed['status'] = cred.status;
+        if (!hidden.contains('issuedBy')) disclosed['issuedBy'] = cred.issuedBy;
+        if (!hidden.contains('holderEID')) {
+          disclosed['holderEID'] = cred.holderEID;
+        }
+        if (!hidden.contains('holderName')) {
+          disclosed['holderName'] = cred.holderName;
+        }
+        if (!hidden.contains('issuedAt')) disclosed['issuedAt'] = cred.issuedAt;
+        if (cred.expiryDate != null && !hidden.contains('expiryDate')) {
+          disclosed['expiryDate'] = cred.expiryDate;
+        }
+        cred.attributes.forEach((k, v) {
+          if (!hidden.contains(k)) disclosed[k] = v;
+        });
+      }
+
+      final signed = await CryptoService.buildSignedDisclosedPayload(
+        credentialID: credentialID,
+        disclosedFields: disclosed,
+      );
+      final result = await ApiService.generateVerificationOTP(
+        credentialID: credentialID,
+        hiddenFields: hiddenFields,
+        disclosedPayload: signed.disclosedPayloadJson,
+        holderSignature: signed.holderSignatureHex,
+      );
       if (result == null) {
         logDebug('[WalletController] requestOTP failed: API returned null');
         Get.snackbar(
