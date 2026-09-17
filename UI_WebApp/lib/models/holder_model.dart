@@ -31,6 +31,9 @@ class HolderRecord {
   final String college;
   final String? walletAddress;
   final String emiratesID;
+  /// True once the holder has registered ML-KEM + ML-DSA keys on QWallet
+  /// (`POST /mobile/registerHolderKeys`). Issuance is rejected without this.
+  final bool isWalletActivated;
 
   const HolderRecord({
     required this.id,
@@ -40,6 +43,7 @@ class HolderRecord {
     required this.college,
     this.walletAddress,
     required this.emiratesID,
+    this.isWalletActivated = false,
   });
 
   factory HolderRecord.fromJson(Map<String, dynamic> e) {
@@ -50,6 +54,7 @@ class HolderRecord {
       emiratesID: e['emiratesID'] as String? ?? '',
       type: _parseHolderType(e['type'] as String? ?? ''),
       college: e['college'] as String? ?? '',
+      isWalletActivated: e['isWalletActivated'] as bool? ?? false,
     );
   }
 
