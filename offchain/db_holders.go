@@ -51,6 +51,67 @@ func insertHolder(holderID, emiratesID, firstName, lastName string) error {
 	return err
 }
 
+// holderKemPubByID returns the ML-KEM-768 public key hex for holderID.
+func holderKemPubByID(holderID string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("database not configured")
+	}
+	var pub sql.NullString
+	err := db.QueryRow(`SELECT kem_public_key FROM holders WHERE holder_id = ?`, holderID).Scan(&pub)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("holder %q not found", holderID)
+	}
+	if err != nil {
+		return "", err
+	}
+	if !pub.Valid {
+		return "", nil
+	}
+	return pub.String, nil
+}
+
+// holderDsaPubByID returns the ML-DSA-44 public key hex for holderID.
+func holderDsaPubByID(holderID string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("database not configured")
+	}
+	var pub sql.NullString
+	err := db.QueryRow(`SELECT dsa_public_key FROM holders WHERE holder_id = ?`, holderID).Scan(&pub)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("holder %q not found", holderID)
+	}
+	if err != nil {
+		return "", err
+	}
+	if !pub.Valid {
+		return "", nil
+	}
+	return pub.String, nil
+}
+
+// updateHolderKeys sets kem_public_key, dsa_public_key, and marks is_wallet_activated = TRUE.
+func updateHolderKeys(holderID, kemPublicKey, dsaPublicKey string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	_, err := db.Exec(
+		`UPDATE holders
+		    SET kem_public_key = ?, dsa_public_key = ?, is_wallet_activated = TRUE
+		  WHERE holder_id = ?`,
+		kemPublicKey, dsaPublicKey, holderID,
+	)
+	return err
+}
+
+// updateHolderKemPub updates only the ML-KEM public key (legacy Track B helper).
+func updateHolderKemPub(holderID, pubHex string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	_, err := db.Exec(`UPDATE holders SET kem_public_key = ? WHERE holder_id = ?`, pubHex, holderID)
+	return err
+}
+
 // holderNameByID returns "FirstName LastName" for the given holder_id.
 func holderNameByID(holderID string) (string, error) {
 	if db == nil || holderID == "" {

@@ -436,3 +436,25 @@ func credentialHolderID(credentialID string) (string, error) {
 	}
 	return holderID, err
 }
+
+// getCredentialDataByID returns the stored credential_data JSON string for display credentialID or fabric_cred_id.
+func getCredentialDataByID(credentialID string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("database not configured")
+	}
+	var data sql.NullString
+	err := db.QueryRow(
+		`SELECT credential_data FROM credentials WHERE credential_id = ? OR fabric_cred_id = ? LIMIT 1`,
+		credentialID, credentialID,
+	).Scan(&data)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("credential %q not found", credentialID)
+	}
+	if err != nil {
+		return "", err
+	}
+	if !data.Valid {
+		return "{}", nil
+	}
+	return data.String, nil
+}

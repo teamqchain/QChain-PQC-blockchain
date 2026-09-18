@@ -99,6 +99,34 @@ func TestTamperedFieldFailsAuth(t *testing.T) {
 	}
 }
 
+func TestTrackHRecipientHolder(t *testing.T) {
+	_, pub, priv := setupTestKeys(t)
+	plain := `{"degree":"BSc Computer Science","gpa":3.8}`
+	enc, err := encryptCredentialDataToHolder("hash-test", plain, pub)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	var env Envelope
+	if err := json.Unmarshal([]byte(enc), &env); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(env.Wraps) == 0 || env.Wraps[0].Recipient != "holder" {
+		t.Fatalf("expected wrap recipient 'holder', got %v", env.Wraps)
+	}
+	for _, f := range env.Fields {
+		if _, ok := f.Wrap["holder"]; !ok {
+			t.Fatalf("expected field %s to have wrap for 'holder'", f.Key)
+		}
+	}
+	dec, err := decryptCredentialData(enc, "H-0001", priv)
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	if !sameJSON(t, plain, dec) {
+		t.Fatalf("mismatch: want %s got %s", plain, dec)
+	}
+}
+
 func sameJSON(t *testing.T, a, b string) bool {
 	t.Helper()
 	var ao, bo any
