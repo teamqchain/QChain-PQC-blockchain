@@ -181,19 +181,20 @@ func openAttributes(env *Envelope, recipient, kemSecHex string) (map[string]json
 //  HIGH-LEVEL HELPERS used by issuance and read paths
 // ─────────────────────────────────────────────
 
-// encryptCredentialData converts a plaintext attribute JSON string into an
-// envelope JSON string wrapped to the holder's ML-KEM public key (recipient "holder:<holderID>").
+// encryptCredentialDataToHolder converts a plaintext attribute JSON string into an
+// envelope JSON string wrapped to the holder's ML-KEM public key with recipient "holder" (Track H).
 // credID is an HKDF context binding — issuance passes the credential hash.
-func encryptCredentialData(credID, attrsJSON, holderID, holderKemPubHex string) (string, error) {
+func encryptCredentialDataToHolder(credID, attrsJSON, holderKemPubHex string) (string, error) {
 	if holderKemPubHex == "" {
-		return "", fmt.Errorf("encryptCredentialData: holder %q has no registered KEM public key", holderID)
+		return "", fmt.Errorf("encryptCredentialData: holder has no registered KEM public key")
 	}
 	attrs, err := splitFields(attrsJSON)
 	if err != nil {
 		return "", err
 	}
-	recipientName := fmt.Sprintf("holder:%s", holderID)
-	env, err := sealAttributes(credID, attrs, []Recipient{{Name: recipientName, PubHex: holderKemPubHex}})
+	env, err := sealAttributes(credID, attrs, []Recipient{
+		{Name: "holder", PubHex: holderKemPubHex},
+	})
 	if err != nil {
 		return "", err
 	}
@@ -204,8 +205,15 @@ func encryptCredentialData(credID, attrsJSON, holderID, holderKemPubHex string) 
 	return string(b), nil
 }
 
+// encryptCredentialData converts a plaintext attribute JSON string into an
+// envelope JSON string wrapped to the holder's ML-KEM public key (recipient "holder").
+func encryptCredentialData(credID, attrsJSON, holderID, holderKemPubHex string) (string, error) {
+	return encryptCredentialDataToHolder(credID, attrsJSON, holderKemPubHex)
+}
+
 // decryptCredentialData reverses encryptCredentialData.
-// First tries decrypting using the holder's KEM private key (recipient "holder:<holderID>").
+// First tries decrypting using the holder's KEM private key (recipient "holder" [Track H],
+// then "holder:<holderID>" [Track B2]).
 // If holder key is not available or fails, falls back to legacy "org" recipient (B3 fallback).
 // Legacy plaintext rows (no envelope marker) pass through untouched.
 func decryptCredentialData(stored, holderID, holderKemPrivHex string) (string, error) {
@@ -218,10 +226,14 @@ func decryptCredentialData(stored, holderID, holderKemPrivHex string) (string, e
 		return "", fmt.Errorf("parse envelope: %w", err)
 	}
 
-	// 1. Try holder key first (Track B2)
-	recipientHolder := fmt.Sprintf("holder:%s", holderID)
+	// 1. Try holder key (recipient "holder" in Track H, fallback to "holder:<holderID>")
 	if holderKemPrivHex != "" {
-		attrs, err := openAttributes(&env, recipientHolder, holderKemPrivHex)
+		attrs, err := openAttributes(&env, "holder", holderKemPrivHex)
+		if err == nil {
+			return formatDecryptedAttrs(attrs)
+		}
+		recipientHolder := fmt.Sprintf("holder:%s", holderID)
+		attrs, err = openAttributes(&env, recipientHolder, holderKemPrivHex)
 		if err == nil {
 			return formatDecryptedAttrs(attrs)
 		}

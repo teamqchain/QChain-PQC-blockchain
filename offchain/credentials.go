@@ -138,14 +138,14 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1b. Track B2 — look up the holder's ML-KEM public key for off-chain encryption.
-	// A holder must have a registered KEM key before credentials can be issued to them.
+	// 1b. Track B2 / Track H — look up the holder's ML-KEM public key for off-chain encryption.
+	// A holder must have registered their keys before credentials can be issued to them.
 	holderKemPub, kemErr := holderKemPubByID(holderID)
 	if kemErr != nil {
 		log.Printf("WARNING: holder %s KEM key lookup failed: %v", holderID, kemErr)
 	}
 	if holderKemPub == "" {
-		writeError(w, http.StatusBadRequest, "holder does not have a registered encryption key (kem_public_key) — register a key via /mobile/registerHolderKey or run GENERATE_HOLDER_KEYS=1 first")
+		writeError(w, http.StatusBadRequest, "Holder has not activated their wallet (no ML-KEM public key registered)")
 		return
 	}
 
@@ -167,13 +167,9 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4b. Track B — encrypt the credential body for OFF-CHAIN storage only.
-	// The on-chain payload below (canonicalJSONStr + hash + signature) is left
-	// completely unchanged, so the chaincode and verification path are untouched
-	// and the ledger never has to be modified/restarted. `encBody` replaces the
-	// plaintext body in BOTH off-chain stores (IPFS and MySQL credential_data).
-	// If the org KEM key is unset, encBody == req.Info and behaviour is unchanged.
-	encBody, encErr := encryptCredentialData(credentialHash, req.Info, holderID, holderKemPub)
+	// 4b. Track H — encrypt the credential body to the HOLDER's ML-KEM public key.
+	// The envelope wraps to recipient "holder" so the wallet can decrypt locally.
+	encBody, encErr := encryptCredentialDataToHolder(credentialHash, req.Info, holderKemPub)
 	if encErr != nil {
 		writeError(w, http.StatusInternalServerError, "off-chain encryption failed: "+encErr.Error())
 		return
@@ -181,6 +177,23 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 	encVersion := 0
 	if looksLikeEnvelope([]byte(encBody)) {
 		encVersion = 1
+	}
+
+	// 4c. Track H — compute per-field hashes (SHA3-256(field + ":" + value))
+	// These are committed on-chain so the verifier can check disclosed values without decrypting.
+	var attrs map[string]any
+	if err := json.Unmarshal([]byte(req.Info), &attrs); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid info JSON: "+err.Error())
+		return
+	}
+	fieldHashes := map[string]string{}
+	for k, v := range attrs {
+		fieldHashes[k] = sha3Hex(k + ":" + fmt.Sprintf("%v", v))
+	}
+	fieldHashesJSON, err := json.Marshal(fieldHashes)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "field hash marshal failed: "+err.Error())
+		return
 	}
 
 	// 5. Upload the (encrypted) body to IPFS (non-fatal if IPFS unavailable).
@@ -208,6 +221,7 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		signature,
 		issuerPubKeyHex,
 		ipfsCID,
+		string(fieldHashesJSON),
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "chaincode issueCredential failed: "+err.Error())

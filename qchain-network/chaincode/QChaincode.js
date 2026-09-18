@@ -29,11 +29,27 @@ class QChaincode extends Contract {
         }
     }
 
-    // Fix 5: accepts the canonical JSON, its SHA3-256 hash, the ML-DSA-44 signature,
-    // the org public key, and the IPFS CID — all computed by the Go server before
+    // Track H: bind holder public keys (ML-KEM-768 for encryption + ML-DSA-44 for signing)
+    async bindHolderKeys(ctx, holderID, kemPublicKey, dsaPublicKey) {
+        try {
+            const holder = await this.getHolder(ctx, holderID);
+            holder.KemPublicKey = kemPublicKey;
+            holder.DsaPublicKey = dsaPublicKey;
+            await ctx.stub.putState(
+                holderID,
+                Buffer.from(stringify(sortKeysRecursive(holder)))
+            );
+            return JSON.stringify({ success: true });
+        } catch (error) {
+            return JSON.stringify({ success: false, error: error.message });
+        }
+    }
+
+    // Fix 5 & Track H: accepts the canonical JSON, its SHA3-256 hash, the ML-DSA-44 signature,
+    // the org public key, the IPFS CID, and fieldHashes — all computed by the Go server before
     // calling this transaction. CID is passed here so issuance is atomic (no
     // separate setCID call needed).
-    async issueCredential(ctx, holderID, credentialJSON, credentialHash, issuerSignature, issuerPublicKey, ipfsCID) {
+    async issueCredential(ctx, holderID, credentialJSON, credentialHash, issuerSignature, issuerPublicKey, ipfsCID, fieldHashes) {
         try {
             await this.checkAccess(ctx, "issuer");
 
@@ -47,8 +63,9 @@ class QChaincode extends Contract {
                 Holder:         Holder.ID,
                 Issuer:         ctx.clientIdentity.getID(),
                 Status:         "active",
-                Info:           credentialJSON,    // canonical JSON string (signed payload)
+                Info:           credentialJSON,    // KEEP for now (A/B test); Track B removes this later
                 CredentialHash: credentialHash,    // SHA3-256 hex of Info
+                FieldHashes:    fieldHashes,       // NEW — JSON string: { "field": "SHA3-256(field:value)", ... }
                 Signature:      issuerSignature,   // hex ML-DSA-44 signature over CredentialHash
                 PublicKey:      issuerPublicKey,   // hex org public key at issuance time
                 CID:            ipfsCID,           // IPFS CID of the JSON (may be "" if upload skipped)

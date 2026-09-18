@@ -124,6 +124,9 @@ func main() {
 	mux.HandleFunc("POST /deleteStaff", handleDeleteStaff)
 
 	// QWallet — mobile endpoints
+	mux.HandleFunc("GET /mobile/checkKeys", handleCheckKeys)
+	mux.HandleFunc("POST /mobile/registerHolderKeys", handleRegisterHolderKeys)
+	mux.HandleFunc("GET /mobile/getEnvelope", handleGetEnvelope)
 	mux.HandleFunc("GET /mobile/getCredentialsByHolder", handleMobileGetCredentialsByHolder)
 	mux.HandleFunc("POST /mobile/registerHolderKey", handleRegisterHolderKey)
 	mux.HandleFunc("POST /mobile/toggleFavorite", handleToggleFavorite)

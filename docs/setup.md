@@ -135,6 +135,9 @@ for m in qchain-network/scripts/migrations/*.sql; do
     echo "Applying migration $m..."
     sudo mysql qchain_db < "$m"
 done
+
+# Note: If upgrading an existing database that already has previous schemas/migrations, apply only the new Track H migration:
+# sudo mysql qchain_db < qchain-network/scripts/migrations/2026-09_trackH_holder_signing.sql
 ```
 
 ## 5. IPFS Setup
@@ -233,6 +236,33 @@ peer lifecycle chaincode commit -o localhost:7050 --ordererTLSHostnameOverride o
   --peerAddresses localhost:9051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/general.uae.com/peers/peer0.general.uae.com/tls/ca.crt
 ```
 
+### Upgrading Chaincode (Track H Update for Existing Networks)
+
+If your Fabric network is already running with `qchaincode` sequence 1, upgrade it to sequence 2 to activate `bindHolderKeys` and per-field hashes:
+
+```bash
+# 1. Re-package chaincode as version 1.1
+source $REPO_ROOT/qchain-network/scripts/env-gov.sh
+peer lifecycle chaincode package qchaincode_1.1.tar.gz --path $REPO_ROOT/qchain-network/chaincode --lang node --label qchaincode_1.1
+
+# 2. Install on Government peer
+peer lifecycle chaincode install qchaincode_1.1.tar.gz
+export CC_PACKAGE_ID=$(peer lifecycle chaincode queryinstalled | grep qchaincode_1.1 | awk '{print $3}' | sed 's/,//')
+
+# Approve for Government with --sequence 2
+peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.1 --package-id $CC_PACKAGE_ID --sequence 2 --tls --cafile $ORDERER_CA
+
+# 3. Install and Approve on General peer with --sequence 2
+source $REPO_ROOT/qchain-network/scripts/env-gen.sh
+peer lifecycle chaincode install qchaincode_1.1.tar.gz
+peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.1 --package-id $CC_PACKAGE_ID --sequence 2 --tls --cafile $ORDERER_CA
+
+# 4. Commit upgraded chaincode (sequence 2)
+peer lifecycle chaincode commit -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.1 --sequence 2 --tls --cafile $ORDERER_CA \
+  --peerAddresses localhost:7051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/government.uae.com/peers/peer0.government.uae.com/tls/ca.crt \
+  --peerAddresses localhost:9051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/general.uae.com/peers/peer0.general.uae.com/tls/ca.crt
+```
+
 ## 7. Backend (off-chain Go API) Setup
 
 Because `liboqs-go` requires compiling the C library `liboqs` with CGo, we build the Docker image first (which compiles `liboqs` inside Docker automatically), and then run `keygen` from the Docker image.
@@ -279,6 +309,11 @@ bash offchain/docker-run.sh
 
 # 7. Seed the demo holders on Fabric via the API
 bash qchain-network/scripts/setup-demo.sh http://localhost:3000
+
+# 8. (Track H) Register holder public keys (wallet activation)
+# In production, the QWallet phone app generates keys locally and calls this endpoint.
+# You can check if a holder has keys registered:
+curl -s "http://localhost:3000/mobile/checkKeys?emiratesID=784-1990-1234567-1"
 ```
 
 ## 8. Cloudflare Tunnel Setup (Free Random URL)

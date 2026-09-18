@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS holders (
     wallet_address      VARCHAR(50),                                                -- [LATER] QWallet device identifier
     fabric_holder_id    VARCHAR(15)  NOT NULL UNIQUE,                              -- [NOW]  matches blockchain H-XXXX key
     is_wallet_activated BOOLEAN DEFAULT FALSE,
+    kem_public_key      TEXT,                                                       -- [Track B/H] ML-KEM-768 public key
+    dsa_public_key      TEXT,                                                       -- [Track H] ML-DSA-44 public key
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -338,8 +340,10 @@ CREATE TABLE IF NOT EXISTS mobile_sessions (
     session_type  ENUM('otp','qr') NOT NULL,
     credential_id VARCHAR(20)  NOT NULL,
     holder_id     VARCHAR(10)  NOT NULL,
-    hidden_fields JSON         DEFAULT NULL,
-    expires_at    DATETIME     NOT NULL,
+    hidden_fields     JSON         DEFAULT NULL,
+    disclosed_payload JSON         DEFAULT NULL,                                 -- [Track H] signed canonical disclosed JSON
+    holder_signature  TEXT         DEFAULT NULL,                                 -- [Track H] hex ML-DSA-44 signature
+    expires_at        DATETIME     NOT NULL,
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_mobile_sessions_cred    (credential_id),
     INDEX idx_mobile_sessions_expires (expires_at),
