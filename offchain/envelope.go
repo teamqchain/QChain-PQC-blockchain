@@ -24,7 +24,7 @@ package main
 //     "_qc_env": "qchain-env", "v": 1,
 //     "kemAlg": "ML-KEM-768", "aeadAlg": "AES-256-GCM", "kdf": "HKDF-SHA3-256",
 //     "credId": "<hkdf context id>",
-//     "wraps":  [ { "recipient": "org", "kemCt": "<hex>" } ],
+//     "wraps":  [ { "recipient": "org" or "holder", "kemCt": "<hex>" } ],
 //     "fields": [ { "key": "gpa", "nonce": "<hex>", "ct": "<hex>",
 //                   "wrap": { "org": "<hex wrapped per-field key>" } } ]
 //   }
