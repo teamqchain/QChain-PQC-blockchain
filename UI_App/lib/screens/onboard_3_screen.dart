@@ -84,6 +84,22 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
         dsaPubHex: dsa.pubHex,
       );
 
+      // CRITICAL: Verify the key was saved correctly. ML-KEM-768 private key
+      // must be 2400 bytes = 4800 hex chars. flutter_secure_storage can
+      // silently truncate long values on some platforms.
+      final verifyKem = await CryptoService.readKemPrivateKey();
+      final verifyDsa = await CryptoService.readDsaPrivateKey();
+      logDebug('[Onboard3] VERIFY after save:');
+      logDebug('  kem_priv: generated=${kem.privHex.length} chars, read back=${verifyKem?.length ?? 0} chars');
+      logDebug('  dsa_priv: generated=${dsa.privHex.length} chars, read back=${verifyDsa?.length ?? 0} chars');
+      if (verifyKem == null || verifyKem.length != kem.privHex.length) {
+        logDebug('[Onboard3] WARNING: kem_priv_key was TRUNCATED by secure storage!');
+        logDebug('  Expected ${kem.privHex.length} hex chars, got ${verifyKem?.length ?? 0}');
+      }
+      if (verifyDsa == null || verifyDsa.length != dsa.privHex.length) {
+        logDebug('[Onboard3] WARNING: dsa_priv_key was TRUNCATED by secure storage!');
+      }
+
       final registered = await ApiService.registerHolderKeys(
         emiratesID: userEmiratesID,
         kemPublicKey: kem.pubHex,
