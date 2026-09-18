@@ -4,6 +4,7 @@ import 'package:qwallet_mobileapp/model/activity_model.dart';
 import 'package:qwallet_mobileapp/model/catalog_model.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/model/subscription_model.dart';
+import 'package:qwallet_mobileapp/services/crypto_service.dart';
 import 'package:qwallet_mobileapp/utils/app_config.dart';
 import 'package:qwallet_mobileapp/utils/alice_inspector.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
@@ -117,6 +118,61 @@ class ApiService {
       if (e is ConnectionException) rethrow;
       logDebug('[ApiService] getEnvelope exception: $e');
       throw ConnectionException('Failed to load credential envelope.');
+    }
+  }
+
+  /// Fetch encrypted envelope + decrypt on-device. Plaintext stays in memory.
+  /// Throws on network / missing key / decrypt failure.
+  static Future<Map<String, dynamic>> fetchAndDecryptAttributes(
+    String credentialID,
+  ) async {
+    logDebug('[ApiService] fetchAndDecryptAttributes for $credentialID');
+    final raw = await getEnvelope(credentialID);
+    final envelope = CryptoService.unwrapEnvelopePayload(raw);
+    final kemPrivHex = await CryptoService.readKemPrivateKey();
+    if (kemPrivHex == null || kemPrivHex.isEmpty) {
+      throw StateError('ML-KEM private key not found on this device');
+    }
+    final attrs = CryptoService.decryptEnvelope(envelope, kemPrivHex);
+    logDebug(
+      '[ApiService] fetchAndDecryptAttributes success: ${attrs.length} fields',
+    );
+    return attrs;
+  }
+
+  // GET /mobile/getHolderProfile — basic demographic info for a holder (full
+  // name, email, Emirates ID, holder type, college). Works even before any
+  // credential is issued, so the home screen can greet the holder by name right
+  // after key generation.
+  static Future<Map<String, dynamic>?> getHolderProfile(
+    String emiratesID,
+  ) async {
+    logDebug('[ApiService] getHolderProfile called for $emiratesID');
+    try {
+      final res = await _client
+          .get(
+            Uri.parse(
+              '$kApiBaseUrl/mobile/getHolderProfile?emiratesID=$emiratesID',
+            ),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        if (body is Map<String, dynamic> && body['success'] == true) {
+          logDebug('[ApiService] getHolderProfile success: ${body['fullName']}');
+          return body;
+        }
+        logDebug(
+          '[ApiService] getHolderProfile failed: invalid body or success=false',
+        );
+        return null;
+      }
+      logDebug('[ApiService] getHolderProfile failed: HTTP ${res.statusCode}');
+      return null;
+    } catch (e) {
+      logDebug('[ApiService] getHolderProfile exception: $e');
+      return null;
     }
   }
 
