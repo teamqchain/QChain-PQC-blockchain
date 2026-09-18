@@ -47,7 +47,18 @@ assert_json() {
     local expected="$3"
     local desc="$4"
     local val
-    val=$(echo "$json" | python3 -c "import sys, json; data=json.load(sys.stdin); print($query)" 2>/dev/null || echo "QUERY_ERROR")
+    val=$(echo "$json" | python3 -c "
+import sys, json
+try:
+    raw = sys.stdin.read().strip()
+    data = json.loads(raw)
+    if isinstance(data, dict) and 'error' in data and not '$expected' in str(data):
+        print('SERVER_ERROR: ' + str(data.get('error')))
+    else:
+        print($query)
+except Exception:
+    print('RAW: ' + raw[:120])
+" 2>/dev/null || echo "QUERY_ERROR")
     if [ "$val" = "$expected" ]; then
         pass "$desc"
     else
@@ -63,30 +74,39 @@ echo "════════════════════════�
 # ─── 1. Health Check ─────────────────────────────────────────────────────────
 echo ""
 echo "1. Checking API Health..."
-HEALTH_RESP=$(curl -sf "$API_URL/health")
+HEALTH_RESP=$(curl -s "$API_URL/health")
 assert_json "$HEALTH_RESP" "data.get('status')" "ok" "Server reports healthy"
 
 # ─── 2. Register Holder on Fabric & DB ───────────────────────────────────────
 echo ""
-echo "2. Registering Holder (H-9001)..."
 RAND_SUFFIX=$((RANDOM % 9000 + 1000))
+HOLDER_ID="H-${RAND_SUFFIX}"
 EID="784-1990-888${RAND_SUFFIX}-1"
-HOLDER_RESP=$(curl -sf -X POST "$API_URL/registerHolder" \
+echo "2. Registering Holder ($HOLDER_ID / $EID)..."
+HOLDER_RESP=$(curl -s -X POST "$API_URL/registerHolder" \
     -H "Content-Type: application/json" \
     -d "{
-        \"holderID\":   \"H-9001\",
+        \"holderID\":   \"$HOLDER_ID\",
         \"emiratesID\": \"$EID\",
         \"firstName\":  \"Tariq\",
         \"lastName\":   \"Al Nuaimi\"
     }")
-assert_json "$HOLDER_RESP" "data.get('holderID')" "H-9001" "Holder H-9001 registered"
+assert_json "$HOLDER_RESP" "data.get('holderID')" "$HOLDER_ID" "Holder $HOLDER_ID registered"
 
 # ─── 3. Check Keys Before Activation ─────────────────────────────────────────
 echo ""
 echo "3. Checking Keys Before Activation..."
-KEYS_BEFORE=$(curl -sf "$API_URL/mobile/checkKeys?emiratesID=$EID")
+KEYS_BEFORE=$(curl -s "$API_URL/mobile/checkKeys?emiratesID=$EID")
 assert_json "$KEYS_BEFORE" "data.get('hasKemKey')" "False" "Holder initially has no KEM key"
 assert_json "$KEYS_BEFORE" "data.get('hasSigningKey')" "False" "Holder initially has no signing key"
+
+HOLDERS_BEFORE=$(curl -s "$API_URL/getHolders?search=$EID")
+assert_json "$HOLDERS_BEFORE" "data.get('holders', [{}])[0].get('isWalletActivated')" "False" "Holder initially has isWalletActivated = false in /getHolders"
+
+# Check holder profile before any credential is issued
+PROFILE_RESP=$(curl -s "$API_URL/mobile/getHolderProfile?emiratesID=$EID")
+assert_json "$PROFILE_RESP" "data.get('fullName')" "Tariq Al Nuaimi" "Holder profile fetched before issuance (name: Tariq Al Nuaimi)"
+assert_json "$PROFILE_RESP" "data.get('emiratesID')" "$EID" "Holder profile has matching Emirates ID"
 
 # ─── 4. Generate Holder Keypairs ─────────────────────────────────────────────
 echo ""
@@ -108,7 +128,7 @@ fi
 # ─── 5. Register Holder Keys ─────────────────────────────────────────────────
 echo ""
 echo "5. Registering Holder Public Keys (/mobile/registerHolderKeys)..."
-REG_KEYS_RESP=$(curl -sf -X POST "$API_URL/mobile/registerHolderKeys" \
+REG_KEYS_RESP=$(curl -s -X POST "$API_URL/mobile/registerHolderKeys" \
     -H "Content-Type: application/json" \
     -d "{
         \"emiratesID\": \"$EID\",
@@ -118,15 +138,18 @@ REG_KEYS_RESP=$(curl -sf -X POST "$API_URL/mobile/registerHolderKeys" \
 assert_json "$REG_KEYS_RESP" "data.get('success')" "True" "Holder public keys bound successfully"
 
 # Check keys after activation
-KEYS_AFTER=$(curl -sf "$API_URL/mobile/checkKeys?emiratesID=$EID")
+KEYS_AFTER=$(curl -s "$API_URL/mobile/checkKeys?emiratesID=$EID")
 assert_json "$KEYS_AFTER" "data.get('hasKemKey')" "True" "Holder now has KEM key"
 assert_json "$KEYS_AFTER" "data.get('hasSigningKey')" "True" "Holder now has signing key"
+
+HOLDERS_AFTER=$(curl -s "$API_URL/getHolders?search=$EID")
+assert_json "$HOLDERS_AFTER" "data.get('holders', [{}])[0].get('isWalletActivated')" "True" "Holder now has isWalletActivated = true in /getHolders"
 
 # ─── 6. Issue Credential to Holder ───────────────────────────────────────────
 echo ""
 echo "6. Issuing Credential (wrapped to holder key, commits FieldHashes)..."
 CRED_INFO='{"degreeTitle":"BSc Computer Science","college":"CCI","gpa":"3.8","graduationYear":"2025"}'
-ISSUE_RESP=$(curl -sf -X POST "$API_URL/issueCredential" \
+ISSUE_RESP=$(curl -s -X POST "$API_URL/issueCredential" \
     -H "Content-Type: application/json" \
     -d "{
         \"holderEmiratesID\": \"$EID\",
@@ -143,7 +166,7 @@ fi
 # ─── 7. Retrieve Envelope ────────────────────────────────────────────────────
 echo ""
 echo "7. Retrieving Envelope Ciphertext (/mobile/getEnvelope)..."
-ENV_RESP=$(curl -sf "$API_URL/mobile/getEnvelope?credentialID=$CRED_ID")
+ENV_RESP=$(curl -s "$API_URL/mobile/getEnvelope?credentialID=$CRED_ID")
 assert_json "$ENV_RESP" "data.get('_qc_env')" "qchain-env" "Valid QChain envelope returned"
 assert_json "$ENV_RESP" "data.get('wraps')[0].get('recipient')" "holder" "Recipient is sealed to 'holder'"
 
@@ -155,7 +178,7 @@ DISCLOSED_PAYLOAD='{"disclosedFields":{"college":"CCI","degreeTitle":"BSc Comput
 # Sign the disclosed payload with the holder's ML-DSA-44 private key
 HOLDER_SIG=$(docker run --rm qchain-api:latest keygen sign "$HOLDER_DSA_PRIV" "$DISCLOSED_PAYLOAD")
 
-PRES_RESP=$(curl -sf -X POST "$API_URL/mobile/generatePresentation" \
+PRES_RESP=$(curl -s -X POST "$API_URL/mobile/generatePresentation" \
     -H "Content-Type: application/json" \
     -d "{
         \"credentialID\": \"$CRED_ID\",
@@ -177,7 +200,7 @@ fi
 # ─── 9. Resolve Session (5-check Verification) ───────────────────────────────
 echo ""
 echo "9. Resolving Session with 5 Cryptographic Checks (/resolveSession)..."
-RESOLVE_RESP=$(curl -sf -X POST "$API_URL/resolveSession" \
+RESOLVE_RESP=$(curl -s -X POST "$API_URL/resolveSession" \
     -H "Content-Type: application/json" \
     -d "{\"sessionToken\": \"$PRES_ID\"}")
 
@@ -197,7 +220,7 @@ echo "10. Running Tamper Detection Tests..."
 TAMPERED_PAYLOAD='{"disclosedFields":{"college":"CCI","degreeTitle":"BSc Computer Science","gpa":"4.0"}}'
 TAMPERED_SIG=$(docker run --rm qchain-api:latest keygen sign "$HOLDER_DSA_PRIV" "$TAMPERED_PAYLOAD")
 
-TAMPER_PRES_RESP=$(curl -sf -X POST "$API_URL/mobile/generatePresentation" \
+TAMPER_PRES_RESP=$(curl -s -X POST "$API_URL/mobile/generatePresentation" \
     -H "Content-Type: application/json" \
     -d "{
         \"credentialID\": \"$CRED_ID\",
@@ -207,7 +230,7 @@ TAMPER_PRES_RESP=$(curl -sf -X POST "$API_URL/mobile/generatePresentation" \
     }")
 TAMPER_PRES_ID=$(echo "$TAMPER_PRES_RESP" | python3 -c "import sys, json; print(json.load(sys.stdin).get('presentationID', ''))")
 
-TAMPER_RESOLVE=$(curl -sf -X POST "$API_URL/resolveSession" \
+TAMPER_RESOLVE=$(curl -s -X POST "$API_URL/resolveSession" \
     -H "Content-Type: application/json" \
     -d "{\"sessionToken\": \"$TAMPER_PRES_ID\"}")
 
@@ -216,7 +239,7 @@ assert_json "$TAMPER_RESOLVE" "data.get('checks', {}).get('fieldHashesValid')" "
 assert_json "$TAMPER_RESOLVE" "data.get('checks', {}).get('holderSignatureValid')" "True" "Holder signature was mathematically valid on fabricated value"
 
 # Test B: Signature forgery (signature corrupted)
-FORGED_PRES_RESP=$(curl -sf -X POST "$API_URL/mobile/generatePresentation" \
+FORGED_PRES_RESP=$(curl -s -X POST "$API_URL/mobile/generatePresentation" \
     -H "Content-Type: application/json" \
     -d "{
         \"credentialID\": \"$CRED_ID\",
@@ -226,7 +249,7 @@ FORGED_PRES_RESP=$(curl -sf -X POST "$API_URL/mobile/generatePresentation" \
     }")
 FORGED_PRES_ID=$(echo "$FORGED_PRES_RESP" | python3 -c "import sys, json; print(json.load(sys.stdin).get('presentationID', ''))")
 
-FORGED_RESOLVE=$(curl -sf -X POST "$API_URL/resolveSession" \
+FORGED_RESOLVE=$(curl -s -X POST "$API_URL/resolveSession" \
     -H "Content-Type: application/json" \
     -d "{\"sessionToken\": \"$FORGED_PRES_ID\"}")
 
@@ -236,7 +259,7 @@ assert_json "$FORGED_RESOLVE" "data.get('checks', {}).get('holderSignatureValid'
 # ─── 11. OTP Session Flow ───────────────────────────────────────────────────
 echo ""
 echo "11. Testing OTP Presentation Flow (/mobile/generateOTP)..."
-OTP_RESP=$(curl -sf -X POST "$API_URL/mobile/generateOTP" \
+OTP_RESP=$(curl -s -X POST "$API_URL/mobile/generateOTP" \
     -H "Content-Type: application/json" \
     -d "{
         \"credentialID\": \"$CRED_ID\",
@@ -248,7 +271,7 @@ assert_json "$OTP_RESP" "data.get('success')" "True" "OTP generated successfully
 OTP_CODE=$(echo "$OTP_RESP" | python3 -c "import sys, json; print(json.load(sys.stdin).get('otp', ''))")
 
 # Redeem OTP (frontend prepends 'OTP-')
-OTP_RESOLVE=$(curl -sf -X POST "$API_URL/resolveSession" \
+OTP_RESOLVE=$(curl -s -X POST "$API_URL/resolveSession" \
     -H "Content-Type: application/json" \
     -d "{\"sessionToken\": \"OTP-$OTP_CODE\"}")
 assert_json "$OTP_RESOLVE" "data.get('verified')" "True" "OTP redeemed and verified successfully"
@@ -258,41 +281,41 @@ echo ""
 echo "12. Testing Credential Lifecycle (Suspend -> Restore -> Revoke)..."
 
 # Direct portal verify (active)
-PORTAL_VERIFY_1=$(curl -sf -X POST "$API_URL/verifyCredential" \
+PORTAL_VERIFY_1=$(curl -s -X POST "$API_URL/verifyCredential" \
     -H "Content-Type: application/json" \
     -d "{\"credentialID\": \"$CRED_ID\"}")
 assert_json "$PORTAL_VERIFY_1" "data.get('verified')" "True" "Portal verify: initial status is active/valid"
 
 # Suspend
-SUSP_RESP=$(curl -sf -X POST "$API_URL/suspendCredential" \
+SUSP_RESP=$(curl -s -X POST "$API_URL/suspendCredential" \
     -H "Content-Type: application/json" \
     -d "{\"credentialID\": \"$CRED_ID\", \"reason\": \"Investigation pending\"}")
 assert_json "$SUSP_RESP" "data.get('message')" "Credential suspended successfully" "Credential suspended"
 
-PORTAL_VERIFY_2=$(curl -sf -X POST "$API_URL/verifyCredential" \
+PORTAL_VERIFY_2=$(curl -s -X POST "$API_URL/verifyCredential" \
     -H "Content-Type: application/json" \
     -d "{\"credentialID\": \"$CRED_ID\"}")
 assert_json "$PORTAL_VERIFY_2" "data.get('verified')" "False" "Portal verify: suspended credential is not verified"
 assert_json "$PORTAL_VERIFY_2" "data.get('status')" "suspended" "Status is suspended"
 
 # Restore
-REST_RESP=$(curl -sf -X POST "$API_URL/restoreCredential" \
+REST_RESP=$(curl -s -X POST "$API_URL/restoreCredential" \
     -H "Content-Type: application/json" \
     -d "{\"credentialID\": \"$CRED_ID\"}")
 assert_json "$REST_RESP" "data.get('message')" "Credential restored successfully" "Credential restored"
 
-PORTAL_VERIFY_3=$(curl -sf -X POST "$API_URL/verifyCredential" \
+PORTAL_VERIFY_3=$(curl -s -X POST "$API_URL/verifyCredential" \
     -H "Content-Type: application/json" \
     -d "{\"credentialID\": \"$CRED_ID\"}")
 assert_json "$PORTAL_VERIFY_3" "data.get('verified')" "True" "Portal verify: restored credential is active again"
 
 # Revoke
-REV_RESP=$(curl -sf -X POST "$API_URL/revokeCredential" \
+REV_RESP=$(curl -s -X POST "$API_URL/revokeCredential" \
     -H "Content-Type: application/json" \
     -d "{\"credentialID\": \"$CRED_ID\"}")
 assert_json "$REV_RESP" "data.get('message')" "Credential revoked successfully" "Credential permanently revoked"
 
-PORTAL_VERIFY_4=$(curl -sf -X POST "$API_URL/verifyCredential" \
+PORTAL_VERIFY_4=$(curl -s -X POST "$API_URL/verifyCredential" \
     -H "Content-Type: application/json" \
     -d "{\"credentialID\": \"$CRED_ID\"}")
 assert_json "$PORTAL_VERIFY_4" "data.get('verified')" "False" "Portal verify: revoked credential is not verified"
@@ -301,11 +324,11 @@ assert_json "$PORTAL_VERIFY_4" "data.get('status')" "revoked" "Status is revoked
 # ─── 13. Audit & Dashboard Queries ───────────────────────────────────────────
 echo ""
 echo "13. Testing Audit & Dashboard Queries..."
-HISTORY_RESP=$(curl -sf "$API_URL/getVerificationHistory?page=1&limit=5")
-assert_json "$HISTORY_RESP" "'logs' in data" "True" "Verification history returns log list"
+HISTORY_RESP=$(curl -s "$API_URL/getVerificationHistory?page=1&limit=5")
+assert_json "$HISTORY_RESP" "'records' in data" "True" "Verification history returns records list"
 
-STATS_RESP=$(curl -sf "$API_URL/getDashboardStats")
-assert_json "$STATS_RESP" "'totalCredentials' in data" "True" "Dashboard stats endpoint accessible"
+STATS_RESP=$(curl -s "$API_URL/getDashboardStats")
+assert_json "$STATS_RESP" "'totalIssued' in data" "True" "Dashboard stats endpoint accessible"
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════════"
