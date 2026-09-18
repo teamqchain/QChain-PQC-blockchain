@@ -114,7 +114,7 @@ class QChaincode extends Contract {
             Credential.Status = "revoked";
             // Fix 8: PublicKey and Signature are preserved for historical audit.
             // A RevokedAt timestamp is added instead of nulling the key.
-            Credential.RevokedAt = new Date().toISOString();
+            Credential.RevokedAt = this.getTxTimestampISO(ctx);
 
             await ctx.stub.putState(credID, Buffer.from(stringify(sortKeysRecursive(Credential))));
 
@@ -144,7 +144,7 @@ class QChaincode extends Contract {
             }
 
             Credential.Status = "suspended";
-            Credential.SuspendedAt = new Date().toISOString();
+            Credential.SuspendedAt = this.getTxTimestampISO(ctx);
             Credential.SuspendedReason = reason || "";
 
             await ctx.stub.putState(credID, Buffer.from(stringify(sortKeysRecursive(Credential))));
@@ -173,7 +173,7 @@ class QChaincode extends Contract {
             Credential.Status = "active";
             delete Credential.SuspendedAt;
             delete Credential.SuspendedReason;
-            Credential.RestoredAt = new Date().toISOString();
+            Credential.RestoredAt = this.getTxTimestampISO(ctx);
 
             await ctx.stub.putState(credID, Buffer.from(stringify(sortKeysRecursive(Credential))));
 
@@ -206,6 +206,17 @@ class QChaincode extends Contract {
             throw new Error(`Access denied. Only a ${role} official may access this function.`);
         }
         return true;
+    }
+
+    getTxTimestampISO(ctx) {
+        try {
+            const t = ctx.stub.getTxTimestamp();
+            if (t && t.seconds) {
+                const sec = Number(t.seconds.low !== undefined ? t.seconds.low : t.seconds);
+                return new Date(sec * 1000).toISOString();
+            }
+        } catch (e) {}
+        return new Date().toISOString().split('.')[0] + 'Z';
     }
 
     async getHolder(ctx, holderID) {

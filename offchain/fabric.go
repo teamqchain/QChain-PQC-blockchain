@@ -23,6 +23,7 @@ import (
 	"github.com/hyperledger/fabric-gateway/pkg/identity"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 )
 
 // walletIDFile mirrors the JSON shape of a Fabric wallet ".id" file. The nested
@@ -135,4 +136,24 @@ func getContract(orgName, identityName string) (*client.Contract, *client.Gatewa
 	network := gw.GetNetwork(channelName)
 	contract := network.GetContract(chaincodeName)
 	return contract, gw, conn, nil
+}
+
+// formatFabricError extracts the underlying gRPC endorsement error details
+// from a Fabric Gateway error, ensuring peer-level rejection causes are visible.
+func formatFabricError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if s, ok := status.FromError(err); ok {
+		details := s.Details()
+		if len(details) > 0 {
+			var detailStrs []string
+			for _, d := range details {
+				detailStrs = append(detailStrs, fmt.Sprintf("%+v", d))
+			}
+			return fmt.Sprintf("%s: %s [details: %s]", s.Code(), s.Message(), strings.Join(detailStrs, " | "))
+		}
+		return fmt.Sprintf("%s: %s", s.Code(), s.Message())
+	}
+	return err.Error()
 }

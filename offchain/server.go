@@ -127,6 +127,7 @@ func main() {
 	mux.HandleFunc("GET /mobile/checkKeys", handleCheckKeys)
 	mux.HandleFunc("POST /mobile/registerHolderKeys", handleRegisterHolderKeys)
 	mux.HandleFunc("GET /mobile/getEnvelope", handleGetEnvelope)
+	mux.HandleFunc("GET /mobile/getHolderProfile", handleMobileGetHolderProfile)
 	mux.HandleFunc("GET /mobile/getCredentialsByHolder", handleMobileGetCredentialsByHolder)
 	mux.HandleFunc("POST /mobile/registerHolderKey", handleRegisterHolderKey)
 	mux.HandleFunc("POST /mobile/toggleFavorite", handleToggleFavorite)

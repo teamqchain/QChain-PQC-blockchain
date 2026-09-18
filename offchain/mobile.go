@@ -141,6 +141,34 @@ func handleGetEnvelope(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(credData))
 }
 
+// GET /mobile/getHolderProfile?emiratesID=XXX — basic demographic info for a
+// holder (full name, email, Emirates ID, holder type, college). Works even when
+// the holder has no credentials yet.
+func handleMobileGetHolderProfile(w http.ResponseWriter, r *http.Request) {
+	emiratesID := r.URL.Query().Get("emiratesID")
+	if emiratesID == "" {
+		writeError(w, http.StatusBadRequest, "missing emiratesID")
+		return
+	}
+	profile, err := holderProfileByEmiratesID(emiratesID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not registered") {
+			writeError(w, http.StatusNotFound, err.Error())
+		} else {
+			writeError(w, http.StatusInternalServerError, "database error")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":    true,
+		"fullName":   profile.FullName,
+		"email":      profile.Email,
+		"emiratesID": profile.EmiratesID,
+		"holderType": holderTypeDBToAPI(profile.HolderType),
+		"college":    profile.College,
+	})
+}
+
 // GET /mobile/getCredentialsByHolder?emiratesID=XXX — credentials in a holder's wallet.
 func handleMobileGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) {
 	emiratesID := r.URL.Query().Get("emiratesID")
@@ -631,7 +659,7 @@ func handleResolveSession(w http.ResponseWriter, r *http.Request) {
 		applySelectiveDisclosure(credData, session.HiddenFields)
 	}
 
-	expiryDate := ""
+	expiryDate = ""
 	if credData != nil {
 		if v, ok := credData["expiryDate"].(string); ok {
 			expiryDate = v

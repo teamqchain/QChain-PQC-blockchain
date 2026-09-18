@@ -327,7 +327,7 @@ func handleRevokeCredential(w http.ResponseWriter, r *http.Request) {
 
 	result, err := contract.SubmitTransaction("revokeCredential", fabricCredID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "chaincode revokeCredential failed: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "chaincode revokeCredential failed: "+formatFabricError(err))
 		return
 	}
 
@@ -433,7 +433,7 @@ func handleSuspendCredential(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	if _, err := contract.SubmitTransaction("suspendCredential", fabricCredID, req.Reason); err != nil {
-		writeError(w, http.StatusInternalServerError, "chaincode error: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "chaincode error: "+formatFabricError(err))
 		return
 	}
 
@@ -501,7 +501,7 @@ func handleRestoreCredential(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	if _, err := contract.SubmitTransaction("restoreCredential", fabricCredID); err != nil {
-		writeError(w, http.StatusInternalServerError, "chaincode error: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "chaincode error: "+formatFabricError(err))
 		return
 	}
 

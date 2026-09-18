@@ -36,6 +36,9 @@ import (
 // holder KEM private keys. It lives alongside .env and is gitignored.
 const holderKeysFileName = ".env.holder_keys"
 
+// holderKemKeys holds testing-only holder ML-KEM-768 private keys in memory.
+var holderKemKeys = make(map[string]string)
+
 // holderKeysFilePath returns the absolute path to the holder keys file, located
 // in the same directory as this source file (i.e. offchain/).
 func holderKeysFilePath() string {

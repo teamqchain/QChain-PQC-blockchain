@@ -207,6 +207,11 @@ peer channel join -b $REPO_ROOT/qchain-network/channel-artifacts/mychannel.block
 
 ### Deploy Chaincode
 
+> [!NOTE]
+> **Fresh Network vs Upgrading**:
+> - **If setting up from scratch:** Run ONLY this "Deploy Chaincode" section below. The current `qchain-network/chaincode` repository already includes all Track H features, per-field hashes, and deterministic timestamps. It will be packaged and deployed as **sequence 1, version 1.0**. You do **NOT** need to run any of the upgrade sections!
+> - **If upgrading an already-running network:** Skip this section and follow the **Upgrading Chaincode** sections below based on your current sequence number.
+
 ```bash
 # 1. Install dependencies and package
 cd $REPO_ROOT/qchain-network/chaincode
@@ -230,15 +235,18 @@ source $REPO_ROOT/qchain-network/scripts/env-gen.sh
 peer lifecycle chaincode install qchaincode.tar.gz
 peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.0 --package-id $CC_PACKAGE_ID --sequence 1 --tls --cafile $ORDERER_CA
 
-# 4. Commit chaincode
+# 4. Commit chaincode (sequence 1)
 peer lifecycle chaincode commit -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.0 --sequence 1 --tls --cafile $ORDERER_CA \
   --peerAddresses localhost:7051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/government.uae.com/peers/peer0.government.uae.com/tls/ca.crt \
   --peerAddresses localhost:9051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/general.uae.com/peers/peer0.general.uae.com/tls/ca.crt
 ```
 
-### Upgrading Chaincode (Track H Update for Existing Networks)
+### Upgrading Chaincode (Existing Networks Only)
 
-If your Fabric network is already running with `qchaincode` sequence 1, upgrade it to sequence 2 to activate `bindHolderKeys` and per-field hashes:
+If your Fabric network is already running and committed at an earlier sequence, upgrade it incrementally without destroying channel state:
+
+#### Upgrade to Sequence 2 (Track H Holder Keys & FieldHashes)
+*Use this only if your network is currently on sequence 1:*
 
 ```bash
 # 1. Re-package chaincode as version 1.1
@@ -259,6 +267,32 @@ peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameO
 
 # 4. Commit upgraded chaincode (sequence 2)
 peer lifecycle chaincode commit -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.1 --sequence 2 --tls --cafile $ORDERER_CA \
+  --peerAddresses localhost:7051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/government.uae.com/peers/peer0.government.uae.com/tls/ca.crt \
+  --peerAddresses localhost:9051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/general.uae.com/peers/peer0.general.uae.com/tls/ca.crt
+```
+
+#### Upgrade to Sequence 3 (Deterministic Timestamps for Multi-Peer Endorsement)
+*Use this if your network is currently on sequence 2 to resolve endorsement mismatches during suspendCredential / revokeCredential:*
+
+```bash
+# 1. Re-package chaincode as version 1.2
+source $REPO_ROOT/qchain-network/scripts/env-gov.sh
+peer lifecycle chaincode package qchaincode_1.2.tar.gz --path $REPO_ROOT/qchain-network/chaincode --lang node --label qchaincode_1.2
+
+# 2. Install on Government peer
+peer lifecycle chaincode install qchaincode_1.2.tar.gz
+export CC_PACKAGE_ID=$(peer lifecycle chaincode queryinstalled | grep qchaincode_1.2 | awk '{print $3}' | sed 's/,//')
+
+# Approve for Government with --sequence 3
+peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.2 --package-id $CC_PACKAGE_ID --sequence 3 --tls --cafile $ORDERER_CA
+
+# 3. Install and Approve on General peer with --sequence 3
+source $REPO_ROOT/qchain-network/scripts/env-gen.sh
+peer lifecycle chaincode install qchaincode_1.2.tar.gz
+peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.2 --package-id $CC_PACKAGE_ID --sequence 3 --tls --cafile $ORDERER_CA
+
+# 4. Commit upgraded chaincode (sequence 3)
+peer lifecycle chaincode commit -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.2 --sequence 3 --tls --cafile $ORDERER_CA \
   --peerAddresses localhost:7051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/government.uae.com/peers/peer0.government.uae.com/tls/ca.crt \
   --peerAddresses localhost:9051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/general.uae.com/peers/peer0.general.uae.com/tls/ca.crt
 ```

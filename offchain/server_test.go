@@ -393,6 +393,15 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			wantErrorSubstr: "missing credentialID",
 		},
 		{
+			name:            "getHolderProfile missing emiratesID",
+			handler:         handleMobileGetHolderProfile,
+			method:          http.MethodGet,
+			target:          "/mobile/getHolderProfile",
+			body:            "",
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing emiratesID",
+		},
+		{
 			name:            "generateOTP missing credentialID",
 			handler:         handleGenerateOTP,
 			method:          http.MethodPost,
