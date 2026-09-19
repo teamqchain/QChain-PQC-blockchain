@@ -45,7 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
     return Scaffold(
-      backgroundColor: qBg,
+      backgroundColor: qBgSurface,
       body: Obx(() {
         // Sync loading and error states across both controllers
         final isLoading =
@@ -190,7 +190,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         vertical: 20,
                                       ),
                                       child: Text(
-                                        "No active credentials found.",
+                                        "No active favourites found.",
                                         style: TextStyle(color: Colors.grey),
                                       ),
                                     ),
@@ -246,6 +246,27 @@ class _HeroBoxState extends State<_HeroBox>
   late final AnimationController _blink;
   late final Animation<double> _fade;
 
+  String get _greeting {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+  
+  String _initials(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return 'H';
+    if (parts.length == 1) {
+      final word = parts.first;
+      return word.substring(0, word.length >= 2 ? 2 : 1).toUpperCase();
+    }
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -291,18 +312,17 @@ class _HeroBoxState extends State<_HeroBox>
                 height: 70,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFF222222),
-                  border: Border.all(color: const Color(0xFF444444), width: 2),
+                  color: qBg,
                 ),
                 alignment: Alignment.center,
                 child: Text(
                   widget.userName.isNotEmpty
-                      ? widget.userName[0].toUpperCase()
-                      : 'H',
+                      ? _initials(widget.userName)
+                      : 'DH',
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: qPrimary,
                     fontWeight: FontWeight.w800,
-                    fontSize: 18,
+                    fontSize: 22,
                   ),
                 ),
               ),
@@ -311,8 +331,8 @@ class _HeroBoxState extends State<_HeroBox>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Good Morning!',
+                     Text(
+                      _greeting,
                       style: TextStyle(
                         color: Color(0xFF888888),
                         fontSize: 14,
@@ -321,7 +341,7 @@ class _HeroBoxState extends State<_HeroBox>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      widget.userName.split(' ').first,
+                      "${widget.userName.split(' ').first} ${widget.userName.split(' ').last}",
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
