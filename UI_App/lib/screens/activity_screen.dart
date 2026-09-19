@@ -76,7 +76,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
     return Scaffold(
-      backgroundColor: qBg,
+      backgroundColor: qBgSurface,
       body: Column(
         children: [
           _ActivityHeroBox(
@@ -350,7 +350,7 @@ class _GroupHeader extends StatelessWidget {
       child: Text(
         label.toUpperCase(),
         style: const TextStyle(
-          color: Color(0xFFAAAAAA),
+          color: qPrimary,
           fontSize: 10,
           fontWeight: FontWeight.w700,
           letterSpacing: 1.2,
