@@ -103,11 +103,11 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                   const SizedBox(height: 3),
                   const Text(
-                    'security redefined',
+                    'QChain assets',
                     style: TextStyle(
                       fontSize: 8,
                       color: qText,
-                      letterSpacing: 2,
+                      letterSpacing: 1,
                       fontFamily: 'formula',
                     ),
                   ),
