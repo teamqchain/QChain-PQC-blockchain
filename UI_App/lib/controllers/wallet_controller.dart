@@ -96,7 +96,10 @@ class WalletController extends GetxController {
     if (credentialID.isEmpty) return false;
     final index = credentials.indexWhere((c) => c.credentialID == credentialID);
     try {
-      final attrs = await ApiService.fetchAndDecryptAttributes(credentialID);
+      final attrs = await ApiService.fetchAndDecryptAttributes(
+        credentialID,
+        emiratesID: userEmiratesID,
+      );
       if (index >= 0) {
         credentials[index] = credentials[index].copyWith(
           attributes: attrs,
@@ -109,18 +112,6 @@ class WalletController extends GetxController {
       logDebug(
         '[WalletController] decryptCredentialById failed for $credentialID: $e',
       );
-      // Diagnostic: check if the device's ML-KEM key matches the backend's.
-      // The publicKey field on the credential is the ISSUER's signing key, not
-      // the holder's KEM key — but the backend can tell us the registered KEM
-      // public key for this holder. For now, log the device's stored public key
-      // so it can be compared manually with what the backend registered.
-      try {
-        final devPub = await CryptoService.readKemPrivateKey();
-        logDebug(
-          '[WalletController] device kem_priv present=${devPub != null && devPub.isNotEmpty} '
-          'len=${devPub?.length ?? 0}',
-        );
-      } catch (_) {}
       if (index >= 0) {
         credentials[index] = credentials[index].copyWith(
           attributes: const {},
@@ -143,28 +134,12 @@ class WalletController extends GetxController {
       final cred = credentials.firstWhereOrNull(
         (c) => c.credentialID == credentialID,
       );
-      final hidden = hiddenFields.toSet();
-      final disclosed = <String, dynamic>{};
-      if (cred != null) {
-        if (!hidden.contains('credentialType')) {
-          disclosed['credentialType'] = cred.credentialType;
-        }
-        if (!hidden.contains('status')) disclosed['status'] = cred.status;
-        if (!hidden.contains('issuedBy')) disclosed['issuedBy'] = cred.issuedBy;
-        if (!hidden.contains('holderEID')) {
-          disclosed['holderEID'] = cred.holderEID;
-        }
-        if (!hidden.contains('holderName')) {
-          disclosed['holderName'] = cred.holderName;
-        }
-        if (!hidden.contains('issuedAt')) disclosed['issuedAt'] = cred.issuedAt;
-        if (cred.expiryDate != null && !hidden.contains('expiryDate')) {
-          disclosed['expiryDate'] = cred.expiryDate;
-        }
-        cred.attributes.forEach((k, v) {
-          if (!hidden.contains(k)) disclosed[k] = v;
-        });
-      }
+      // Only body attributes enter disclosedFields (FieldHashes on chain).
+      final attrs = cred?.attributes ?? const <String, dynamic>{};
+      final disclosed = CryptoService.bodyDisclosedFields(
+        attrs,
+        hiddenKeys: hiddenFields.toSet(),
+      );
 
       final signed = await CryptoService.buildSignedDisclosedPayload(
         credentialID: credentialID,

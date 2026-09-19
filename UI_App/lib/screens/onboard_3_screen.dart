@@ -60,9 +60,78 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
       final backendReady =
           status['hasKemKey'] == true && status['hasSigningKey'] == true;
       final localReady = await CryptoService.hasLocalPrivateKeys();
+      final backendKemPub = status['kemPublicKey']?.toString() ?? '';
 
       if (backendReady && localReady) {
-        logDebug('[Onboard3] keys already registered; skipping generation');
+        // Both sides have keys — confirm they are the SAME pair when the
+        // backend returns kemPublicKey. Current checkKeys only returns booleans,
+        // so we CANNOT claim a match without the server pub.
+        final localPub = await CryptoService.readKemPublicKey();
+        if (backendKemPub.isNotEmpty) {
+          final diag = await CryptoService.verifyKemKeyMatch(backendKemPub);
+          logDebug('[Onboard3] key match check:\n$diag');
+          final match = localPub != null &&
+              localPub.isNotEmpty &&
+              localPub.toLowerCase() == backendKemPub.toLowerCase();
+          if (!match) {
+            throw ConnectionException(
+              'Wallet keys on this device do not match the keys registered on '
+              'the server. Credentials encrypted to the old key cannot be '
+              'decrypted here. Clear the old server keys (or use the original '
+              'device), then re-onboard and re-issue credentials.',
+            );
+          }
+          logDebug('[Onboard3] keys already registered and match; skipping generation');
+        } else {
+          // No server pub in checkKeys response — log local pub fingerprint so
+          // you can compare with holders.kem_public_key on the backend.
+          logDebug(
+            '[Onboard3] keys present on device + server, but checkKeys did not '
+            'return kemPublicKey — cannot verify match. '
+            'localKemPubLen=${localPub?.length ?? 0} '
+            'localKemPub0=${(localPub != null && localPub.length >= 16) ? localPub.substring(0, 16) : "n/a"}… '
+            'localKemPubEnd=${(localPub != null && localPub.length >= 16) ? localPub.substring(localPub.length - 16) : "n/a"}',
+          );
+          logDebugLong('[Onboard3] local kem_pub_key', localPub ?? '<null>');
+        }
+        _markReady();
+        return;
+      }
+
+      if (backendReady && !localReady) {
+        // Backend has public keys but this phone has no private keys.
+        // Generating new keys would overwrite the server pub and orphan
+        // already-issued envelopes sealed to the old pub.
+        throw ConnectionException(
+          'This account already has wallet keys registered on the server, but '
+          'this device has no matching private key (reinstall or new phone). '
+          'Ask an admin to clear the registered keys for your Emirates ID, '
+          'then re-onboard here and re-issue any existing credentials.',
+        );
+      }
+
+      // Local keys exist, backend empty (DB reset / new env): re-register
+      // the existing device public keys — do NOT mint a new pair.
+      if (!backendReady && localReady) {
+        final pubs = await CryptoService.readAllPublicKeys();
+        if (pubs.kemPubHex == null ||
+            pubs.kemPubHex!.isEmpty ||
+            pubs.dsaPubHex == null ||
+            pubs.dsaPubHex!.isEmpty) {
+          throw ConnectionException(
+            'Local private keys exist but public keys are missing. '
+            'Clear app data and re-onboard.',
+          );
+        }
+        final registered = await ApiService.registerHolderKeys(
+          emiratesID: userEmiratesID,
+          kemPublicKey: pubs.kemPubHex!,
+          dsaPublicKey: pubs.dsaPubHex!,
+        );
+        if (!registered) {
+          throw ConnectionException('Failed to re-register wallet keys.');
+        }
+        logDebug('[Onboard3] re-registered existing local public keys');
         _markReady();
         return;
       }
@@ -71,12 +140,6 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
       final kem = CryptoService.generateKemKeyPair();
       final dsa = CryptoService.generateSigningKeyPair();
 
-      // DEBUG: dump full private keys to console so we can confirm generation.
-      logDebug('[Onboard3] kem_priv_key (${kem.privHex.length} hex chars):\n${kem.privHex}');
-      logDebug('[Onboard3] dsa_priv_key (${dsa.privHex.length} hex chars):\n${dsa.privHex}');
-      logDebug('[Onboard3] kem_pub_key (${kem.pubHex.length} hex chars):\n${kem.pubHex}');
-      logDebug('[Onboard3] dsa_pub_key (${dsa.pubHex.length} hex chars):\n${dsa.pubHex}');
-
       await CryptoService.storePrivateKeys(
         kemPrivHex: kem.privHex,
         dsaPrivHex: dsa.privHex,
@@ -84,20 +147,37 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
         dsaPubHex: dsa.pubHex,
       );
 
-      // CRITICAL: Verify the key was saved correctly. ML-KEM-768 private key
-      // must be 2400 bytes = 4800 hex chars. flutter_secure_storage can
-      // silently truncate long values on some platforms.
+      // CRITICAL: Verify keys survived secure storage. storePrivateKeys already
+      // round-trips chunked writes; this double-check catches any later drop.
       final verifyKem = await CryptoService.readKemPrivateKey();
       final verifyDsa = await CryptoService.readDsaPrivateKey();
+      final verifyKemPub = await CryptoService.readKemPublicKey();
       logDebug('[Onboard3] VERIFY after save:');
-      logDebug('  kem_priv: generated=${kem.privHex.length} chars, read back=${verifyKem?.length ?? 0} chars');
-      logDebug('  dsa_priv: generated=${dsa.privHex.length} chars, read back=${verifyDsa?.length ?? 0} chars');
-      if (verifyKem == null || verifyKem.length != kem.privHex.length) {
-        logDebug('[Onboard3] WARNING: kem_priv_key was TRUNCATED by secure storage!');
-        logDebug('  Expected ${kem.privHex.length} hex chars, got ${verifyKem?.length ?? 0}');
-      }
-      if (verifyDsa == null || verifyDsa.length != dsa.privHex.length) {
-        logDebug('[Onboard3] WARNING: dsa_priv_key was TRUNCATED by secure storage!');
+      logDebug(
+        '  kem_priv: generated=${kem.privHex.length} chars, '
+        'read back=${verifyKem?.length ?? 0} chars',
+      );
+      logDebug(
+        '  dsa_priv: generated=${dsa.privHex.length} chars, '
+        'read back=${verifyDsa?.length ?? 0} chars',
+      );
+      logDebug(
+        '  kem_pub:  generated=${kem.pubHex.length} chars, '
+        'read back=${verifyKemPub?.length ?? 0} chars',
+      );
+      if (verifyKem == null ||
+          verifyKem != kem.privHex ||
+          verifyDsa == null ||
+          verifyDsa != dsa.privHex ||
+          verifyKemPub == null ||
+          verifyKemPub != kem.pubHex) {
+        throw ConnectionException(
+          'Wallet keys could not be saved securely on this device '
+          '(write/read mismatch). On iOS Simulator the Keychain is unreliable '
+          'for large keys — try a real device, or wipe the app and re-onboard. '
+          'kemPriv ${verifyKem?.length ?? 0}/${kem.privHex.length}, '
+          'kemPub ${verifyKemPub?.length ?? 0}/${kem.pubHex.length}.',
+        );
       }
 
       final registered = await ApiService.registerHolderKeys(

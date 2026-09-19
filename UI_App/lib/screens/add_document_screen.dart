@@ -168,21 +168,19 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
                                   try {
                                     final walletCtrl =
                                         Get.find<WalletController>();
-                                    final result = await ApiService.fetchDocument(
-                                      userEmiratesID,
-                                      issuer.id,
-                                      service.name,
-                                    );
+                                    final result =
+                                        await ApiService.fetchDocument(
+                                          userEmiratesID,
+                                          issuer.id,
+                                          service.name,
+                                        );
 
                                     setStateSheet(() => isFetching = false);
 
                                     if (context.mounted) Navigator.pop(ctx);
 
                                     if (result['success'] == true) {
-                                      // Reload wallet list so the new card
-                                      // (metadata only) appears. Body attributes
-                                      // are decrypted on demand when the holder
-                                      // opens the detail screen.
+                                      // New doc pulled into wallet — reload list.
                                       walletCtrl.fetchMyCredentials();
                                       await QHaptics.success();
                                       Get.snackbar(
@@ -192,11 +190,23 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
                                         backgroundColor: Colors.green,
                                         colorText: Colors.white,
                                       );
+                                    } else if (result['alreadyInWallet'] ==
+                                        true) {
+                                      // Issued, but already fetched earlier.
+                                      await QHaptics.error();
+                                      Get.snackbar(
+                                        'Nothing New',
+                                        'All data is already in your wallet.',
+                                        snackPosition: SnackPosition.BOTTOM,
+                                        backgroundColor: qPrimary,
+                                        colorText: Colors.white,
+                                      );
                                     } else {
                                       await QHaptics.error();
                                       Get.snackbar(
                                         'Not Found',
-                                        result['message'],
+                                        result['message'] ??
+                                            'Document not yet issued.',
                                         snackPosition: SnackPosition.BOTTOM,
                                         backgroundColor: Colors.redAccent,
                                         colorText: Colors.white,
@@ -255,7 +265,7 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
+      backgroundColor: qBgSurface,
       body: Column(
         children: [
           // Header
@@ -364,106 +374,110 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
 
                           // Issuers List
                           ...cat.issuers.map((issuer) {
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              decoration: BoxDecoration(
+                            // Material (not DecoratedBox) so ExpansionTile ink/splash stay visible.
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Material(
                                 color: Colors.white,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: const Color(0xFFEBEBEB),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                  side: const BorderSide(
+                                    color: Color(0xFFEBEBEB),
+                                  ),
                                 ),
-                              ),
-                              child: Theme(
-                                data: Theme.of(
-                                  context,
-                                ).copyWith(dividerColor: Colors.transparent),
-                                child: ExpansionTile(
-                                  tilePadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                  childrenPadding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    0,
-                                    16,
-                                    16,
-                                  ),
-                                  leading: Container(
-                                    width: 44,
-                                    height: 44,
-                                    decoration: BoxDecoration(
-                                      color: issuer.color.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12),
+                                clipBehavior: Clip.antiAlias,
+                                child: Theme(
+                                  data: Theme.of(
+                                    context,
+                                  ).copyWith(dividerColor: Colors.transparent),
+                                  child: ExpansionTile(
+                                    tilePadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
                                     ),
-                                    alignment: Alignment.center,
-                                    child: Icon(
-                                      Icons.business,
-                                      color: issuer.color,
-                                      size: 20,
+                                    childrenPadding: const EdgeInsets.fromLTRB(
+                                      16,
+                                      0,
+                                      16,
+                                      16,
                                     ),
-                                  ),
-                                  title: Text(
-                                    issuer.name,
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF111111),
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    '${issuer.services.length} services available',
-                                    style: const TextStyle(
-                                      color: Color(0xFFAAAAAA),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  children: issuer.services.map((service) {
-                                    return GestureDetector(
-                                      onTap: () => _showDocSheet(
-                                        context,
-                                        issuer,
-                                        service,
+                                    leading: Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        color: issuer.color.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
-                                      child: Container(
-                                        margin: const EdgeInsets.only(top: 8),
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFF7F7F7),
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                          border: Border.all(
-                                            color: const Color(0xFFEEEEEE),
-                                          ),
+                                      alignment: Alignment.center,
+                                      child: Icon(
+                                        Icons.business,
+                                        color: issuer.color,
+                                        size: 20,
+                                      ),
+                                    ),
+                                    title: Text(
+                                      issuer.name,
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF111111),
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      '${issuer.services.length} services available',
+                                      style: const TextStyle(
+                                        color: Color(0xFFAAAAAA),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    children: issuer.services.map((service) {
+                                      return GestureDetector(
+                                        onTap: () => _showDocSheet(
+                                          context,
+                                          issuer,
+                                          service,
                                         ),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              Icons.file_copy_outlined,
-                                              size: 16,
-                                              color: issuer.color,
+                                        child: Container(
+                                          margin: const EdgeInsets.only(top: 8),
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF7F7F7),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
                                             ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Text(
-                                                service.name,
-                                                style: const TextStyle(
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Color(0xFF111111),
+                                            border: Border.all(
+                                              color: const Color(0xFFEEEEEE),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.file_copy_outlined,
+                                                size: 16,
+                                                color: issuer.color,
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Text(
+                                                  service.name,
+                                                  style: const TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFF111111),
+                                                  ),
                                                 ),
                                               ),
-                                            ),
-                                            const Icon(
-                                              Icons.add_circle_outline,
-                                              size: 20,
-                                              color: Color(0xFFAAAAAA),
-                                            ),
-                                          ],
+                                              const Icon(
+                                                Icons.add_circle_outline,
+                                                size: 20,
+                                                color: Color(0xFFAAAAAA),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                    );
-                                  }).toList(),
+                                      );
+                                    }).toList(),
+                                  ),
                                 ),
                               ),
                             );

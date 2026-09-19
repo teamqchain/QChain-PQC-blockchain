@@ -36,7 +36,7 @@ class _WalletScreenState extends State<WalletScreen> {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
+      backgroundColor: qBgSurface,
       body: Obx(() {
         final totalDocs = _walletController.credentials.length;
         final liveCategories = _walletController.dynamicCategories;

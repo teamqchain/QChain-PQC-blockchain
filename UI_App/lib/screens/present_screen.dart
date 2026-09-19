@@ -8,6 +8,7 @@ import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/screens/selective_screen.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
 import 'package:qwallet_mobileapp/services/crypto_service.dart';
+import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
 
 
@@ -68,23 +69,12 @@ class _PresentScreenState extends State<PresentScreen> {
     }
   }
 
+  /// Body attributes only — must match on-chain FieldHashes at resolveSession.
   Map<String, dynamic> _disclosedFieldsMap() {
-    final hidden = _hiddenFields.toSet();
-    final out = <String, dynamic>{
-      if (!hidden.contains('credentialType')) 'credentialType': doc.credentialType,
-      if (!hidden.contains('status')) 'status': doc.status,
-      if (!hidden.contains('issuedBy')) 'issuedBy': doc.issuedBy,
-      if (!hidden.contains('holderEID')) 'holderEID': doc.holderEID,
-      if (!hidden.contains('holderName')) 'holderName': doc.holderName,
-      if (!hidden.contains('issuedAt')) 'issuedAt': doc.issuedAt,
-    };
-    if (doc.expiryDate != null && !hidden.contains('expiryDate')) {
-      out['expiryDate'] = doc.expiryDate;
-    }
-    doc.attributes.forEach((k, v) {
-      if (!hidden.contains(k)) out[k] = v;
-    });
-    return out;
+    return CryptoService.bodyDisclosedFields(
+      doc.attributes,
+      hiddenKeys: _hiddenFields.toSet(),
+    );
   }
 
   Future<Map<String, dynamic>?> _signedGeneratePresentation() async {
@@ -241,7 +231,7 @@ class _PresentScreenState extends State<PresentScreen> {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
+      backgroundColor: qBgSurface,
       body: Column(
         children: [
           _PresentHeroBox(
