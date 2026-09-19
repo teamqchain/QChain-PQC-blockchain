@@ -30,7 +30,7 @@ class CryptoService {
 
   /// Write a (possibly long) hex string to secure storage, chunked if it
   /// exceeds [_chunkSize]. Keys shorter than the chunk size are stored as-is.
-  Future<void> _secureWrite(String key, String hexValue) async {
+  static Future<void> _secureWrite(String key, String hexValue) async {
     if (hexValue.length <= _chunkSize) {
       await _storage.write(key: key, value: hexValue);
       return;
@@ -48,7 +48,7 @@ class CryptoService {
   }
 
   /// Read a chunked value back. Returns null if the base key doesn't exist.
-  Future<String?> _secureRead(String key) async {
+  static Future<String?> _secureRead(String key) async {
     // Try direct read first (short keys).
     final direct = await _storage.read(key: key);
     if (direct != null && direct.isNotEmpty) {
@@ -126,8 +126,8 @@ class CryptoService {
     String? kemPubHex,
     String? dsaPubHex,
   }) async {
-    await _storage.write(key: kemPrivStorageKey, value: kemPrivHex);
-    await _storage.write(key: dsaPrivStorageKey, value: dsaPrivHex);
+    await _secureWrite(kemPrivStorageKey, kemPrivHex);
+    await _secureWrite(dsaPrivStorageKey, dsaPrivHex);
     if (kemPubHex != null && kemPubHex.isNotEmpty) {
       await _storage.write(key: kemPubStorageKey, value: kemPubHex);
     }
@@ -137,17 +137,22 @@ class CryptoService {
   }
 
   static Future<bool> hasLocalPrivateKeys() async {
-    final kem = await _storage.read(key: kemPrivStorageKey);
-    final dsa = await _storage.read(key: dsaPrivStorageKey);
-    return kem != null && kem.isNotEmpty && dsa != null && dsa.isNotEmpty;
+    final kem = await readKemPrivateKey();
+    final dsa = await readDsaPrivateKey();
+    return kem != null &&
+        kem.isNotEmpty &&
+        dsa != null &&
+        dsa.isNotEmpty &&
+        // Guard against truncated legacy writes (pre-chunking).
+        kem.length == 4800;
   }
 
   static Future<String?> readKemPrivateKey() async {
-    return _storage.read(key: kemPrivStorageKey);
+    return _secureRead(kemPrivStorageKey);
   }
 
   static Future<String?> readDsaPrivateKey() async {
-    return _storage.read(key: dsaPrivStorageKey);
+    return _secureRead(dsaPrivStorageKey);
   }
 
   static Future<String?> readKemPublicKey() async {
@@ -393,7 +398,7 @@ class CryptoService {
       final kwk = hkdfSha3(ss, '$hkdfInfoPrefix|$credId|$key');
       final fieldNonce = hexDecode(field['nonce']?.toString() ?? '');
       logDebug('[decryptEnvelope] field="$key" credId=$credId KWK=${hexEncode(kwk.sublist(0, 8))}... wrap=${wrapMap['holder'].toString().substring(0, 16)}... (${wrapMap['holder'].toString().length ~/ 2}B)');
-      final dataKey = aesGcmUnwrap(kwk, hexDecode(wrapMap['holder'].toString()), fieldNonce);
+      final dataKey = aesGcmUnwrap(kwk, hexDecode(wrapMap['holder'].toString()));
       final plaintext = aesGcmDecrypt(
         dataKey,
         fieldNonce,
@@ -445,13 +450,15 @@ class CryptoService {
     return Uint8List.fromList(okm.toBytes().sublist(0, length));
   }
 
-  /// Unwrap AES data key. The backend wraps the per-field 32-byte AES key with
-  /// AES-256-GCM reusing the field's own nonce (Option B).
+  /// Unwrap AES data key. Matches backend wrapKey in offchain/kem.go:
+  /// AES-256-GCM with a fixed 12-byte ZERO nonce (Option A).
   /// Layout of [wrapped]: ciphertext(32) || tag(16) = 48 bytes total.
-  static Uint8List aesGcmUnwrap(Uint8List key, Uint8List wrapped, Uint8List nonce) {
+  /// The nonce is NOT embedded in [wrapped] and is NOT the field nonce.
+  static Uint8List aesGcmUnwrap(Uint8List key, Uint8List wrapped) {
     if (wrapped.length < gcmTagLen) {
       throw StateError('wrapped key too short');
     }
+    final nonce = Uint8List(gcmNonceLen); // fixed zero nonce
     final ct = wrapped; // ciphertext(keyLen) || tag(16)
     return aesGcmDecrypt(key, nonce, ct);
   }
