@@ -45,11 +45,18 @@ fi
 # ── Start new container ─────────────────────────────────────────────────────
 echo "Starting $CONTAINER_NAME ..."
 
+HOLDER_KEYS_FILE="$SCRIPT_DIR/.env.holder_keys"
+HOLDER_KEYS_MOUNT=()
+if [[ -f "$HOLDER_KEYS_FILE" ]]; then
+    HOLDER_KEYS_MOUNT=(-v "${HOLDER_KEYS_FILE}:/app/.env.holder_keys:ro")
+fi
+
 docker run -d \
     --name "$CONTAINER_NAME" \
     --restart unless-stopped \
     --network host \
     -v "${NETWORK_DIR}:/qchain-network:ro" \
+    "${HOLDER_KEYS_MOUNT[@]}" \
     --env-file "$ENV_FILE" \
     -e NETWORK_ROOT=/qchain-network \
     "$IMAGE"
