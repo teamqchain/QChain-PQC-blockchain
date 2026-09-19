@@ -166,14 +166,12 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
                                   setStateSheet(() => isFetching = true);
 
                                   try {
-                                    // Call the API
                                     final walletCtrl =
                                         Get.find<WalletController>();
                                     final result = await ApiService.fetchDocument(
                                       userEmiratesID,
                                       issuer.id,
                                       service.name,
-                                      // service.id
                                     );
 
                                     setStateSheet(() => isFetching = false);
@@ -181,6 +179,10 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
                                     if (context.mounted) Navigator.pop(ctx);
 
                                     if (result['success'] == true) {
+                                      // Reload wallet list so the new card
+                                      // (metadata only) appears. Body attributes
+                                      // are decrypted on demand when the holder
+                                      // opens the detail screen.
                                       walletCtrl.fetchMyCredentials();
                                       await QHaptics.success();
                                       Get.snackbar(

@@ -64,9 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
             isLoading
                 ? const SkeletonHeroBox()
                 : _HeroBox(
-                    userName: controller.credentials.isNotEmpty
-                        ? controller.credentials.first.holderName
-                        : 'Holder',
+                    userName: controller.displayHolderName,
                     validCount: controller.validCount,
                     suspendedCount: controller.suspendedCount,
                     revokedCount: controller.revokedCount,
@@ -88,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(height: 12),
                           FilledButton(
                             onPressed: () {
+                              controller.fetchHolderProfile();
                               controller.fetchMyCredentials();
                               activityController.fetchActivity();
                               addDocumentController.loadCatalog();
@@ -106,6 +105,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onRefresh: () async {
                         await QHaptics.refresh();
                         // Refresh both on pull-down
+                        await controller.fetchHolderProfile();
                         await controller.fetchMyCredentials();
                         await activityController.fetchActivity();
                         await addDocumentController.loadCatalog();

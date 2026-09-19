@@ -84,6 +84,22 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
         dsaPubHex: dsa.pubHex,
       );
 
+      // CRITICAL: Verify the key was saved correctly. ML-KEM-768 private key
+      // must be 2400 bytes = 4800 hex chars. flutter_secure_storage can
+      // silently truncate long values on some platforms.
+      final verifyKem = await CryptoService.readKemPrivateKey();
+      final verifyDsa = await CryptoService.readDsaPrivateKey();
+      logDebug('[Onboard3] VERIFY after save:');
+      logDebug('  kem_priv: generated=${kem.privHex.length} chars, read back=${verifyKem?.length ?? 0} chars');
+      logDebug('  dsa_priv: generated=${dsa.privHex.length} chars, read back=${verifyDsa?.length ?? 0} chars');
+      if (verifyKem == null || verifyKem.length != kem.privHex.length) {
+        logDebug('[Onboard3] WARNING: kem_priv_key was TRUNCATED by secure storage!');
+        logDebug('  Expected ${kem.privHex.length} hex chars, got ${verifyKem?.length ?? 0}');
+      }
+      if (verifyDsa == null || verifyDsa.length != dsa.privHex.length) {
+        logDebug('[Onboard3] WARNING: dsa_priv_key was TRUNCATED by secure storage!');
+      }
+
       final registered = await ApiService.registerHolderKeys(
         emiratesID: userEmiratesID,
         kemPublicKey: kem.pubHex,
@@ -189,8 +205,6 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
             ),
           ),
           const SizedBox(height: 20),
-          const _NistBadge(),
-          const SizedBox(height: 16),
         ],
       ),
     );
@@ -446,42 +460,6 @@ class _TextBlock extends StatelessWidget {
         const SizedBox(height: 10),
         Text(body, style: const TextStyle(color: obTextSub, fontSize: 15, height: 1.6)),
       ],
-    );
-  }
-}
-
-// ─── NIST badge ────────────────────────────────────────────────────────────
-
-class _NistBadge extends StatelessWidget {
-  const _NistBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-      decoration: BoxDecoration(
-        color: obPanel,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: obBorder),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: const [
-          Icon(Icons.shield_outlined, color: obTextDim, size: 14),
-          SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              'CRYSTALS-Dilithium (ML-DSA) · NIST FIPS 204',
-              style: TextStyle(
-                color: obTextSub,
-                fontSize: 11,
-                letterSpacing: 0.2,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
