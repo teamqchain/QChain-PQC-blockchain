@@ -5,6 +5,7 @@ import 'package:qwallet_mobileapp/Headers/categoryHeader.dart';
 import 'package:qwallet_mobileapp/components/CardDetails.dart';
 import 'package:qwallet_mobileapp/components/emptyState.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
+import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
 import 'package:qwallet_mobileapp/widgets/wallet_category.dart';
 import 'package:qwallet_mobileapp/view/listView.dart';
@@ -94,7 +95,7 @@ class _CategoryDocumentsScreenState extends State<CategoryDocumentsScreen> {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF2F2F7),
+      backgroundColor: qBgSurface,
       body: Stack(
         children: [
           Column(
