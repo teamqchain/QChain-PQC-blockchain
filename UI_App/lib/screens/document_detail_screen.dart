@@ -8,7 +8,6 @@ import 'package:qwallet_mobileapp/screens/selective_screen.dart';
 import 'package:qwallet_mobileapp/screens/certificate_viewer_screen.dart';
 import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
-import 'package:qwallet_mobileapp/services/crypto_service.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
 import 'package:qchain_shared/certificate_template.dart';
@@ -167,8 +166,40 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   void initState() {
     super.initState();
     doc = DocWrapper(Get.arguments);
-    _decryptedAttrs = Map<String, dynamic>.from(doc.attributes);
-    _loadDecryptedAttributes();
+    // Never seed from list-payload attributes — those may be empty or envelope-
+    // shaped after Track H. Only show fields after local decrypt succeeds.
+    _decryptedAttrs = const {};
+    _bootstrapDecryptedAttributes();
+  }
+
+  /// Prefer already-decrypted in-memory attrs from WalletController; otherwise
+  /// fetch envelope + decrypt on this screen.
+  Future<void> _bootstrapDecryptedAttributes() async {
+    final credentialID = doc.credentialID;
+    if (credentialID.isEmpty || credentialID == 'DOC-UNKNOWN') return;
+
+    // If wallet already decrypted this cred (after fetch or list load), reuse it.
+    try {
+      final wallet = Get.find<WalletController>();
+      final live = wallet.credentials.firstWhereOrNull(
+        (c) => c.credentialID == credentialID,
+      );
+      if (live != null &&
+          live.attributesDecrypted &&
+          live.attributes.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _decryptedAttrs = Map<String, dynamic>.from(live.attributes);
+          _decrypting = false;
+          _decryptError = null;
+        });
+        return;
+      }
+    } catch (_) {
+      // Controller may not be registered in rare routes — fall through to fetch.
+    }
+
+    await _loadDecryptedAttributes();
   }
 
   Future<void> _loadDecryptedAttributes() async {
@@ -178,22 +209,33 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
     setState(() {
       _decrypting = true;
       _decryptError = null;
+      _decryptedAttrs = const {};
     });
 
     try {
-      final envelope = await ApiService.getEnvelope(credentialID);
-      final kemPrivHex = await CryptoService.readKemPrivateKey();
-      if (kemPrivHex == null || kemPrivHex.isEmpty) {
-        throw StateError('ML-KEM private key not found on this device');
-      }
-
-      final attrs = CryptoService.decryptEnvelope(envelope, kemPrivHex);
+      final attrs = await ApiService.fetchAndDecryptAttributes(credentialID);
       if (!mounted) return;
       setState(() {
         _decryptedAttrs = attrs;
         _decrypting = false;
         _decryptError = null;
       });
+
+      // Keep wallet in-memory model in sync (no second network round-trip).
+      try {
+        final wallet = Get.find<WalletController>();
+        final index = wallet.credentials.indexWhere(
+          (c) => c.credentialID == credentialID,
+        );
+        if (index >= 0) {
+          wallet.credentials[index] = wallet.credentials[index].copyWith(
+            attributes: attrs,
+            attributesDecrypted: true,
+          );
+          wallet.credentials.refresh();
+        }
+      } catch (_) {}
+
       logDebug(
         '[DocumentDetail] decrypted ${attrs.length} fields for $credentialID',
       );
@@ -203,10 +245,8 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       setState(() {
         _decrypting = false;
         _decryptError = e.toString();
-        // Keep any attributes already present (e.g. legacy plaintext list).
-        if (_decryptedAttrs.isEmpty) {
-          _decryptedAttrs = Map<String, dynamic>.from(doc.attributes);
-        }
+        // Honest failure: no plaintext fallback.
+        _decryptedAttrs = const {};
       });
     }
   }
@@ -529,10 +569,19 @@ class _DocHeroBox extends StatelessWidget {
               fgColor: qBg,
               // border: const Color(0xFFEBEBEB),
               onTap: () {
+                // Certificate body fields come only from locally decrypted attrs.
+                if (attributes.isEmpty) {
+                  Get.snackbar(
+                    'Unavailable',
+                    'Decrypt attributes first to view the certificate.',
+                    snackPosition: SnackPosition.BOTTOM,
+                    backgroundColor: Colors.redAccent,
+                    colorText: Colors.white,
+                  );
+                  return;
+                }
                 final fieldMap = <String, String>{};
-                final src =
-                    attributes.isNotEmpty ? attributes : doc.attributes;
-                src.forEach((k, v) {
+                attributes.forEach((k, v) {
                   fieldMap[k] = v?.toString() ?? '';
                 });
 
@@ -879,103 +928,94 @@ class _BottomActions extends StatelessWidget {
   final DocWrapper doc;
   const _BottomActions({required this.doc});
 
-  void _handleGenerateOTP(BuildContext context) async {
-    final WalletController controller = Get.find<WalletController>();
-
-    Get.dialog(
-      const Center(child: CircularProgressIndicator(color: Colors.white)),
-      barrierDismissible: false,
-    );
-
+  /// Prefer the in-memory decrypted CredentialModel from WalletController so
+  /// selective disclosure signs real attribute values, not an empty/envelope map.
+  CredentialModel? _resolvedCredential() {
+    if (doc.raw is! CredentialModel) return null;
+    final fallback = doc.raw as CredentialModel;
     try {
-      final result = await controller.requestOTP(doc.credentialID);
+      final wallet = Get.find<WalletController>();
+      final live = wallet.credentials.firstWhereOrNull(
+        (c) => c.credentialID == fallback.credentialID,
+      );
+      if (live != null) return live;
+    } catch (_) {}
+    return fallback;
+  }
 
-      Get.back(); // Close loading dialog
-
-      if (result != null) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => _OtpDialog(
-            initialOtp: result['otp'],
-            expiresAt: result['expiresAt'],
-            onRefresh: () async {
-               try {
-                 final res = await controller.requestOTP(doc.credentialID);
-                 return res != null ? {'otp': res['otp'], 'expiresAt': res['expiresAt']} : null;
-               } catch (_) {
-                 return null;
-               }
-            },
-            onDone: () {
-              Get.back(); // Close the dialog only
-            },
-          ),
-        );
-      } else {
-        Get.snackbar(
-          'Error',
-          'Failed to generate OTP.',
-          snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.redAccent,
-          colorText: Colors.white,
-        );
-      }
-    } catch (e) {
-      Get.back(); // Close loading dialog
+  Future<void> _openShare(ShareMode mode) async {
+    final cred = _resolvedCredential();
+    if (cred == null) {
       Get.snackbar(
-        'Network Error',
-        e.toString(),
+        'Error',
+        'Credential not available.',
         snackPosition: SnackPosition.BOTTOM,
         backgroundColor: Colors.redAccent,
         colorText: Colors.white,
       );
+      return;
     }
+
+    if (!cred.attributesDecrypted || cred.attributes.isEmpty) {
+      Get.dialog(
+        const Center(child: CircularProgressIndicator(color: Colors.white)),
+        barrierDismissible: false,
+      );
+      try {
+        final wallet = Get.find<WalletController>();
+        final ok = await wallet.decryptCredentialById(cred.credentialID);
+        Get.back();
+        if (!ok) {
+          Get.snackbar(
+            'Could not decrypt',
+            'Decrypt attributes before sharing this document.',
+            snackPosition: SnackPosition.BOTTOM,
+            backgroundColor: Colors.redAccent,
+            colorText: Colors.white,
+          );
+          return;
+        }
+      } catch (e) {
+        Get.back();
+        Get.snackbar(
+          'Could not decrypt',
+          e.toString(),
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.redAccent,
+          colorText: Colors.white,
+        );
+        return;
+      }
+    }
+
+    final latest = _resolvedCredential() ?? cred;
+    Get.to(() => SelectiveShareScreen(doc: latest, mode: mode));
   }
 
   @override
   Widget build(BuildContext context) {
-    // if (doc.status.toLowerCase() != 'active') {
-    //   return const SizedBox.shrink(); // Hide if revoked/suspended/expired
-    // }
-
     return Column(
       children: [
         Row(
           children: [
             Expanded(
-              child: 
-
-              _ActionBtn(
+              child: _ActionBtn(
                 icon: Icons.pin_outlined,
                 label: 'Generate OTP',
-                
-
                 bgColor: Colors.white,
                 fgColor: const Color(0xFF111111),
                 border: const Color(0xFFEBEBEB),
-                onTap: () {
-                  Get.to(
-                    () =>
-                        SelectiveShareScreen(doc: doc.raw, mode: ShareMode.otp),
-                  );
-                },
+                onTap: () => _openShare(ShareMode.otp),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: 
-              _ActionBtn(
+              child: _ActionBtn(
                 icon: Icons.qr_code_scanner,
                 label: 'Present',
                 bgColor: const Color(0xFF111111),
                 fgColor: Colors.white,
-                onTap: () {
-                  Get.to(
-                    () =>
-                        SelectiveShareScreen(doc: doc.raw, mode: ShareMode.qr),
-                  );
-                },
+                onTap: () => _openShare(ShareMode.qr),
               ),
             ),
           ],

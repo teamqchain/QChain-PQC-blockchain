@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:liboqs/liboqs.dart';
+import 'package:qwallet_mobileapp/utils/logger.dart';
 
 /// Holder-side PQC helpers. Private keys stay on-device in secure storage.
 class CryptoService {
@@ -19,7 +20,65 @@ class CryptoService {
   static const gcmTagLen = 16;
   static const aesKeyLen = 32;
 
+  /// Max bytes per keychain entry. iOS Keychain silently truncates values
+  /// beyond ~2048 bytes. ML-KEM-768 private key is 2400 bytes = 4800 hex chars
+  /// = 4800 bytes as UTF-8, which exceeds that limit. We chunk large values
+  /// into multiple keychain entries and reassemble on read.
+  static const _chunkSize = 1024; // hex chars per chunk (512 bytes)
+
   static const FlutterSecureStorage _storage = FlutterSecureStorage();
+
+  /// Write a (possibly long) hex string to secure storage, chunked if it
+  /// exceeds [_chunkSize]. Keys shorter than the chunk size are stored as-is.
+  static Future<void> _secureWrite(String key, String hexValue) async {
+    if (hexValue.length <= _chunkSize) {
+      await _storage.write(key: key, value: hexValue);
+      return;
+    }
+    // Split into chunks: key_0, key_1, key_2, ...
+    final chunkCount = (hexValue.length + _chunkSize - 1) ~/ _chunkSize;
+    await _storage.write(key: '${key}_chunks', value: chunkCount.toString());
+    for (var i = 0; i < chunkCount; i++) {
+      final start = i * _chunkSize;
+      final end = start + _chunkSize > hexValue.length
+          ? hexValue.length
+          : start + _chunkSize;
+      await _storage.write(key: '${key}_$i', value: hexValue.substring(start, end));
+    }
+  }
+
+  /// Read a chunked value back. Returns null if the base key doesn't exist.
+  static Future<String?> _secureRead(String key) async {
+    // Try direct read first (short keys).
+    final direct = await _storage.read(key: key);
+    if (direct != null && direct.isNotEmpty) {
+      // Check if this is actually a chunked store (legacy may have _chunks).
+      final chunkCountStr = await _storage.read(key: '${key}_chunks');
+      if (chunkCountStr == null) {
+        return direct; // not chunked
+      }
+    }
+
+    // Read chunks.
+    final chunkCountStr = await _storage.read(key: '${key}_chunks');
+    if (chunkCountStr == null) {
+      return direct; // not chunked, return whatever we got (may be truncated)
+    }
+
+    final chunkCount = int.tryParse(chunkCountStr) ?? 0;
+    if (chunkCount <= 0) return direct;
+
+    final buf = StringBuffer();
+    for (var i = 0; i < chunkCount; i++) {
+      final chunk = await _storage.read(key: '${key}_$i');
+      if (chunk == null || chunk.isEmpty) {
+        logDebug('[_secureRead] chunk $i missing for key $key — key is corrupt!');
+        return null;
+      }
+      buf.write(chunk);
+    }
+    return buf.toString();
+  }
 
   static bool _initialized = false;
 
@@ -67,8 +126,8 @@ class CryptoService {
     String? kemPubHex,
     String? dsaPubHex,
   }) async {
-    await _storage.write(key: kemPrivStorageKey, value: kemPrivHex);
-    await _storage.write(key: dsaPrivStorageKey, value: dsaPrivHex);
+    await _secureWrite(kemPrivStorageKey, kemPrivHex);
+    await _secureWrite(dsaPrivStorageKey, dsaPrivHex);
     if (kemPubHex != null && kemPubHex.isNotEmpty) {
       await _storage.write(key: kemPubStorageKey, value: kemPubHex);
     }
@@ -78,21 +137,74 @@ class CryptoService {
   }
 
   static Future<bool> hasLocalPrivateKeys() async {
-    final kem = await _storage.read(key: kemPrivStorageKey);
-    final dsa = await _storage.read(key: dsaPrivStorageKey);
-    return kem != null && kem.isNotEmpty && dsa != null && dsa.isNotEmpty;
+    final kem = await readKemPrivateKey();
+    final dsa = await readDsaPrivateKey();
+    return kem != null &&
+        kem.isNotEmpty &&
+        dsa != null &&
+        dsa.isNotEmpty &&
+        // Guard against truncated legacy writes (pre-chunking).
+        kem.length == 4800;
   }
 
   static Future<String?> readKemPrivateKey() async {
-    return _storage.read(key: kemPrivStorageKey);
+    return _secureRead(kemPrivStorageKey);
   }
 
   static Future<String?> readDsaPrivateKey() async {
-    return _storage.read(key: dsaPrivStorageKey);
+    return _secureRead(dsaPrivStorageKey);
   }
 
   static Future<String?> readKemPublicKey() async {
     return _storage.read(key: kemPubStorageKey);
+  }
+
+  /// Verify the on-device ML-KEM keypair matches the backend's registered public key.
+  /// Returns a diagnostic string describing the match. Call this to debug decrypt failures.
+  static Future<String> verifyKemKeyMatch(String backendPubHex) async {
+    final devPriv = await readKemPrivateKey();
+    final devPub = await readKemPublicKey();
+
+    final buf = StringBuffer();
+    buf.writeln('=== ML-KEM Key Match Diagnostic ===');
+
+    if (devPriv == null || devPriv.isEmpty) {
+      buf.writeln('FAIL: No ML-KEM private key on this device.');
+      buf.writeln('  The app was never onboarded, or keys were lost (reinstall).');
+      buf.writeln('  Fix: Re-onboard to generate + register new keys, then re-issue the credential.');
+      return buf.toString();
+    }
+
+    buf.writeln('Device private key: ${devPriv.length} hex chars = ${devPriv.length ~/ 2} bytes');
+    buf.writeln('  (ML-KEM-768 private key expected: 2400 bytes)');
+
+    if (devPub != null && devPub.isNotEmpty) {
+      buf.writeln('Device public key:  ${devPub.length} hex chars = ${devPub.length ~/ 2} bytes');
+      final match = devPub.toLowerCase() == backendPubHex.toLowerCase();
+      buf.writeln('Backend public key: ${backendPubHex.length} hex chars = ${backendPubHex.length ~/ 2} bytes');
+      buf.writeln('MATCH: $match');
+      if (!match) {
+        buf.writeln('');
+        buf.writeln('FAIL: Device public key != Backend registered public key.');
+        buf.writeln('  The credential was encrypted to a DIFFERENT public key than');
+        buf.writeln('  what is on this device. This happens when:');
+        buf.writeln('  - The app was reinstalled (secure storage wiped, new keys generated)');
+        buf.writeln('  - A different holder onboarding was done on this device');
+        buf.writeln('  - The backend registered keys from a different device/session');
+        buf.writeln('');
+        buf.writeln('  Fix: Either re-onboard (generate new keys + re-issue credential),');
+        buf.writeln('  or restore the original private key that matches the backend public key.');
+        buf.writeln('');
+        buf.writeln('  Device pub (first 32 chars):  ${devPub.substring(0, devPub.length < 32 ? devPub.length : 32)}...');
+        buf.writeln('  Backend pub (first 32 chars): ${backendPubHex.substring(0, backendPubHex.length < 32 ? backendPubHex.length : 32)}...');
+      }
+    } else {
+      buf.writeln('Device public key: NOT stored (only private key was saved)');
+      buf.writeln('  Cannot compare directly. Check if private key corresponds to backend pub.');
+      buf.writeln('  Backend pub (first 32 chars): ${backendPubHex.substring(0, backendPubHex.length < 32 ? backendPubHex.length : 32)}...');
+    }
+
+    return buf.toString();
   }
 
   static Future<String?> readDsaPublicKey() async {
@@ -190,6 +302,35 @@ class CryptoService {
     return value;
   }
 
+  /// Accept either a bare envelope map or a wrapper like `{ envelope: {...} }`.
+  static Map<String, dynamic> unwrapEnvelopePayload(Map<String, dynamic> body) {
+    if (body.containsKey('wraps') && body.containsKey('fields')) {
+      return body;
+    }
+    final nested = body['envelope'];
+    if (nested is Map) {
+      return Map<String, dynamic>.from(nested);
+    }
+    if (nested is String && nested.trim().isNotEmpty) {
+      final decoded = jsonDecode(nested);
+      if (decoded is Map) {
+        return Map<String, dynamic>.from(decoded);
+      }
+    }
+    // Some backends put the envelope JSON string in credential_data / data.
+    for (final key in const ['credential_data', 'credentialData', 'data']) {
+      final v = body[key];
+      if (v is Map) return Map<String, dynamic>.from(v);
+      if (v is String && v.trim().isNotEmpty) {
+        try {
+          final decoded = jsonDecode(v);
+          if (decoded is Map) return Map<String, dynamic>.from(decoded);
+        } catch (_) {}
+      }
+    }
+    return body;
+  }
+
   /// Decrypt a Track B/H envelope locally. Plaintext stays in memory only.
   static Map<String, dynamic> decryptEnvelope(
     Map<String, dynamic> envelope,
@@ -221,10 +362,21 @@ class CryptoService {
     final kem = KEM.create(kemAlgorithm);
     late final Uint8List ss;
     try {
-      ss = kem.decapsulate(hexDecode(kemCtHex), hexDecode(kemPrivHex));
+      // CRITICAL: ML-KEM-768 private key must be exactly 2400 bytes (4800 hex).
+      // A truncated key will "succeed" in decapsulation but produce a wrong
+      // shared secret, causing AES-GCM failures downstream.
+      final kemPrivBytes = hexDecode(kemPrivHex);
+      if (kemPrivBytes.length != 2400) {
+        throw StateError(
+          'ML-KEM-768 private key is ${kemPrivBytes.length} bytes, '
+          'expected 2400. The key was truncated in secure storage.',
+        );
+      }
+      ss = kem.decapsulate(hexDecode(kemCtHex), kemPrivBytes);
     } finally {
       kem.dispose();
     }
+    logDebug('[decryptEnvelope] KEM decapsulation succeeded, ss=${hexEncode(ss.sublist(0, 8))}... (${ss.length} bytes)');
 
     final credId = envelope['credId']?.toString() ?? '';
     final fields = envelope['fields'];
@@ -244,10 +396,12 @@ class CryptoService {
       }
 
       final kwk = hkdfSha3(ss, '$hkdfInfoPrefix|$credId|$key');
+      final fieldNonce = hexDecode(field['nonce']?.toString() ?? '');
+      logDebug('[decryptEnvelope] field="$key" credId=$credId KWK=${hexEncode(kwk.sublist(0, 8))}... wrap=${wrapMap['holder'].toString().substring(0, 16)}... (${wrapMap['holder'].toString().length ~/ 2}B)');
       final dataKey = aesGcmUnwrap(kwk, hexDecode(wrapMap['holder'].toString()));
       final plaintext = aesGcmDecrypt(
         dataKey,
-        hexDecode(field['nonce']?.toString() ?? ''),
+        fieldNonce,
         hexDecode(field['ct']?.toString() ?? ''),
       );
       out[key] = _decodeFieldPlaintext(plaintext);
@@ -296,13 +450,16 @@ class CryptoService {
     return Uint8List.fromList(okm.toBytes().sublist(0, length));
   }
 
-  /// Unwrap AES data key. Layout: nonce(12) || ciphertext || tag(16).
+  /// Unwrap AES data key. Matches backend wrapKey in offchain/kem.go:
+  /// AES-256-GCM with a fixed 12-byte ZERO nonce (Option A).
+  /// Layout of [wrapped]: ciphertext(32) || tag(16) = 48 bytes total.
+  /// The nonce is NOT embedded in [wrapped] and is NOT the field nonce.
   static Uint8List aesGcmUnwrap(Uint8List key, Uint8List wrapped) {
-    if (wrapped.length < gcmNonceLen + gcmTagLen) {
+    if (wrapped.length < gcmTagLen) {
       throw StateError('wrapped key too short');
     }
-    final nonce = wrapped.sublist(0, gcmNonceLen);
-    final ct = wrapped.sublist(gcmNonceLen);
+    final nonce = Uint8List(gcmNonceLen); // fixed zero nonce
+    final ct = wrapped; // ciphertext(keyLen) || tag(16)
     return aesGcmDecrypt(key, nonce, ct);
   }
 

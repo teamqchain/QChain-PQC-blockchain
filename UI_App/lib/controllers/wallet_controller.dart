@@ -13,6 +13,14 @@ class WalletController extends GetxController {
   var isLoading = true.obs;
   var errorMessage = ''.obs;
 
+  // Holder demographic profile — fetched from /mobile/getHolderProfile so the
+  // home screen can greet the holder by name even before any credential is
+  // issued (e.g. right after key generation). Falls back to 'Holder'.
+  var holderName = ''.obs;
+  var holderEmail = ''.obs;
+  var holderType = ''.obs;
+  var holderCollege = ''.obs;
+
   // Replace this with actual authenticated user state later
   // final String currentUserEID = '784-2004-7654321-1';
 
@@ -20,7 +28,39 @@ class WalletController extends GetxController {
   void onInit() {
     super.onInit();
     logDebug('[WalletController] onInit called');
+    fetchHolderProfile();
     fetchMyCredentials();
+  }
+
+  // Fetch the holder's basic demographic info by Emirates ID. Non-fatal: on any
+  // failure holderName stays empty and the UI falls back to 'Holder'.
+  Future<void> fetchHolderProfile() async {
+    logDebug('[WalletController] fetchHolderProfile started');
+    try {
+      final profile = await ApiService.getHolderProfile(userEmiratesID);
+      if (profile != null) {
+        holderName.value = (profile['fullName'] ?? '').toString().trim();
+        holderEmail.value = (profile['email'] ?? '').toString().trim();
+        holderType.value = (profile['holderType'] ?? '').toString().trim();
+        holderCollege.value = (profile['college'] ?? '').toString().trim();
+        logDebug(
+          '[WalletController] fetchHolderProfile success: ${holderName.value}',
+        );
+      } else {
+        logDebug('[WalletController] fetchHolderProfile returned null');
+      }
+    } catch (e) {
+      logDebug('[WalletController] fetchHolderProfile exception: $e');
+    }
+  }
+
+  // The display name to show on the home screen. Prefers the demographic
+  // profile; if that's empty, falls back to the first credential's holderName;
+  // if neither is available, returns 'Holder'.
+  String get displayHolderName {
+    if (holderName.value.isNotEmpty) return holderName.value;
+    if (credentials.isNotEmpty) return credentials.first.holderName;
+    return 'Holder';
   }
 
   Future<void> fetchMyCredentials() async {
@@ -29,6 +69,9 @@ class WalletController extends GetxController {
       isLoading(true);
       errorMessage('');
       final data = await ApiService.getMyCredentials(userEmiratesID);
+      // Metadata only — body attributes are decrypted on demand in the detail
+      // screen, never at list load. Envelope-shaped `attributes` are discarded
+      // by CredentialModel.fromJson so ciphertext never paints as rows.
       credentials.value = data;
       logDebug(
         '[WalletController] fetchMyCredentials success: ${credentials.length} items',
@@ -43,6 +86,49 @@ class WalletController extends GetxController {
       errorMessage('An unexpected error occurred.');
     } finally {
       isLoading(false);
+    }
+  }
+
+  /// Decrypt one credential on demand (e.g. opening the detail screen or
+  /// retry). Returns true when local decrypt succeeded and the in-memory model
+  /// was updated. Plaintext stays in memory only — never written to disk.
+  Future<bool> decryptCredentialById(String credentialID) async {
+    if (credentialID.isEmpty) return false;
+    final index = credentials.indexWhere((c) => c.credentialID == credentialID);
+    try {
+      final attrs = await ApiService.fetchAndDecryptAttributes(credentialID);
+      if (index >= 0) {
+        credentials[index] = credentials[index].copyWith(
+          attributes: attrs,
+          attributesDecrypted: true,
+        );
+        credentials.refresh();
+      }
+      return true;
+    } catch (e) {
+      logDebug(
+        '[WalletController] decryptCredentialById failed for $credentialID: $e',
+      );
+      // Diagnostic: check if the device's ML-KEM key matches the backend's.
+      // The publicKey field on the credential is the ISSUER's signing key, not
+      // the holder's KEM key — but the backend can tell us the registered KEM
+      // public key for this holder. For now, log the device's stored public key
+      // so it can be compared manually with what the backend registered.
+      try {
+        final devPub = await CryptoService.readKemPrivateKey();
+        logDebug(
+          '[WalletController] device kem_priv present=${devPub != null && devPub.isNotEmpty} '
+          'len=${devPub?.length ?? 0}',
+        );
+      } catch (_) {}
+      if (index >= 0) {
+        credentials[index] = credentials[index].copyWith(
+          attributes: const {},
+          attributesDecrypted: false,
+        );
+        credentials.refresh();
+      }
+      return false;
     }
   }
 
