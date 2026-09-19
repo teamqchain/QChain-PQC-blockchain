@@ -571,7 +571,7 @@ func handleFetchDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	found, _, err := fetchDocumentInDB(req.HolderEID, req.IssuerID, req.ServiceName)
+	found, alreadyInWallet, err := fetchDocumentInDB(req.HolderEID, req.IssuerID, req.ServiceName)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
@@ -583,9 +583,18 @@ func handleFetchDocument(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if alreadyInWallet {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success":         false,
+			"alreadyInWallet": true,
+			"message":         "This document is already in your wallet.",
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"success": true,
-		"message": "Document retrieved successfully.",
+		"success":         true,
+		"alreadyInWallet": false,
+		"message":         "Document retrieved successfully.",
 	})
 }
 
