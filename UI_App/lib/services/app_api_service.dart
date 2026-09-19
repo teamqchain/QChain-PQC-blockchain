@@ -21,7 +21,8 @@ class ApiService {
   static final http.Client _client = createAliceHttpClient();
 
   // GET /mobile/checkKeys — has this holder already registered PQC public keys?
-  static Future<Map<String, bool>> checkKeys(String emiratesID) async {
+  // May also include kemPublicKey / dsaPublicKey (public only) for mismatch checks.
+  static Future<Map<String, dynamic>> checkKeys(String emiratesID) async {
     logDebug('[ApiService] checkKeys called for $emiratesID');
     try {
       final res = await _client
@@ -36,12 +37,17 @@ class ApiService {
         final body = jsonDecode(res.body);
         final hasKemKey = body['hasKemKey'] == true;
         final hasSigningKey = body['hasSigningKey'] == true;
+        final kemPublicKey = body['kemPublicKey']?.toString() ?? '';
+        final dsaPublicKey = body['dsaPublicKey']?.toString() ?? '';
         logDebug(
-          '[ApiService] checkKeys success: hasKemKey=$hasKemKey hasSigningKey=$hasSigningKey',
+          '[ApiService] checkKeys success: hasKemKey=$hasKemKey hasSigningKey=$hasSigningKey '
+          'kemPubLen=${kemPublicKey.length}',
         );
         return {
           'hasKemKey': hasKemKey,
           'hasSigningKey': hasSigningKey,
+          if (kemPublicKey.isNotEmpty) 'kemPublicKey': kemPublicKey,
+          if (dsaPublicKey.isNotEmpty) 'dsaPublicKey': dsaPublicKey,
         };
       }
       logDebug('[ApiService] checkKeys failed: HTTP ${res.statusCode}');
@@ -124,8 +130,9 @@ class ApiService {
   /// Fetch encrypted envelope + decrypt on-device. Plaintext stays in memory.
   /// Throws on network / missing key / decrypt failure.
   static Future<Map<String, dynamic>> fetchAndDecryptAttributes(
-    String credentialID,
-  ) async {
+    String credentialID, {
+    String? emiratesID,
+  }) async {
     logDebug('[ApiService] fetchAndDecryptAttributes for $credentialID');
     final raw = await getEnvelope(credentialID);
     final envelope = CryptoService.unwrapEnvelopePayload(raw);
@@ -133,11 +140,48 @@ class ApiService {
     if (kemPrivHex == null || kemPrivHex.isEmpty) {
       throw StateError('ML-KEM private key not found on this device');
     }
-    final attrs = CryptoService.decryptEnvelope(envelope, kemPrivHex);
-    logDebug(
-      '[ApiService] fetchAndDecryptAttributes success: ${attrs.length} fields',
-    );
-    return attrs;
+    try {
+      final attrs = CryptoService.decryptEnvelope(envelope, kemPrivHex);
+      logDebug(
+        '[ApiService] fetchAndDecryptAttributes success: ${attrs.length} fields',
+      );
+      return attrs;
+    } catch (e) {
+      // Surface the #1 real-world cause: wrong ML-KEM keypair on device.
+      try {
+        final localPub = await CryptoService.readKemPublicKey();
+        logDebug(
+          '[ApiService] decrypt failed. localKemPubLen=${localPub?.length ?? 0} '
+          'privLen=${kemPrivHex.length} envelopeCredId=${envelope['credId']} '
+          'err=$e',
+        );
+        if (localPub != null && localPub.isNotEmpty) {
+          // Full pub so you can paste it next to holders.kem_public_key.
+          logDebugLong('[ApiService] device kem_pub_key at decrypt fail', localPub);
+        }
+        if (emiratesID != null && emiratesID.isNotEmpty) {
+          final status = await checkKeys(emiratesID);
+          final backendPub = status['kemPublicKey']?.toString() ?? '';
+          if (backendPub.isNotEmpty) {
+            final diag = await CryptoService.verifyKemKeyMatch(backendPub);
+            logDebug('[ApiService] key match after decrypt fail:\n$diag');
+            logDebugLong(
+              '[ApiService] backend kem_public_key at decrypt fail',
+              backendPub,
+            );
+          } else {
+            logDebug(
+              '[ApiService] checkKeys has no kemPublicKey — deploy backend '
+              'change that returns kemPublicKey from /mobile/checkKeys, then '
+              'retry. Until then compare holders.kem_public_key with the '
+              'device pub above. If they differ, CRED was sealed to another '
+              'key → re-issue.',
+            );
+          }
+        }
+      } catch (_) {}
+      rethrow;
+    }
   }
 
   // GET /mobile/getHolderProfile — basic demographic info for a holder (full
@@ -433,14 +477,20 @@ class ApiService {
 
       final body = jsonDecode(res.body);
       final success = body['success'] == true;
+      final alreadyInWallet = body['alreadyInWallet'] == true;
       logDebug(
-        '[ApiService] fetchDocument HTTP ${res.statusCode}, success: $success, message: ${body['message']}',
+        '[ApiService] fetchDocument HTTP ${res.statusCode}, success: $success, alreadyInWallet: $alreadyInWallet, message: ${body['message']}',
       );
 
       return {
         'success': success,
-        'message':
-            body['message'] ?? (success ? 'Success' : 'Document not found.'),
+        'alreadyInWallet': alreadyInWallet,
+        'message': body['message'] ??
+            (success
+                ? 'Success'
+                : alreadyInWallet
+                    ? 'This document is already in your wallet.'
+                    : 'Document not found.'),
       };
     } catch (e) {
       logDebug('[ApiService] fetchDocument exception: $e');

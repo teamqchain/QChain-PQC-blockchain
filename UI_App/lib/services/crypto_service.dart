@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:liboqs/liboqs.dart';
+// Hide Signature — collides with liboqs Signature (ML-DSA).
+import 'package:pointycastle/export.dart' hide Signature;
 import 'package:qwallet_mobileapp/utils/logger.dart';
 
 /// Holder-side PQC helpers. Private keys stay on-device in secure storage.
@@ -26,58 +28,95 @@ class CryptoService {
   /// into multiple keychain entries and reassemble on read.
   static const _chunkSize = 1024; // hex chars per chunk (512 bytes)
 
-  static const FlutterSecureStorage _storage = FlutterSecureStorage();
+  // Explicit platform options:
+  // - iOS: first_unlock so keys stay readable after app relaunch (default
+  //   unlocked can drop items when the device locks).
+  // - Android: AES-GCM storage is the package default on v11 (no ESP flag).
+  // Critical for large ML-KEM keys: we always chunk + verify after write.
+  static const FlutterSecureStorage _storage = FlutterSecureStorage(
+    aOptions: AndroidOptions(),
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock,
+    ),
+  );
 
   /// Write a (possibly long) hex string to secure storage, chunked if it
   /// exceeds [_chunkSize]. Keys shorter than the chunk size are stored as-is.
+  /// After write, always re-reads and verifies length to catch silent truncation
+  /// (especially iOS Simulator Keychain / older Android Keystore limits).
   static Future<void> _secureWrite(String key, String hexValue) async {
+    // Clear any previous direct or chunked entries so we never mix layouts.
+    await _secureDelete(key);
+
     if (hexValue.length <= _chunkSize) {
       await _storage.write(key: key, value: hexValue);
-      return;
+    } else {
+      // Split into chunks: key_0, key_1, key_2, ...
+      final chunkCount = (hexValue.length + _chunkSize - 1) ~/ _chunkSize;
+      await _storage.write(key: '${key}_chunks', value: chunkCount.toString());
+      for (var i = 0; i < chunkCount; i++) {
+        final start = i * _chunkSize;
+        final end = start + _chunkSize > hexValue.length
+            ? hexValue.length
+            : start + _chunkSize;
+        await _storage.write(
+          key: '${key}_$i',
+          value: hexValue.substring(start, end),
+        );
+      }
     }
-    // Split into chunks: key_0, key_1, key_2, ...
-    final chunkCount = (hexValue.length + _chunkSize - 1) ~/ _chunkSize;
-    await _storage.write(key: '${key}_chunks', value: chunkCount.toString());
+
+    final verified = await _secureRead(key);
+    if (verified == null || verified != hexValue) {
+      throw StateError(
+        'Secure storage failed to persist "$key" intact '
+        '(wrote ${hexValue.length} hex chars, read ${verified?.length ?? 0}). '
+        'On iOS Simulator, Keychain is unreliable for large values — try a real '
+        'device, or clear the app and re-onboard.',
+      );
+    }
+  }
+
+  /// Remove direct + chunked storage for [key].
+  static Future<void> _secureDelete(String key) async {
+    await _storage.delete(key: key);
+    final chunkCountStr = await _storage.read(key: '${key}_chunks');
+    final chunkCount = int.tryParse(chunkCountStr ?? '') ?? 0;
     for (var i = 0; i < chunkCount; i++) {
-      final start = i * _chunkSize;
-      final end = start + _chunkSize > hexValue.length
-          ? hexValue.length
-          : start + _chunkSize;
-      await _storage.write(key: '${key}_$i', value: hexValue.substring(start, end));
+      await _storage.delete(key: '${key}_$i');
     }
+    // Also clear a few extra slots in case of a previous corrupt count.
+    for (var i = chunkCount; i < chunkCount + 8; i++) {
+      await _storage.delete(key: '${key}_$i');
+    }
+    await _storage.delete(key: '${key}_chunks');
   }
 
   /// Read a chunked value back. Returns null if the base key doesn't exist.
   static Future<String?> _secureRead(String key) async {
-    // Try direct read first (short keys).
-    final direct = await _storage.read(key: key);
-    if (direct != null && direct.isNotEmpty) {
-      // Check if this is actually a chunked store (legacy may have _chunks).
-      final chunkCountStr = await _storage.read(key: '${key}_chunks');
-      if (chunkCountStr == null) {
-        return direct; // not chunked
-      }
-    }
-
-    // Read chunks.
+    // Prefer chunked layout when present (source of truth for long keys).
     final chunkCountStr = await _storage.read(key: '${key}_chunks');
-    if (chunkCountStr == null) {
-      return direct; // not chunked, return whatever we got (may be truncated)
-    }
-
-    final chunkCount = int.tryParse(chunkCountStr) ?? 0;
-    if (chunkCount <= 0) return direct;
-
-    final buf = StringBuffer();
-    for (var i = 0; i < chunkCount; i++) {
-      final chunk = await _storage.read(key: '${key}_$i');
-      if (chunk == null || chunk.isEmpty) {
-        logDebug('[_secureRead] chunk $i missing for key $key — key is corrupt!');
-        return null;
+    if (chunkCountStr != null) {
+      final chunkCount = int.tryParse(chunkCountStr) ?? 0;
+      if (chunkCount <= 0) {
+        return _storage.read(key: key);
       }
-      buf.write(chunk);
+      final buf = StringBuffer();
+      for (var i = 0; i < chunkCount; i++) {
+        final chunk = await _storage.read(key: '${key}_$i');
+        if (chunk == null || chunk.isEmpty) {
+          logDebug(
+            '[_secureRead] chunk $i missing for key $key — key is corrupt!',
+          );
+          return null;
+        }
+        buf.write(chunk);
+      }
+      return buf.toString();
     }
-    return buf.toString();
+
+    // Legacy / short keys stored under the bare name.
+    return _storage.read(key: key);
   }
 
   static bool _initialized = false;
@@ -120,19 +159,35 @@ class CryptoService {
 
   /// Persist private keys in Keychain/Keystore, and public keys so the app
   /// can show them later (Settings → View My Public Key).
+  /// Throws if secure storage silently truncates / loses any key material.
   static Future<void> storePrivateKeys({
     required String kemPrivHex,
     required String dsaPrivHex,
     String? kemPubHex,
     String? dsaPubHex,
   }) async {
+    // ML-KEM-768 secret key must be exactly 2400 bytes = 4800 hex chars.
+    if (kemPrivHex.length != 4800) {
+      throw StateError(
+        'Refusing to store ML-KEM private key of ${kemPrivHex.length} hex chars '
+        '(expected 4800).',
+      );
+    }
     await _secureWrite(kemPrivStorageKey, kemPrivHex);
     await _secureWrite(dsaPrivStorageKey, dsaPrivHex);
+    // Public keys are long enough that iOS Keychain can also truncate them
+    // (~2k+ hex chars) — store via the same chunked verified path.
     if (kemPubHex != null && kemPubHex.isNotEmpty) {
-      await _storage.write(key: kemPubStorageKey, value: kemPubHex);
+      if (kemPubHex.length != 2368) {
+        throw StateError(
+          'Refusing to store ML-KEM public key of ${kemPubHex.length} hex chars '
+          '(expected 2368).',
+        );
+      }
+      await _secureWrite(kemPubStorageKey, kemPubHex);
     }
     if (dsaPubHex != null && dsaPubHex.isNotEmpty) {
-      await _storage.write(key: dsaPubStorageKey, value: dsaPubHex);
+      await _secureWrite(dsaPubStorageKey, dsaPubHex);
     }
   }
 
@@ -156,14 +211,24 @@ class CryptoService {
   }
 
   static Future<String?> readKemPublicKey() async {
-    return _storage.read(key: kemPubStorageKey);
+    return _secureRead(kemPubStorageKey);
+  }
+
+  /// Extract the ML-KEM-768 public key embedded in a FIPS-203 expanded secret key.
+  /// Layout: sk_pke(1152) || ek(1184) || H(ek)(32) || z(32) = 2400 bytes.
+  static String? publicKeyFromKemPrivate(String kemPrivHex) {
+    if (kemPrivHex.length != 4800) return null;
+    // ek starts at byte 1152 → hex offset 2304, length 2368 hex chars.
+    return kemPrivHex.substring(2304, 2304 + 2368);
   }
 
   /// Verify the on-device ML-KEM keypair matches the backend's registered public key.
   /// Returns a diagnostic string describing the match. Call this to debug decrypt failures.
   static Future<String> verifyKemKeyMatch(String backendPubHex) async {
     final devPriv = await readKemPrivateKey();
-    final devPub = await readKemPublicKey();
+    var devPub = await readKemPublicKey();
+    final embeddedPub =
+        (devPriv != null && devPriv.isNotEmpty) ? publicKeyFromKemPrivate(devPriv) : null;
 
     final buf = StringBuffer();
     buf.writeln('=== ML-KEM Key Match Diagnostic ===');
@@ -175,13 +240,36 @@ class CryptoService {
       return buf.toString();
     }
 
-    buf.writeln('Device private key: ${devPriv.length} hex chars = ${devPriv.length ~/ 2} bytes');
+    buf.writeln(
+      'Device private key: ${devPriv.length} hex chars = ${devPriv.length ~/ 2} bytes',
+    );
     buf.writeln('  (ML-KEM-768 private key expected: 2400 bytes)');
 
+    if (embeddedPub != null) {
+      buf.writeln(
+        'Embedded pub from priv: ${embeddedPub.substring(0, 16)}…'
+        '${embeddedPub.substring(embeddedPub.length - 16)} '
+        '(${embeddedPub.length} hex)',
+      );
+      if (devPub == null || devPub.isEmpty) {
+        devPub = embeddedPub;
+        buf.writeln('  (using embedded pub — device kem_pub_key not stored)');
+      } else if (devPub.toLowerCase() != embeddedPub.toLowerCase()) {
+        buf.writeln(
+          'FAIL: stored kem_pub_key does NOT match pub embedded in private key. '
+          'Secure storage is corrupt — clear app data and re-onboard.',
+        );
+      }
+    }
+
     if (devPub != null && devPub.isNotEmpty) {
-      buf.writeln('Device public key:  ${devPub.length} hex chars = ${devPub.length ~/ 2} bytes');
+      buf.writeln(
+        'Device public key:  ${devPub.length} hex chars = ${devPub.length ~/ 2} bytes',
+      );
       final match = devPub.toLowerCase() == backendPubHex.toLowerCase();
-      buf.writeln('Backend public key: ${backendPubHex.length} hex chars = ${backendPubHex.length ~/ 2} bytes');
+      buf.writeln(
+        'Backend public key: ${backendPubHex.length} hex chars = ${backendPubHex.length ~/ 2} bytes',
+      );
       buf.writeln('MATCH: $match');
       if (!match) {
         buf.writeln('');
@@ -191,30 +279,36 @@ class CryptoService {
         buf.writeln('  - The app was reinstalled (secure storage wiped, new keys generated)');
         buf.writeln('  - A different holder onboarding was done on this device');
         buf.writeln('  - The backend registered keys from a different device/session');
+        buf.writeln('  - GENERATE_HOLDER_KEYS on the server overwrote holders.kem_public_key');
         buf.writeln('');
         buf.writeln('  Fix: Either re-onboard (generate new keys + re-issue credential),');
         buf.writeln('  or restore the original private key that matches the backend public key.');
         buf.writeln('');
-        buf.writeln('  Device pub (first 32 chars):  ${devPub.substring(0, devPub.length < 32 ? devPub.length : 32)}...');
-        buf.writeln('  Backend pub (first 32 chars): ${backendPubHex.substring(0, backendPubHex.length < 32 ? backendPubHex.length : 32)}...');
+        buf.writeln(
+          '  Device pub (first 32 chars):  ${devPub.substring(0, devPub.length < 32 ? devPub.length : 32)}...',
+        );
+        buf.writeln(
+          '  Backend pub (first 32 chars): ${backendPubHex.substring(0, backendPubHex.length < 32 ? backendPubHex.length : 32)}...',
+        );
       }
     } else {
-      buf.writeln('Device public key: NOT stored (only private key was saved)');
-      buf.writeln('  Cannot compare directly. Check if private key corresponds to backend pub.');
-      buf.writeln('  Backend pub (first 32 chars): ${backendPubHex.substring(0, backendPubHex.length < 32 ? backendPubHex.length : 32)}...');
+      buf.writeln('Device public key: NOT available');
+      buf.writeln(
+        '  Backend pub (first 32 chars): ${backendPubHex.substring(0, backendPubHex.length < 32 ? backendPubHex.length : 32)}...',
+      );
     }
 
     return buf.toString();
   }
 
   static Future<String?> readDsaPublicKey() async {
-    return _storage.read(key: dsaPubStorageKey);
+    return _secureRead(dsaPubStorageKey);
   }
 
   static Future<({String? kemPubHex, String? dsaPubHex})>
       readAllPublicKeys() async {
-    final kem = await _storage.read(key: kemPubStorageKey);
-    final dsa = await _storage.read(key: dsaPubStorageKey);
+    final kem = await readKemPublicKey();
+    final dsa = await readDsaPublicKey();
     return (kemPubHex: kem, dsaPubHex: dsa);
   }
 
@@ -225,11 +319,69 @@ class CryptoService {
 
   /// SHA3-256 hex digest of [data] (UTF-8).
   static String sha3Hex(String data) {
-    return hexEncode(_Sha3Digest.hash(utf8.encode(data)));
+    return hexEncode(_sha3_256(utf8.encode(data)));
   }
 
-  /// ML-DSA-44 sign of the raw hash bytes. Private key never leaves the phone.
-  /// [payloadHashHex] is the SHA3-256 hex of the canonical disclosed payload.
+  static Uint8List _sha3_256(List<int> message) {
+    final d = SHA3Digest(256);
+    return d.process(Uint8List.fromList(message));
+  }
+
+  /// Metadata keys the wallet UI shows, but which are NOT in on-chain FieldHashes.
+  /// resolveSession hashes only body attributes sealed at issuance (`req.Info`).
+  /// Including these in disclosedFields makes fieldHashesValid fail every time.
+  static const presentationMetadataKeys = <String>{
+    'credentialType',
+    'credentialID',
+    'status',
+    'issuedBy',
+    'holderEID',
+    'holderName',
+    'issuedAt',
+    'expiryDate',
+    'issuer',
+    'holderId',
+    'holderID',
+  };
+
+  /// Body attributes only — keys that can match on-chain FieldHashes.
+  /// Drops UI metadata and normalizes values for Go `fmt.Sprintf("%v", …)`.
+  static Map<String, dynamic> bodyDisclosedFields(
+    Map<String, dynamic> attributes, {
+    Set<String> hiddenKeys = const {},
+  }) {
+    final out = <String, dynamic>{};
+    attributes.forEach((k, v) {
+      if (k.isEmpty) return;
+      if (presentationMetadataKeys.contains(k)) return;
+      if (hiddenKeys.contains(k)) return;
+      out[k] = _normalizeFieldValue(v);
+    });
+    return out;
+  }
+
+  /// Match Go `fmt.Sprintf("%v", v)` for common JSON scalars so
+  /// SHA3-256(field + ":" + value) equals issuance FieldHashes.
+  static dynamic _normalizeFieldValue(dynamic v) {
+    if (v == null) return '';
+    if (v is bool || v is String) return v;
+    if (v is int) return v;
+    if (v is double) {
+      // Go %v for whole numbers prints without trailing .0
+      if (v == v.roundToDouble() && !v.isNaN && !v.isInfinite) {
+        return v.toInt();
+      }
+      return v;
+    }
+    if (v is num) return v;
+    // Nested maps/lists: keep structure; hash path stringifies via Go %v rarely
+    // used for nested attrs in current issuers (flat fields).
+    return v;
+  }
+
+  /// ML-DSA-44 sign. Matches Go `pqcSign`/`pqcVerify`: message is the
+  /// **UTF-8 bytes of the SHA3-256 hex string** (not the raw 32-byte digest).
+  /// Same convention as issuer signatures over CredentialHash hex.
   static String signPayload(String payloadHashHex, String dsaPrivHex) {
     init();
     if (!Signature.isSupported(dsaAlgorithm)) {
@@ -237,15 +389,23 @@ class CryptoService {
     }
     final sig = Signature.create(dsaAlgorithm);
     try {
-      final signature = sig.sign(hexDecode(payloadHashHex), hexDecode(dsaPrivHex));
+      final message = Uint8List.fromList(utf8.encode(payloadHashHex));
+      final signature = sig.sign(message, hexDecode(dsaPrivHex));
       return hexEncode(signature);
     } finally {
       sig.dispose();
     }
   }
 
-  /// Build disclosed payload, hash, and sign. Returns the JSON string to send
-  /// as `disclosedPayload` plus the hex `holderSignature`.
+  /// Build disclosed payload, hash, and sign for Track H presentation.
+  ///
+  /// Wire shape matches resolveSession:
+  /// ```json
+  /// { "credentialID", "disclosedFields": { body… }, "timestamp" }
+  /// ```
+  /// Backend verifies:
+  /// - holderSig = ML-DSA over SHA3-256(this JSON string) as hex UTF-8
+  /// - each disclosedFields[k] vs on-chain FieldHashes[k]
   static Future<({String disclosedPayloadJson, String holderSignatureHex})>
       buildSignedDisclosedPayload({
     required String credentialID,
@@ -256,14 +416,31 @@ class CryptoService {
       throw StateError('ML-DSA private key not found on this device');
     }
 
+    // Strip metadata if a caller still passed mixed maps.
+    final bodyOnly = <String, dynamic>{};
+    disclosedFields.forEach((k, v) {
+      if (presentationMetadataKeys.contains(k)) return;
+      bodyOnly[k] = _normalizeFieldValue(v);
+    });
+    if (bodyOnly.isEmpty) {
+      throw StateError(
+        'No body attributes to disclose. Decrypt the credential first, '
+        'then share at least one field that was hashed at issuance.',
+      );
+    }
+
     final disclosedPayload = <String, dynamic>{
       'credentialID': credentialID,
-      'disclosedFields': disclosedFields,
+      'disclosedFields': bodyOnly,
       'timestamp': DateTime.now().toIso8601String(),
     };
     final payloadJson = canonicalJsonEncode(disclosedPayload);
     final payloadHash = sha3Hex(payloadJson);
     final holderSignatureHex = signPayload(payloadHash, dsaPrivHex);
+    logDebug(
+      '[presentation] signed body fields=${bodyOnly.keys.toList()} '
+      'hash0=${payloadHash.substring(0, 16)}…',
+    );
     return (
       disclosedPayloadJson: payloadJson,
       holderSignatureHex: holderSignatureHex,
@@ -331,53 +508,79 @@ class CryptoService {
     return body;
   }
 
-  /// Decrypt a Track B/H envelope locally. Plaintext stays in memory only.
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Track B/H envelope decrypt — 1:1 mirror of offchain/envelope.go openAttributes
+  // and offchain/kem.go {deriveKey, unwrapKey, aesOpen}.
+  //
+  // Backend seal (encrypt) does:
+  //   kemCt, ss = ML-KEM-768.Encap(holderPub)
+  //   for each field:
+  //     dataKey = random 32B
+  //     nonce, ct = AES-256-GCM.Seal(dataKey, randomNonce12, fieldJSON, aad=nil)
+  //                 → ct already includes the 16B tag
+  //     kwk = HKDF-SHA3-256(ikm=ss, salt=nil→32×0x00, info="qchain/trackB/v1|<credId>|<key>", L=32)
+  //     wrap = AES-256-GCM.Seal(kwk, nonce=12×0x00, dataKey, aad=nil)  // 48B = 32+16
+  //
+  // Backend open (decrypt) does the inverse — this file implements that inverse.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Decrypt a Track B/H envelope locally. Mirrors Go `openAttributes(env, "holder", sk)`.
   static Map<String, dynamic> decryptEnvelope(
     Map<String, dynamic> envelope,
     String kemPrivHex,
   ) {
     init();
 
+    // ── 1. Find holder kemCt  (Go: env.Wraps where Recipient == "holder") ──
     final wraps = envelope['wraps'];
     if (wraps is! List) {
       throw StateError('envelope missing wraps');
     }
-
-    Map? holderWrap;
+    String? kemCtHex;
     for (final w in wraps) {
-      if (w is Map && w['recipient'] == 'holder') {
-        holderWrap = w;
+      if (w is Map && w['recipient']?.toString() == 'holder') {
+        kemCtHex = w['kemCt']?.toString();
         break;
       }
     }
-    if (holderWrap == null) {
-      throw StateError('no holder wrap in envelope');
+    // Fallback: legacy "holder:<id>" recipient if plain "holder" absent.
+    if (kemCtHex == null || kemCtHex.isEmpty) {
+      for (final w in wraps) {
+        if (w is Map) {
+          final r = w['recipient']?.toString() ?? '';
+          if (r.startsWith('holder')) {
+            kemCtHex = w['kemCt']?.toString();
+            break;
+          }
+        }
+      }
+    }
+    if (kemCtHex == null || kemCtHex.isEmpty) {
+      throw StateError('envelope has no holder kemCt');
     }
 
-    final kemCtHex = holderWrap['kemCt']?.toString() ?? '';
-    if (kemCtHex.isEmpty) {
-      throw StateError('missing holder kemCt');
+    // ── 2. kemDecap  (Go: kemDecap(kemCt, sec) → ss) ──
+    final kemPrivBytes = hexDecode(kemPrivHex);
+    if (kemPrivBytes.length != 2400) {
+      throw StateError(
+        'ML-KEM-768 private key is ${kemPrivBytes.length} bytes, expected 2400',
+      );
     }
-
     final kem = KEM.create(kemAlgorithm);
     late final Uint8List ss;
     try {
-      // CRITICAL: ML-KEM-768 private key must be exactly 2400 bytes (4800 hex).
-      // A truncated key will "succeed" in decapsulation but produce a wrong
-      // shared secret, causing AES-GCM failures downstream.
-      final kemPrivBytes = hexDecode(kemPrivHex);
-      if (kemPrivBytes.length != 2400) {
-        throw StateError(
-          'ML-KEM-768 private key is ${kemPrivBytes.length} bytes, '
-          'expected 2400. The key was truncated in secure storage.',
-        );
-      }
       ss = kem.decapsulate(hexDecode(kemCtHex), kemPrivBytes);
     } finally {
       kem.dispose();
     }
-    logDebug('[decryptEnvelope] KEM decapsulation succeeded, ss=${hexEncode(ss.sublist(0, 8))}... (${ss.length} bytes)');
+    if (ss.length != 32) {
+      throw StateError('KEM shared secret is ${ss.length} bytes, expected 32');
+    }
+    logDebug(
+      '[decryptEnvelope] kemDecap ok ss=${hexEncode(ss.sublist(0, 8))}…',
+    );
 
+    // ── 3. Per-field open  (Go: deriveKey → unwrapKey → aesOpen) ──
     final credId = envelope['credId']?.toString() ?? '';
     final fields = envelope['fields'];
     if (fields is! List) {
@@ -390,24 +593,35 @@ class CryptoService {
       final key = field['key']?.toString();
       if (key == null || key.isEmpty) continue;
 
+      // wrap.holder hex  (Go: f.Wrap["holder"])
       final wrapMap = field['wrap'];
-      if (wrapMap is! Map || wrapMap['holder'] == null) {
-        throw StateError('field $key missing holder wrap');
+      if (wrapMap is! Map) {
+        throw StateError('field "$key" missing wrap map');
+      }
+      final wrapHex = (wrapMap['holder'] ?? wrapMap['org'])?.toString() ?? '';
+      if (wrapHex.isEmpty) {
+        throw StateError('field "$key" missing holder/org wrap');
       }
 
-      final kwk = hkdfSha3(ss, '$hkdfInfoPrefix|$credId|$key');
-      final fieldNonce = hexDecode(field['nonce']?.toString() ?? '');
-      logDebug('[decryptEnvelope] field="$key" credId=$credId KWK=${hexEncode(kwk.sublist(0, 8))}... wrap=${wrapMap['holder'].toString().substring(0, 16)}... (${wrapMap['holder'].toString().length ~/ 2}B)');
-      final dataKey = aesGcmUnwrap(kwk, hexDecode(wrapMap['holder'].toString()));
-      final plaintext = aesGcmDecrypt(
-        dataKey,
-        fieldNonce,
-        hexDecode(field['ct']?.toString() ?? ''),
-      );
+      // deriveKey: info = "qchain/trackB/v1|<credId>|<key>"
+      final info = '$hkdfInfoPrefix|$credId|$key';
+      final kwk = deriveKey(ss, info); // 32 bytes
+
+      // unwrapKey: AES-GCM open with fixed zero nonce
+      final dataKey = unwrapKey(kwk, hexDecode(wrapHex)); // 32 bytes
+
+      // aesOpen: AES-GCM open with field.nonce, field.ct (ct already has tag)
+      final nonce = hexDecode(field['nonce']?.toString() ?? '');
+      final ct = hexDecode(field['ct']?.toString() ?? '');
+      final plaintext = aesOpen(dataKey, nonce, ct);
+
       out[key] = _decodeFieldPlaintext(plaintext);
+      logDebug('[decryptEnvelope] field "$key" ok (${plaintext.length}B)');
     }
     return out;
   }
+
+  // ── hex helpers ──────────────────────────────────────────────────────────
 
   static String hexEncode(List<int> bytes) {
     final out = StringBuffer();
@@ -430,42 +644,172 @@ class CryptoService {
     return out;
   }
 
-  /// HKDF-SHA3-256 (Extract+Expand). Salt = empty (32 zero bytes) when omitted.
-  static Uint8List hkdfSha3(Uint8List ikm, String info, {int length = aesKeyLen}) {
-    final salt = Uint8List(32);
-    final prk = _hmacSha3(salt, ikm);
-    final infoBytes = utf8.encode(info);
-    final hashLen = 32;
-    final n = (length + hashLen - 1) ~/ hashLen;
-    final okm = BytesBuilder(copy: false);
-    var prev = Uint8List(0);
-    for (var i = 1; i <= n; i++) {
-      final input = BytesBuilder(copy: false)
-        ..add(prev)
-        ..add(infoBytes)
-        ..addByte(i);
-      prev = _hmacSha3(prk, input.toBytes());
-      okm.add(prev);
+  // ── primitives matching offchain/kem.go ──────────────────────────────────
+
+  /// Go `deriveKey(ss, info)` — HKDF-SHA3-256, salt=nil → 32 zero bytes, L=32.
+  /// RFC 5869 Extract+Expand. HMAC block size for SHA3-256 = rate = 136.
+  static Uint8List deriveKey(Uint8List ss, String info, {int length = aesKeyLen}) {
+    final infoBytes = Uint8List.fromList(utf8.encode(info));
+    // Extract: PRK = HMAC-SHA3-256(salt=32×0x00, ikm=ss)
+    final prk = _hmacSha3_256(Uint8List(32), ss);
+    // Expand: T(1) = HMAC(PRK, info || 0x01); OKM = T(1)[0..L)
+    final out = Uint8List(length);
+    var t = Uint8List(0);
+    var offset = 0;
+    var counter = 1;
+    while (offset < length) {
+      final msg = Uint8List(t.length + infoBytes.length + 1);
+      msg.setAll(0, t);
+      msg.setAll(t.length, infoBytes);
+      msg[msg.length - 1] = counter;
+      t = _hmacSha3_256(prk, msg);
+      var n = length - offset;
+      if (n > t.length) n = t.length;
+      out.setRange(offset, offset + n, t.sublist(0, n));
+      offset += n;
+      counter++;
     }
-    return Uint8List.fromList(okm.toBytes().sublist(0, length));
+    return out;
   }
 
-  /// Unwrap AES data key. Matches backend wrapKey in offchain/kem.go:
-  /// AES-256-GCM with a fixed 12-byte ZERO nonce (Option A).
-  /// Layout of [wrapped]: ciphertext(32) || tag(16) = 48 bytes total.
-  /// The nonce is NOT embedded in [wrapped] and is NOT the field nonce.
-  static Uint8List aesGcmUnwrap(Uint8List key, Uint8List wrapped) {
+  /// Alias kept for older call sites / tests.
+  static Uint8List hkdfSha3(Uint8List ikm, String info, {int length = aesKeyLen}) =>
+      deriveKey(ikm, info, length: length);
+
+  /// HMAC-SHA3-256. Block length = SHA3-256 rate = 136 (NOT 64).
+  static Uint8List _hmacSha3_256(Uint8List key, Uint8List data) {
+    const blockLen = 136;
+    final mac = HMac(SHA3Digest(256), blockLen)..init(KeyParameter(key));
+    mac.update(data, 0, data.length);
+    final out = Uint8List(mac.macSize);
+    mac.doFinal(out, 0);
+    return out;
+  }
+
+  /// Go `unwrapKey(kwk, wrap)` — AES-256-GCM open with fixed 12-byte zero nonce.
+  /// [wrapped] layout = ciphertext || tag (Go cipher.AEAD.Seal appends tag).
+  static Uint8List unwrapKey(Uint8List kwk, Uint8List wrapped) {
+    if (kwk.length != 32) {
+      throw StateError('kwk must be 32 bytes, got ${kwk.length}');
+    }
     if (wrapped.length < gcmTagLen) {
-      throw StateError('wrapped key too short');
+      throw StateError('wrap too short: ${wrapped.length}');
     }
-    final nonce = Uint8List(gcmNonceLen); // fixed zero nonce
-    final ct = wrapped; // ciphertext(keyLen) || tag(16)
-    return aesGcmDecrypt(key, nonce, ct);
+    return _aes256GcmOpen(kwk, Uint8List(gcmNonceLen), wrapped);
   }
 
-  /// AES-256-GCM decrypt. [ct] is ciphertext || tag(16).
-  static Uint8List aesGcmDecrypt(Uint8List key, Uint8List nonce, Uint8List ct) {
-    return _Aes256Gcm.decrypt(key, nonce, ct);
+  /// Alias kept for older call sites / tests.
+  static Uint8List aesGcmUnwrap(Uint8List key, Uint8List wrapped) =>
+      unwrapKey(key, wrapped);
+
+  /// Go `aesOpen(key, nonce, ct)` — AES-256-GCM open, AAD=nil.
+  /// [ct] layout = ciphertext || tag.
+  static Uint8List aesOpen(Uint8List key, Uint8List nonce, Uint8List ct) {
+    if (key.length != 32) {
+      throw StateError('AES key must be 32 bytes, got ${key.length}');
+    }
+    if (nonce.length != gcmNonceLen) {
+      throw StateError('nonce must be $gcmNonceLen bytes, got ${nonce.length}');
+    }
+    if (ct.length < gcmTagLen) {
+      throw StateError('ct too short: ${ct.length}');
+    }
+    return _aes256GcmOpen(key, nonce, ct);
+  }
+
+  /// Alias kept for older call sites / tests.
+  static Uint8List aesGcmDecrypt(Uint8List key, Uint8List nonce, Uint8List ct) =>
+      aesOpen(key, nonce, ct);
+
+  /// AES-256-GCM open via PointyCastle. Input is ciphertext||tag; AAD empty.
+  static Uint8List _aes256GcmOpen(
+    Uint8List key,
+    Uint8List nonce,
+    Uint8List ctAndTag,
+  ) {
+    try {
+      final cipher = GCMBlockCipher(AESEngine())
+        ..init(
+          false, // decrypt
+          AEADParameters(KeyParameter(key), gcmTagLen * 8, nonce, Uint8List(0)),
+        );
+      return cipher.process(ctAndTag);
+    } on InvalidCipherTextException catch (e) {
+      throw StateError('AES-GCM authentication failed: $e');
+    }
+  }
+
+  /// AES-256-GCM seal (for self-tests / round-trip only).
+  static Uint8List _aes256GcmSeal(
+    Uint8List key,
+    Uint8List nonce,
+    Uint8List plain,
+  ) {
+    final cipher = GCMBlockCipher(AESEngine())
+      ..init(
+        true, // encrypt
+        AEADParameters(KeyParameter(key), gcmTagLen * 8, nonce, Uint8List(0)),
+      );
+    return cipher.process(plain); // ct || tag
+  }
+
+  /// Self-test against NIST CAVP + Go KA vectors. Safe to call anytime.
+  static void selfTestSymmetricCrypto() {
+    // SHA3-256("")
+    const sha3Empty =
+        'a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a';
+    if (sha3Hex('') != sha3Empty) {
+      throw StateError('SHA3-256 empty mismatch: ${sha3Hex('')}');
+    }
+
+    // AES-256-GCM empty PT (NIST gcmEncryptExtIV256 Count 0)
+    final k0 = Uint8List(32);
+    final n0 = Uint8List(12);
+    final emptyTag = _aes256GcmSeal(k0, n0, Uint8List(0));
+    const wantEmpty = '530f8afbc74536b9a963b4f1c4cb738b';
+    if (hexEncode(emptyTag) != wantEmpty) {
+      throw StateError(
+        'AES-GCM empty-PT tag mismatch: got ${hexEncode(emptyTag)} want $wantEmpty',
+      );
+    }
+    if (aesOpen(k0, n0, emptyTag).isNotEmpty) {
+      throw StateError('AES-GCM empty-PT decrypt produced non-empty PT');
+    }
+
+    // AES-256-GCM one-block zero PT (NIST Count 1)
+    final one = _aes256GcmSeal(k0, n0, Uint8List(16));
+    const wantOne =
+        'cea7403d4d606b6e074ec5d3baf39d18d0d1c8a799996bf0265b98b5d48ab919';
+    if (hexEncode(one) != wantOne) {
+      throw StateError(
+        'AES-GCM one-block mismatch: got ${hexEncode(one)} want $wantOne',
+      );
+    }
+
+    // Key-wrap round-trip (zero nonce, 32B data key) — Go wrapKey/unwrapKey shape
+    final kwk = Uint8List.fromList(List<int>.generate(32, (i) => i));
+    final dataKey = Uint8List.fromList(List<int>.filled(32, 0xaa));
+    final wrap = _aes256GcmSeal(kwk, Uint8List(12), dataKey);
+    if (wrap.length != 48) {
+      throw StateError('wrap length ${wrap.length}, expected 48');
+    }
+    final opened = unwrapKey(kwk, wrap);
+    for (var i = 0; i < 32; i++) {
+      if (opened[i] != dataKey[i]) {
+        throw StateError('unwrapKey round-trip failed at byte $i');
+      }
+    }
+
+    // HKDF KA — must match Go: hkdf.New(sha3.New256, 32×0x42, nil, info)
+    final ikm = Uint8List.fromList(List<int>.filled(32, 0x42));
+    final kwk2 = deriveKey(ikm, 'qchain/trackB/v1|test|field');
+    const wantKwk =
+        'ba4b764a81ad432c9f3faa58684bb6b7e1e79d75fe295e55591adb834c728ff7';
+    if (hexEncode(kwk2) != wantKwk) {
+      throw StateError(
+        'HKDF-SHA3 KA mismatch: got ${hexEncode(kwk2)} want $wantKwk',
+      );
+    }
   }
 
   static dynamic _decodeFieldPlaintext(Uint8List bytes) {
@@ -476,469 +820,4 @@ class CryptoService {
       return s;
     }
   }
-
-  static Uint8List _hmacSha3(Uint8List key, List<int> data) {
-    const block = 136; // SHA3-256 rate
-    var k = key;
-    if (k.length > block) {
-      k = _Sha3Digest.hash(k);
-    }
-    if (k.length < block) {
-      final padded = Uint8List(block);
-      padded.setAll(0, k);
-      k = padded;
-    }
-    final oKey = Uint8List(block);
-    final iKey = Uint8List(block);
-    for (var i = 0; i < block; i++) {
-      oKey[i] = k[i] ^ 0x5c;
-      iKey[i] = k[i] ^ 0x36;
-    }
-    final inner = BytesBuilder(copy: false)
-      ..add(iKey)
-      ..add(data);
-    final outer = BytesBuilder(copy: false)
-      ..add(oKey)
-      ..add(_Sha3Digest.hash(inner.toBytes()));
-    return _Sha3Digest.hash(outer.toBytes());
-  }
-}
-
-// ─── SHA3-256 (Keccak) ────────────────────────────────────────────────────────
-
-class _Sha3Digest {
-  static Uint8List hash(List<int> message) {
-    final state = List<int>.filled(25, 0);
-    final rate = 136;
-    final buf = Uint8List(rate);
-    var bufPos = 0;
-
-    void absorbBlock() {
-      for (var i = 0; i < rate; i += 8) {
-        final lane = i ~/ 8;
-        state[lane] ^=
-            (buf[i] & 0xff) |
-            ((buf[i + 1] & 0xff) << 8) |
-            ((buf[i + 2] & 0xff) << 16) |
-            ((buf[i + 3] & 0xff) << 24) |
-            ((buf[i + 4] & 0xff) << 32) |
-            ((buf[i + 5] & 0xff) << 40) |
-            ((buf[i + 6] & 0xff) << 48) |
-            ((buf[i + 7] & 0xff) << 56);
-      }
-      _keccakF1600(state);
-    }
-
-    for (final b in message) {
-      buf[bufPos++] = b & 0xff;
-      if (bufPos == rate) {
-        absorbBlock();
-        bufPos = 0;
-      }
-    }
-
-    // SHA3 padding: domain 0x06, then 10*1
-    buf[bufPos++] = 0x06;
-    while (bufPos < rate) {
-      buf[bufPos++] = 0x00;
-    }
-    buf[rate - 1] |= 0x80;
-    absorbBlock();
-
-    final out = Uint8List(32);
-    for (var i = 0; i < 32; i += 8) {
-      final v = state[i ~/ 8];
-      out[i] = v & 0xff;
-      out[i + 1] = (v >> 8) & 0xff;
-      out[i + 2] = (v >> 16) & 0xff;
-      out[i + 3] = (v >> 24) & 0xff;
-      out[i + 4] = (v >> 32) & 0xff;
-      out[i + 5] = (v >> 40) & 0xff;
-      out[i + 6] = (v >> 48) & 0xff;
-      out[i + 7] = (v >> 56) & 0xff;
-    }
-    return out;
-  }
-}
-
-void _keccakF1600(List<int> st) {
-  const rc = <int>[
-    0x0000000000000001,
-    0x0000000000008082,
-    0x800000000000808a,
-    0x8000000080008000,
-    0x000000000000808b,
-    0x0000000080000001,
-    0x8000000080008081,
-    0x8000000000008009,
-    0x000000000000008a,
-    0x0000000000000088,
-    0x0000000080008009,
-    0x000000008000000a,
-    0x000000008000808b,
-    0x800000000000008b,
-    0x8000000000008089,
-    0x8000000000008003,
-    0x8000000000008002,
-    0x8000000000000080,
-    0x000000000000800a,
-    0x800000008000000a,
-    0x8000000080008081,
-    0x8000000000008080,
-    0x0000000080000001,
-    0x8000000080008008,
-  ];
-  const rotc = <int>[
-    1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14,
-    27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44,
-  ];
-  const piln = <int>[
-    10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4,
-    15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1,
-  ];
-
-  const mask64 = 0xFFFFFFFFFFFFFFFF;
-  int rotl64(int x, int n) {
-    x &= mask64;
-    return ((x << n) | (x >> (64 - n))) & mask64;
-  }
-
-  for (var round = 0; round < 24; round++) {
-    final bc = List<int>.filled(5, 0);
-    for (var i = 0; i < 5; i++) {
-      bc[i] =
-          (st[i] ^ st[i + 5] ^ st[i + 10] ^ st[i + 15] ^ st[i + 20]) & mask64;
-    }
-    for (var i = 0; i < 5; i++) {
-      final t = (bc[(i + 4) % 5] ^ rotl64(bc[(i + 1) % 5], 1)) & mask64;
-      for (var j = 0; j < 25; j += 5) {
-        st[j + i] = (st[j + i] ^ t) & mask64;
-      }
-    }
-
-    var t = st[1];
-    for (var i = 0; i < 24; i++) {
-      final j = piln[i];
-      final tmp = st[j];
-      st[j] = rotl64(t, rotc[i]);
-      t = tmp;
-    }
-
-    for (var j = 0; j < 25; j += 5) {
-      final a0 = st[j];
-      final a1 = st[j + 1];
-      final a2 = st[j + 2];
-      final a3 = st[j + 3];
-      final a4 = st[j + 4];
-      // chi: x ^ ((~y) & z) with 64-bit complement
-      st[j] = (a0 ^ ((a1 ^ mask64) & a2)) & mask64;
-      st[j + 1] = (a1 ^ ((a2 ^ mask64) & a3)) & mask64;
-      st[j + 2] = (a2 ^ ((a3 ^ mask64) & a4)) & mask64;
-      st[j + 3] = (a3 ^ ((a4 ^ mask64) & a0)) & mask64;
-      st[j + 4] = (a4 ^ ((a0 ^ mask64) & a1)) & mask64;
-    }
-
-    st[0] = (st[0] ^ rc[round]) & mask64;
-  }
-}
-
-// ─── AES-256-GCM ──────────────────────────────────────────────────────────────
-
-class _Aes256Gcm {
-  static const _tagLen = 16;
-
-  static Uint8List decrypt(Uint8List key, Uint8List nonce, Uint8List ctAndTag) {
-    if (key.length != 32) {
-      throw StateError('AES-256 key must be 32 bytes');
-    }
-    if (nonce.isEmpty) {
-      throw StateError('nonce required');
-    }
-    if (ctAndTag.length < _tagLen) {
-      throw StateError('ciphertext too short');
-    }
-
-    final ct = ctAndTag.sublist(0, ctAndTag.length - _tagLen);
-    final tag = ctAndTag.sublist(ctAndTag.length - _tagLen);
-    final aes = _Aes256(key);
-    final h = aes.encryptBlock(Uint8List(16));
-    final j0 = _computeJ0(nonce, h);
-    final plain = _gctr(aes, _inc32(j0), ct);
-    final s = _ghash(h, Uint8List(0), ct);
-    final expected = _xor16(aes.encryptBlock(j0), s);
-    if (!_constEq(expected, tag)) {
-      throw StateError('AES-GCM authentication failed');
-    }
-    return plain;
-  }
-
-  static Uint8List _computeJ0(Uint8List nonce, Uint8List h) {
-    if (nonce.length == 12) {
-      final j0 = Uint8List(16);
-      j0.setRange(0, 12, nonce);
-      j0[15] = 1;
-      return j0;
-    }
-    return _ghash(h, nonce, Uint8List(0));
-  }
-
-  static Uint8List _inc32(Uint8List counter) {
-    final out = Uint8List.fromList(counter);
-    for (var i = 15; i >= 12; i--) {
-      final v = (out[i] + 1) & 0xff;
-      out[i] = v;
-      if (v != 0) break;
-    }
-    return out;
-  }
-
-  static Uint8List _gctr(_Aes256 aes, Uint8List icb, Uint8List data) {
-    if (data.isEmpty) return Uint8List(0);
-    final out = Uint8List(data.length);
-    var cb = Uint8List.fromList(icb);
-    var offset = 0;
-    while (offset < data.length) {
-      final block = aes.encryptBlock(cb);
-      final n = (data.length - offset).clamp(0, 16);
-      for (var i = 0; i < n; i++) {
-        out[offset + i] = data[offset + i] ^ block[i];
-      }
-      offset += n;
-      cb = _inc32(cb);
-    }
-    return out;
-  }
-
-  static Uint8List _ghash(Uint8List h, List<int> aad, List<int> ct) {
-    var y = Uint8List(16);
-    void absorb(List<int> data) {
-      var i = 0;
-      while (i + 16 <= data.length) {
-        for (var j = 0; j < 16; j++) {
-          y[j] ^= data[i + j] & 0xff;
-        }
-        y = _gfMul(y, h);
-        i += 16;
-      }
-      if (i < data.length) {
-        final last = Uint8List(16);
-        for (var j = 0; i + j < data.length; j++) {
-          last[j] = data[i + j] & 0xff;
-        }
-        for (var j = 0; j < 16; j++) {
-          y[j] ^= last[j];
-        }
-        y = _gfMul(y, h);
-      }
-    }
-
-    absorb(aad);
-    absorb(ct);
-
-    final lenBlock = Uint8List(16);
-    final aadBits = aad.length * 8;
-    final ctBits = ct.length * 8;
-    _writeU64BE(lenBlock, 0, aadBits);
-    _writeU64BE(lenBlock, 8, ctBits);
-    for (var j = 0; j < 16; j++) {
-      y[j] ^= lenBlock[j];
-    }
-    return _gfMul(y, h);
-  }
-
-  static Uint8List _gfMul(Uint8List x, Uint8List y) {
-    var v = List<int>.from(y);
-    var z = List<int>.filled(16, 0);
-    for (var i = 0; i < 128; i++) {
-      final bit = (x[i ~/ 8] >> (7 - (i % 8))) & 1;
-      if (bit == 1) {
-        for (var j = 0; j < 16; j++) {
-          z[j] ^= v[j];
-        }
-      }
-      final lsb = v[15] & 1;
-      for (var j = 15; j > 0; j--) {
-        v[j] = ((v[j] >> 1) | ((v[j - 1] & 1) << 7)) & 0xff;
-      }
-      v[0] = (v[0] >> 1) & 0xff;
-      if (lsb != 0) {
-        v[0] ^= 0xe1;
-      }
-    }
-    return Uint8List.fromList(z);
-  }
-
-  static Uint8List _xor16(Uint8List a, Uint8List b) {
-    final out = Uint8List(16);
-    for (var i = 0; i < 16; i++) {
-      out[i] = a[i] ^ b[i];
-    }
-    return out;
-  }
-
-  static bool _constEq(Uint8List a, Uint8List b) {
-    if (a.length != b.length) return false;
-    var diff = 0;
-    for (var i = 0; i < a.length; i++) {
-      diff |= a[i] ^ b[i];
-    }
-    return diff == 0;
-  }
-
-  static void _writeU64BE(Uint8List out, int offset, int value) {
-    // lengths used for GCM len block fit in 32 bits for our field sizes
-    out[offset] = 0;
-    out[offset + 1] = 0;
-    out[offset + 2] = 0;
-    out[offset + 3] = 0;
-    out[offset + 4] = (value >> 24) & 0xff;
-    out[offset + 5] = (value >> 16) & 0xff;
-    out[offset + 6] = (value >> 8) & 0xff;
-    out[offset + 7] = value & 0xff;
-  }
-}
-
-class _Aes256 {
-  // 15 round keys as 16-byte blocks (AES-256 = 14 rounds + initial)
-  final List<Uint8List> _roundKeys;
-
-  _Aes256(Uint8List key) : _roundKeys = _expandKey(key);
-
-  Uint8List encryptBlock(Uint8List input) {
-    final s = Uint8List.fromList(input);
-    _addRoundKey(s, _roundKeys[0]);
-    for (var round = 1; round < 14; round++) {
-      _subBytes(s);
-      _shiftRows(s);
-      _mixColumns(s);
-      _addRoundKey(s, _roundKeys[round]);
-    }
-    _subBytes(s);
-    _shiftRows(s);
-    _addRoundKey(s, _roundKeys[14]);
-    return s;
-  }
-
-  static List<Uint8List> _expandKey(Uint8List key) {
-    final w = List<int>.filled(60, 0);
-    for (var i = 0; i < 8; i++) {
-      w[i] = _u32(key, i * 4);
-    }
-    for (var i = 8; i < 60; i++) {
-      var temp = w[i - 1];
-      if (i % 8 == 0) {
-        temp = _subWord(_rotWord(temp)) ^ (_rcon[i ~/ 8] << 24);
-      } else if (i % 8 == 4) {
-        temp = _subWord(temp);
-      }
-      w[i] = (w[i - 8] ^ temp) & 0xffffffff;
-    }
-    final keys = <Uint8List>[];
-    for (var r = 0; r < 15; r++) {
-      final block = Uint8List(16);
-      for (var c = 0; c < 4; c++) {
-        _putU32(block, c * 4, w[r * 4 + c]);
-      }
-      keys.add(block);
-    }
-    return keys;
-  }
-
-  static void _addRoundKey(Uint8List s, Uint8List rk) {
-    for (var i = 0; i < 16; i++) {
-      s[i] ^= rk[i];
-    }
-  }
-
-  static void _subBytes(Uint8List s) {
-    for (var i = 0; i < 16; i++) {
-      s[i] = _sbox[s[i]];
-    }
-  }
-
-  static void _shiftRows(Uint8List s) {
-    // row 1
-    final t1 = s[1];
-    s[1] = s[5];
-    s[5] = s[9];
-    s[9] = s[13];
-    s[13] = t1;
-    // row 2
-    final t2a = s[2];
-    final t2b = s[6];
-    s[2] = s[10];
-    s[6] = s[14];
-    s[10] = t2a;
-    s[14] = t2b;
-    // row 3
-    final t3 = s[15];
-    s[15] = s[11];
-    s[11] = s[7];
-    s[7] = s[3];
-    s[3] = t3;
-  }
-
-  static void _mixColumns(Uint8List s) {
-    for (var c = 0; c < 4; c++) {
-      final i = c * 4;
-      final a0 = s[i];
-      final a1 = s[i + 1];
-      final a2 = s[i + 2];
-      final a3 = s[i + 3];
-      s[i] = _xtime(a0) ^ _xtime(a1) ^ a1 ^ a2 ^ a3;
-      s[i + 1] = a0 ^ _xtime(a1) ^ _xtime(a2) ^ a2 ^ a3;
-      s[i + 2] = a0 ^ a1 ^ _xtime(a2) ^ _xtime(a3) ^ a3;
-      s[i + 3] = _xtime(a0) ^ a0 ^ a1 ^ a2 ^ _xtime(a3);
-    }
-  }
-
-  static int _u32(Uint8List b, int o) =>
-      ((b[o] & 0xff) << 24) |
-      ((b[o + 1] & 0xff) << 16) |
-      ((b[o + 2] & 0xff) << 8) |
-      (b[o + 3] & 0xff);
-
-  static void _putU32(Uint8List b, int o, int v) {
-    b[o] = (v >> 24) & 0xff;
-    b[o + 1] = (v >> 16) & 0xff;
-    b[o + 2] = (v >> 8) & 0xff;
-    b[o + 3] = v & 0xff;
-  }
-
-  static int _rotWord(int w) =>
-      (((w << 8) & 0xffffffff) | ((w >> 24) & 0xff)) & 0xffffffff;
-
-  static int _subWord(int w) =>
-      (_sbox[(w >> 24) & 0xff] << 24) |
-      (_sbox[(w >> 16) & 0xff] << 16) |
-      (_sbox[(w >> 8) & 0xff] << 8) |
-      _sbox[w & 0xff];
-
-  static int _xtime(int a) {
-    a &= 0xff;
-    return ((a << 1) ^ (((a >> 7) & 1) * 0x1b)) & 0xff;
-  }
-
-  static const _rcon = <int>[
-    0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36,
-  ];
-
-  static const _sbox = <int>[
-    0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
-    0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
-    0xb7, 0xfd, 0x93, 0x26, 0x36, 0x3f, 0xf7, 0xcc, 0x34, 0xa5, 0xe5, 0xf1, 0x71, 0xd8, 0x31, 0x15,
-    0x04, 0xc7, 0x23, 0xc3, 0x18, 0x96, 0x05, 0x9a, 0x07, 0x12, 0x80, 0xe2, 0xeb, 0x27, 0xb2, 0x75,
-    0x09, 0x83, 0x2c, 0x1a, 0x1b, 0x6e, 0x5a, 0xa0, 0x52, 0x3b, 0xd6, 0xb3, 0x29, 0xe3, 0x2f, 0x84,
-    0x53, 0xd1, 0x00, 0xed, 0x20, 0xfc, 0xb1, 0x5b, 0x6a, 0xcb, 0xbe, 0x39, 0x4a, 0x4c, 0x58, 0xcf,
-    0xd0, 0xef, 0xaa, 0xfb, 0x43, 0x4d, 0x33, 0x85, 0x45, 0xf9, 0x02, 0x7f, 0x50, 0x3c, 0x9f, 0xa8,
-    0x51, 0xa3, 0x40, 0x8f, 0x92, 0x9d, 0x38, 0xf5, 0xbc, 0xb6, 0xda, 0x21, 0x10, 0xff, 0xf3, 0xd2,
-    0xcd, 0x0c, 0x13, 0xec, 0x5f, 0x97, 0x44, 0x17, 0xc4, 0xa7, 0x7e, 0x3d, 0x64, 0x5d, 0x19, 0x73,
-    0x60, 0x81, 0x4f, 0xdc, 0x22, 0x2a, 0x90, 0x88, 0x46, 0xee, 0xb8, 0x14, 0xde, 0x5e, 0x0b, 0xdb,
-    0xe0, 0x32, 0x3a, 0x0a, 0x49, 0x06, 0x24, 0x5c, 0xc2, 0xd3, 0xac, 0x62, 0x91, 0x95, 0xe4, 0x79,
-    0xe7, 0xc8, 0x37, 0x6d, 0x8d, 0xd5, 0x4e, 0xa9, 0x6c, 0x56, 0xf4, 0xea, 0x65, 0x7a, 0xae, 0x08,
-    0xba, 0x78, 0x25, 0x2e, 0x1c, 0xa6, 0xb4, 0xc6, 0xe8, 0xdd, 0x74, 0x1f, 0x4b, 0xbd, 0x8b, 0x8a,
-    0x70, 0x3e, 0xb5, 0x66, 0x48, 0x03, 0xf6, 0x0e, 0x61, 0x35, 0x57, 0xb9, 0x86, 0xc1, 0x1d, 0x9e,
-    0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf,
-    0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16,
-  ];
 }

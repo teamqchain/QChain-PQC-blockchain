@@ -9,6 +9,7 @@ import 'package:qwallet_mobileapp/screens/certificate_viewer_screen.dart';
 import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
+import 'package:qwallet_mobileapp/utils/app_config.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
 import 'package:qchain_shared/certificate_template.dart';
 
@@ -213,7 +214,10 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
     });
 
     try {
-      final attrs = await ApiService.fetchAndDecryptAttributes(credentialID);
+      final attrs = await ApiService.fetchAndDecryptAttributes(
+        credentialID,
+        emiratesID: userEmiratesID,
+      );
       if (!mounted) return;
       setState(() {
         _decryptedAttrs = attrs;
@@ -256,7 +260,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
+      backgroundColor: qBgSurface,
       body: Column(
         children: [
           _DocHeroBox(doc: doc, attributes: _decryptedAttrs),
