@@ -389,6 +389,9 @@ class _CredentialMetaSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final attrKeys = credential.attributes.keys.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
     return _SectionCard(
       title: 'CREDENTIAL DETAILS',
       icon: Icons.description_outlined,
@@ -412,9 +415,47 @@ class _CredentialMetaSection extends StatelessWidget {
             value: credential.expiryDate ?? 'No Expiry',
             isDate: true,
           ),
+          // Disclosed body attributes from the holder's presentation.
+          if (attrKeys.isNotEmpty) ...[
+            _divider(),
+            const SizedBox(height: 8),
+            const Text(
+              'DISCLOSED FIELDS',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.0,
+                color: AppColors.textDim,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (var i = 0; i < attrKeys.length; i++) ...[
+              if (i > 0) _divider(),
+              _DataRow(
+                label: _humanizeFieldKey(attrKeys[i]),
+                value: credential.attributes[attrKeys[i]]!.isEmpty
+                    ? '—'
+                    : credential.attributes[attrKeys[i]]!,
+              ),
+            ],
+          ],
         ],
       ),
     );
+  }
+
+  static String _humanizeFieldKey(String key) {
+    if (key.isEmpty) return key;
+    var s = key.replaceAll('_', ' ');
+    s = s.replaceAllMapped(
+      RegExp(r'([a-z0-9])([A-Z])'),
+      (m) => '${m[1]} ${m[2]}',
+    );
+    return s
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .map((w) => '${w[0].toUpperCase()}${w.length > 1 ? w.substring(1) : ''}')
+        .join(' ');
   }
 }
 
