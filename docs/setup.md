@@ -214,6 +214,9 @@ peer channel join -b $REPO_ROOT/qchain-network/channel-artifacts/mychannel.block
 
 ```bash
 # 1. Install dependencies and package
+export REPO_ROOT=$(pwd)
+export ORDERER_CA=$REPO_ROOT/qchain-network/crypto-material/ordererOrganizations/orderer.example.com/orderers/orderer0.orderer.example.com/tls/ca.crt
+
 cd $REPO_ROOT/qchain-network/chaincode
 npm install
 cd ../..
@@ -249,7 +252,10 @@ If your Fabric network is already running and committed at an earlier sequence, 
 *Use this only if your network is currently on sequence 1:*
 
 ```bash
-# 1. Re-package chaincode as version 1.1
+# 1. Set environment and re-package chaincode as version 1.1
+export REPO_ROOT=$(pwd)
+export ORDERER_CA=$REPO_ROOT/qchain-network/crypto-material/ordererOrganizations/orderer.example.com/orderers/orderer0.orderer.example.com/tls/ca.crt
+
 source $REPO_ROOT/qchain-network/scripts/env-gov.sh
 peer lifecycle chaincode package qchaincode_1.1.tar.gz --path $REPO_ROOT/qchain-network/chaincode --lang node --label qchaincode_1.1
 
@@ -275,7 +281,10 @@ peer lifecycle chaincode commit -o localhost:7050 --ordererTLSHostnameOverride o
 *Use this if your network is currently on sequence 2 to resolve endorsement mismatches during suspendCredential / revokeCredential:*
 
 ```bash
-# 1. Re-package chaincode as version 1.2
+# 1. Set environment and re-package chaincode as version 1.2
+export REPO_ROOT=$(pwd)
+export ORDERER_CA=$REPO_ROOT/qchain-network/crypto-material/ordererOrganizations/orderer.example.com/orderers/orderer0.orderer.example.com/tls/ca.crt
+
 source $REPO_ROOT/qchain-network/scripts/env-gov.sh
 peer lifecycle chaincode package qchaincode_1.2.tar.gz --path $REPO_ROOT/qchain-network/chaincode --lang node --label qchaincode_1.2
 
