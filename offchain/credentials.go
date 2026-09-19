@@ -138,6 +138,17 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 1b. Track B2 / Track H — look up the holder's ML-KEM public key for off-chain encryption.
+	// A holder must have registered their keys before credentials can be issued to them.
+	holderKemPub, kemErr := holderKemPubByID(holderID)
+	if kemErr != nil {
+		log.Printf("WARNING: holder %s KEM key lookup failed: %v", holderID, kemErr)
+	}
+	if holderKemPub == "" {
+		writeError(w, http.StatusBadRequest, "Holder has not activated their wallet (no ML-KEM public key registered)")
+		return
+	}
+
 	// 2. Build signed canonical JSON
 	issuedAt := time.Now().In(mustLoadLocation("Asia/Dubai")).Format("2006-01-02T15:04:05")
 	canonicalJSONStr, err := credentialCanonicalJSON(fabricHolderID, req.CredentialType, req.Info, issuedAt, issuerOrgID)
@@ -156,9 +167,38 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5. Upload JSON to IPFS (non-fatal if IPFS unavailable)
+	// 4b. Track H — encrypt the credential body to the HOLDER's ML-KEM public key.
+	// The envelope wraps to recipient "holder" so the wallet can decrypt locally.
+	encBody, encErr := encryptCredentialDataToHolder(credentialHash, req.Info, holderKemPub)
+	if encErr != nil {
+		writeError(w, http.StatusInternalServerError, "off-chain encryption failed: "+encErr.Error())
+		return
+	}
+	encVersion := 0
+	if looksLikeEnvelope([]byte(encBody)) {
+		encVersion = 1
+	}
+
+	// 4c. Track H — compute per-field hashes (SHA3-256(field + ":" + value))
+	// These are committed on-chain so the verifier can check disclosed values without decrypting.
+	var attrs map[string]any
+	if err := json.Unmarshal([]byte(req.Info), &attrs); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid info JSON: "+err.Error())
+		return
+	}
+	fieldHashes := map[string]string{}
+	for k, v := range attrs {
+		fieldHashes[k] = sha3Hex(k + ":" + fmt.Sprintf("%v", v))
+	}
+	fieldHashesJSON, err := json.Marshal(fieldHashes)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "field hash marshal failed: "+err.Error())
+		return
+	}
+
+	// 5. Upload the (encrypted) body to IPFS (non-fatal if IPFS unavailable).
 	var ipfsCID string
-	if cid, uploadErr := uploadJSONToIPFS([]byte(canonicalJSONStr)); uploadErr != nil {
+	if cid, uploadErr := uploadJSONToIPFS([]byte(encBody)); uploadErr != nil {
 		log.Printf("IPFS upload failed (proceeding without CID): %v", uploadErr)
 	} else {
 		ipfsCID = cid
@@ -181,6 +221,7 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		signature,
 		issuerPubKeyHex,
 		ipfsCID,
+		string(fieldHashesJSON),
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "chaincode issueCredential failed: "+err.Error())
@@ -189,10 +230,25 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 
 	// 7. Extract fabric cred ID from chaincode response
 	var chainResp map[string]any
-	_ = json.Unmarshal(result, &chainResp)
+	if err := json.Unmarshal(result, &chainResp); err != nil {
+		writeError(w, http.StatusInternalServerError, "invalid JSON response from chaincode: "+err.Error())
+		return
+	}
+	if success, ok := chainResp["success"].(bool); ok && !success {
+		errMsg, _ := chainResp["error"].(string)
+		if errMsg == "" {
+			errMsg = "chaincode returned failure status"
+		}
+		writeError(w, http.StatusInternalServerError, "chaincode issueCredential failed: "+errMsg)
+		return
+	}
 	fabricCredID := ""
 	if cred, ok := chainResp["credential"].(map[string]any); ok {
 		fabricCredID, _ = cred["ID"].(string)
+	}
+	if fabricCredID == "" {
+		writeError(w, http.StatusInternalServerError, "chaincode did not return a valid credential ID")
+		return
 	}
 
 	// 8. Generate display credential ID and persist to MySQL
@@ -223,7 +279,8 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		Signature:      signature,
 		PublicKey:      issuerPubKeyHex,
 		IPFSCID:        ipfsCID,
-		CredentialData: req.Info,
+		CredentialData: encBody,
+		EncVersion:     encVersion,
 		IssuedAt:       time.Now(),
 		ExpiryDate:     expiryDate,
 	}); dbErr != nil {
@@ -270,7 +327,7 @@ func handleRevokeCredential(w http.ResponseWriter, r *http.Request) {
 
 	result, err := contract.SubmitTransaction("revokeCredential", fabricCredID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "chaincode revokeCredential failed: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "chaincode revokeCredential failed: "+formatFabricError(err))
 		return
 	}
 
@@ -376,7 +433,7 @@ func handleSuspendCredential(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	if _, err := contract.SubmitTransaction("suspendCredential", fabricCredID, req.Reason); err != nil {
-		writeError(w, http.StatusInternalServerError, "chaincode error: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "chaincode error: "+formatFabricError(err))
 		return
 	}
 
@@ -444,7 +501,7 @@ func handleRestoreCredential(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	if _, err := contract.SubmitTransaction("restoreCredential", fabricCredID); err != nil {
-		writeError(w, http.StatusInternalServerError, "chaincode error: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "chaincode error: "+formatFabricError(err))
 		return
 	}
 

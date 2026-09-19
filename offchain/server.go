@@ -38,6 +38,18 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
+	// One-shot: generate an org ML-KEM key pair and exit. Container-friendly — no
+	// cmd/ needed in the image, no liboqs needed on the host. Needs neither the
+	// issuer keys nor the database, so it runs first.
+	//   docker run --rm -e GENERATE_ORG_KEM=1 qchain-api:latest
+	if os.Getenv("GENERATE_ORG_KEM") == "1" {
+		if n := resolveKEMName(); n != "" {
+			kemName = n
+		}
+		generateOrgKEM()
+		return
+	}
+
 	// Load org-level ML-DSA-44 key pair — must be set in .env; fatal if missing.
 	issuerPrivKeyHex = os.Getenv("ISSUER_PRIVATE_KEY_HEX")
 	issuerPubKeyHex = os.Getenv("ISSUER_PUBLIC_KEY_HEX")
@@ -47,8 +59,37 @@ func main() {
 		log.Fatal("ISSUER_PRIVATE_KEY_HEX and ISSUER_PUBLIC_KEY_HEX must be set — run offchain/cmd/keygen/main.go once to generate them")
 	}
 
+	// Track B2 — holder-level ML-KEM key pairs for OFF-CHAIN credential-data encryption.
+	// In testing, holder private keys are loaded from .env.holder_keys; in production,
+	// keys live on the holder's mobile device (QWallet).
+	if n := resolveKEMName(); n != "" {
+		kemName = n
+	}
+	orgKemPubHex = os.Getenv("ORG_KEM_PUBLIC_KEY_HEX")
+	orgKemPrivHex = os.Getenv("ORG_KEM_PRIVATE_KEY_HEX")
+	if orgKemPubHex == "" {
+		log.Printf("INFO: ORG_KEM_PUBLIC_KEY_HEX not set — legacy B3 org-key decryption unavailable (not needed if B3 was never deployed).")
+	}
+
 	// Connect to MySQL (non-fatal if not configured — warnings logged per request)
 	initDB()
+
+	// Load holder KEM private keys from .env.holder_keys (for testing decryption)
+	loadedHolderKeys := loadHolderKeysFile()
+	log.Printf("Loaded %d holder KEM private key(s) from %s", loadedHolderKeys, holderKeysFileName)
+
+	// One-shot mode: generate ML-KEM key pairs for database holders without keys
+	if os.Getenv("GENERATE_HOLDER_KEYS") == "1" {
+		runGenerateHolderKeys()
+		return
+	}
+
+	// One-shot maintenance mode: encrypt any legacy plaintext credential_data rows
+	// in place, then exit. Run with RUN_BACKFILL_ENCRYPT=1. Does not touch the blockchain.
+	if os.Getenv("RUN_BACKFILL_ENCRYPT") == "1" {
+		runBackfillEncrypt()
+		return
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /registerHolder", handleRegisterHolder)
@@ -83,7 +124,12 @@ func main() {
 	mux.HandleFunc("POST /deleteStaff", handleDeleteStaff)
 
 	// QWallet — mobile endpoints
+	mux.HandleFunc("GET /mobile/checkKeys", handleCheckKeys)
+	mux.HandleFunc("POST /mobile/registerHolderKeys", handleRegisterHolderKeys)
+	mux.HandleFunc("GET /mobile/getEnvelope", handleGetEnvelope)
+	mux.HandleFunc("GET /mobile/getHolderProfile", handleMobileGetHolderProfile)
 	mux.HandleFunc("GET /mobile/getCredentialsByHolder", handleMobileGetCredentialsByHolder)
+	mux.HandleFunc("POST /mobile/registerHolderKey", handleRegisterHolderKey)
 	mux.HandleFunc("POST /mobile/toggleFavorite", handleToggleFavorite)
 	mux.HandleFunc("GET /mobile/getActivity", handleGetActivity)
 	mux.HandleFunc("POST /mobile/generateOTP", handleGenerateOTP)
@@ -105,6 +151,7 @@ func main() {
 	fmt.Printf("  Chaincode:     %s\n", chaincodeName)
 	fmt.Printf("  IPFS host:     %s\n", ipfsHost)
 	fmt.Printf("  PQC algo:      %s\n", sigName)
+	fmt.Printf("  KEM algo:      %s (off-chain encryption: holder-key B2, holder-keys-loaded: %d)\n", kemName, loadedHolderKeys)
 	fmt.Printf("  Issuer org:    %s / %s\n", issuerOrgName, issuerIdentity)
 	fmt.Printf("  Verifier org:  %s / %s\n", verifierOrgName, verifierIdentity)
 	fmt.Printf("  Issuer org ID: %s\n", issuerOrgID)

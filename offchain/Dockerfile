@@ -74,7 +74,12 @@ RUN git clone --branch main --single-branch --depth 1 \
     https://github.com/open-quantum-safe/liboqs.git \
     && cd liboqs \
     && mkdir build && cd build \
-    && cmake -GNinja -DBUILD_SHARED_LIBS=ON .. \
+    && cmake -GNinja \
+        -DBUILD_SHARED_LIBS=ON \
+        -DOQS_BUILD_ONLY_LIB=ON \
+        -DOQS_DIST_BUILD=ON \
+        -DOQS_MINIMAL_BUILD="SIG_ml_dsa_44;SIG_ml_dsa_65;SIG_ml_dsa_87;KEM_ml_kem_512;KEM_ml_kem_768;KEM_ml_kem_1024;KEM_kyber_512;KEM_kyber_768;KEM_kyber_1024" \
+        .. \
     && ninja \
     && ninja install
 
@@ -101,13 +106,15 @@ COPY go.mod go.sum ./
 # go mod tidy below will fetch any missing checksums.
 RUN go mod download || true
 
-# Copy our Go source code (server.go + db.go; cmd/ is excluded)
+# Copy our Go source code
 COPY *.go ./
+COPY cmd/ ./cmd/
 
 # tidy adds any missing go.sum entries, then compile.
 # CGO_ENABLED=1 is required for liboqs-go (C bindings).
 RUN go mod tidy
 RUN CGO_ENABLED=1 go build -o /qchain-server .
+RUN CGO_ENABLED=1 go build -o /app/keygen ./cmd/keygen
 
 # =============================================================================
 # STAGE 2: RUNTIME (Final Image)
@@ -128,8 +135,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /usr/local/lib/liboqs* /usr/local/lib/
 COPY --from=builder /usr/local/include/oqs /usr/local/include/oqs
 
-# Copy our compiled Go binary from the builder stage
-COPY --from=builder /qchain-server /app/qchain-server
+# Copy our compiled Go binaries from the builder stage into /usr/local/bin
+COPY --from=builder /qchain-server /usr/local/bin/qchain-server
+COPY --from=builder /app/keygen /usr/local/bin/keygen
 
 WORKDIR /app
 
@@ -141,4 +149,4 @@ ENV SERVER_PORT="3000"
 ENV TZ="Asia/Dubai"
 
 EXPOSE 3000
-CMD ["/app/qchain-server"]
+CMD ["qchain-server"]

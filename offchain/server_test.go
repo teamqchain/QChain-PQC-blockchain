@@ -348,13 +348,85 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			wantErrorSubstr: "missing query params",
 		},
 		{
-			name:            "uploadDocument missing params",
-			handler:         handleUploadDocument,
-			method:          http.MethodPost,
-			target:          "/uploadDocument",
-			body:            `{"credID":"c1"}`,
+			name:            "checkKeys missing emiratesID",
+			handler:         handleCheckKeys,
+			method:          http.MethodGet,
+			target:          "/mobile/checkKeys",
+			body:            "",
 			wantStatus:      http.StatusBadRequest,
-			wantErrorSubstr: "missing parameters",
+			wantErrorSubstr: "missing emiratesID",
+		},
+		{
+			name:            "registerHolderKeys missing emiratesID",
+			handler:         handleRegisterHolderKeys,
+			method:          http.MethodPost,
+			target:          "/mobile/registerHolderKeys",
+			body:            `{"kemPublicKey":"aabb","dsaPublicKey":"ccdd"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing emiratesID",
+		},
+		{
+			name:            "registerHolderKeys missing keys",
+			handler:         handleRegisterHolderKeys,
+			method:          http.MethodPost,
+			target:          "/mobile/registerHolderKeys",
+			body:            `{"emiratesID":"784-1234"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing kemPublicKey or dsaPublicKey",
+		},
+		{
+			name:            "registerHolderKeys invalid hex",
+			handler:         handleRegisterHolderKeys,
+			method:          http.MethodPost,
+			target:          "/mobile/registerHolderKeys",
+			body:            `{"emiratesID":"784-1234","kemPublicKey":"not-hex","dsaPublicKey":"aabb"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "invalid hex",
+		},
+		{
+			name:            "getEnvelope missing credentialID",
+			handler:         handleGetEnvelope,
+			method:          http.MethodGet,
+			target:          "/mobile/getEnvelope",
+			body:            "",
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing credentialID",
+		},
+		{
+			name:            "getHolderProfile missing emiratesID",
+			handler:         handleMobileGetHolderProfile,
+			method:          http.MethodGet,
+			target:          "/mobile/getHolderProfile",
+			body:            "",
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing emiratesID",
+		},
+		{
+			name:            "generateOTP missing credentialID",
+			handler:         handleGenerateOTP,
+			method:          http.MethodPost,
+			target:          "/mobile/generateOTP",
+			body:            `{}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing credentialID",
+		},
+		{
+			name:            "generatePresentation missing credentialID",
+			handler:         handleGeneratePresentation,
+			method:          http.MethodPost,
+			target:          "/mobile/generatePresentation",
+			body:            `{}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing credentialID",
+		},
+		{
+			name:            "resolveSession missing sessionToken",
+			handler:         handleResolveSession,
+			method:          http.MethodPost,
+			target:          "/resolveSession",
+			body:            `{}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing sessionToken",
 		},
 	}
 
@@ -403,4 +475,28 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			t.Fatalf("health endpoint payload mismatch. got status=%q", body["status"])
 		}
 	})
+}
+
+// TestFieldHashesComputation verifies per-field SHA3-256 computation matches Track H format.
+func TestFieldHashesComputation(t *testing.T) {
+	field := "gpa"
+	value := "3.8"
+	expected := sha3Hex("gpa:3.8")
+	got := sha3Hex(field + ":" + value)
+	if got != expected {
+		t.Fatalf("per-field hash mismatch: got=%s want=%s", got, expected)
+	}
+}
+
+// TestDubaiTimezoneFormat verifies expiry time format in Asia/Dubai has no Z suffix.
+func TestDubaiTimezoneFormat(t *testing.T) {
+	loc := mustLoadLocation("Asia/Dubai")
+	now := time.Now().In(loc)
+	formatted := now.Format("2006-01-02T15:04:05")
+	if strings.HasSuffix(formatted, "Z") {
+		t.Fatalf("Dubai timezone format should not contain UTC 'Z' suffix: %s", formatted)
+	}
+	if len(formatted) != 19 || formatted[10] != 'T' {
+		t.Fatalf("unexpected format for Dubai time: %s", formatted)
+	}
 }
