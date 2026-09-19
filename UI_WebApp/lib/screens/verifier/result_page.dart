@@ -318,13 +318,34 @@ class _ValidBody extends StatelessWidget {
         _divider(),
         const SizedBox(height: 16),
 
-        // Details grid
+        // Core identity / issue meta (from top-level resolveSession fields)
         _Row('Credential ID', c.id),
-        _Row('Holder Name', c.holderName),
-        _Row('Holder ID', c.holderId),
-        // IssuedByRow(org: c.issuerOrg,),
-        _Row('Issue Date', c.issueDate),
+        if (c.holderName.isNotEmpty) _Row('Holder Name', c.holderName),
+        if (c.holderId.isNotEmpty) _Row('Holder ID', c.holderId),
+        if (c.holderEmiratesID.isNotEmpty)
+          _Row('National ID', c.holderEmiratesID),
+        if (c.issuedBy.isNotEmpty) _Row('Issued By', c.issuedBy),
+        if (c.issueDate.isNotEmpty) _Row('Issue Date', c.issueDate),
         _Row('Expiry Date', c.expiryDate ?? 'No expiry'),
+
+        // Disclosed body attributes from the holder's presentation.
+        // When nothing was hidden, this is the full set of credential fields.
+        if (c.attributes.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _divider(),
+          const SizedBox(height: 14),
+          const Text(
+            'DISCLOSED FIELDS',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+              color: AppColors.textDim,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ..._sortedAttributeRows(c.attributes),
+        ],
 
         // Policy checks
         if (result.policyChecks.isNotEmpty) ...[
@@ -345,6 +366,31 @@ class _ValidBody extends StatelessWidget {
         ],
       ],
     );
+  }
+
+  /// Stable alphabetical order; humanise camelCase / snake_case keys.
+  static List<Widget> _sortedAttributeRows(Map<String, String> attrs) {
+    final keys = attrs.keys.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return keys
+        .map((k) => _Row(_humanizeFieldKey(k), attrs[k]!.isEmpty ? '—' : attrs[k]!))
+        .toList();
+  }
+
+  static String _humanizeFieldKey(String key) {
+    if (key.isEmpty) return key;
+    // snake_case → spaces
+    var s = key.replaceAll('_', ' ');
+    // camelCase / PascalCase → spaces
+    s = s.replaceAllMapped(
+      RegExp(r'([a-z0-9])([A-Z])'),
+      (m) => '${m[1]} ${m[2]}',
+    );
+    // Title-ish: capitalize first letter of each word
+    return s
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .map((w) => '${w[0].toUpperCase()}${w.length > 1 ? w.substring(1) : ''}')
+        .join(' ');
   }
 }
 
