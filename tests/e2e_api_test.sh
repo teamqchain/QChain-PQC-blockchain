@@ -141,6 +141,8 @@ assert_json "$REG_KEYS_RESP" "data.get('success')" "True" "Holder public keys bo
 KEYS_AFTER=$(curl -s "$API_URL/mobile/checkKeys?emiratesID=$EID")
 assert_json "$KEYS_AFTER" "data.get('hasKemKey')" "True" "Holder now has KEM key"
 assert_json "$KEYS_AFTER" "data.get('hasSigningKey')" "True" "Holder now has signing key"
+assert_json "$KEYS_AFTER" "data.get('kemPublicKey')" "$HOLDER_KEM_PUB" "Holder KEM public key returned matches"
+assert_json "$KEYS_AFTER" "data.get('dsaPublicKey')" "$HOLDER_DSA_PUB" "Holder DSA public key returned matches"
 
 HOLDERS_AFTER=$(curl -s "$API_URL/getHolders?search=$EID")
 assert_json "$HOLDERS_AFTER" "data.get('holders', [{}])[0].get('isWalletActivated')" "True" "Holder now has isWalletActivated = true in /getHolders"
