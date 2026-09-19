@@ -190,7 +190,7 @@ class SkeletonList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Headers remain solid, they don't need to shimmer
-        SectionHeader(title: 'Favourites', onSeeAll: () {}),
+         SectionHeader(title: 'Recent Activity', onSeeAll: () {}),
         const SizedBox(height: 14),
         // Cards get the wave effect
         ShimmerWave(child: SkeletonIssuerTile(isHome: true)),
@@ -198,7 +198,7 @@ class SkeletonList extends StatelessWidget {
         ShimmerWave(child: SkeletonIssuerTile(isHome: true)),
         const SizedBox(height: 24),
 
-        SectionHeader(title: 'Recent Activity', onSeeAll: () {}),
+        SectionHeader(title: 'Favourites', onSeeAll: () {}),
         const SizedBox(height: 14),
         ShimmerWave(child: SkeletonActivityTile(myheight: 15)),
       ],

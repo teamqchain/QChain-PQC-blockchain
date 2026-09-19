@@ -111,23 +111,12 @@ class _SelectiveShareScreenState extends State<SelectiveShareScreen> {
         .toList();
   }
 
-  /// Fields the holder chose to SHOW — signed payload body.
+  /// Body attributes only (on-chain FieldHashes). Metadata stays UI-only.
   Map<String, dynamic> _disclosedFieldsMap(List<String> hiddenKeys) {
-    final hidden = hiddenKeys.toSet();
-    final out = <String, dynamic>{};
-    for (final f in _fields) {
-      final key = f['key'] as String;
-      if (hidden.contains(key)) continue;
-      out[key] = f['value'];
-    }
-    // Always bind credentialID at top-level via CryptoService builder;
-    // also include any attributes not listed as toggles.
-    widget.doc.attributes.forEach((k, v) {
-      if (!hidden.contains(k) && !out.containsKey(k)) {
-        out[k] = v;
-      }
-    });
-    return out;
+    return CryptoService.bodyDisclosedFields(
+      widget.doc.attributes,
+      hiddenKeys: hiddenKeys.toSet(),
+    );
   }
 
   Future<({String disclosedPayloadJson, String holderSignatureHex})>
@@ -247,7 +236,7 @@ class _SelectiveShareScreenState extends State<SelectiveShareScreen> {
     final isQr = widget.mode == ShareMode.qr;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
+      backgroundColor: qBgSurface,
       body: Column(
         children: [
           // ─── OLD UI HEADER ──────────────────────────────────────────
@@ -343,12 +332,14 @@ class _SelectiveShareScreenState extends State<SelectiveShareScreen> {
               children: [
                 const _ShareSectionLabel('Include in shared document'),
                 const SizedBox(height: 10),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
+                // Material so SwitchListTile ink/splash aren't hidden by a DecoratedBox.
+                Material(
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFEBEBEB)),
+                    side: const BorderSide(color: Color(0xFFEBEBEB)),
                   ),
+                  clipBehavior: Clip.antiAlias,
                   child: Column(
                     children: _fields.asMap().entries.map((e) {
                       final index = e.key;
