@@ -80,9 +80,15 @@ class VerificationDetailData {
             (invalidReason != InvalidReason.tampered),
       ),
       PolicyCheck(
-        label: 'Hash Matches',
+        label: 'Field Hashes Valid',
         passed:
-            checks['hashMatches'] as bool? ??
+            checks['fieldHashesValid'] as bool? ??
+            (invalidReason != InvalidReason.tampered),
+      ),
+      PolicyCheck(
+        label: 'Holder Signature Valid (ML-DSA-44)',
+        passed:
+            checks['holderSignatureValid'] as bool? ??
             (invalidReason != InvalidReason.tampered),
       ),
     ];

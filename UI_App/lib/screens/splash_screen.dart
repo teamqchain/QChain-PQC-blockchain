@@ -43,7 +43,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: qBgSurface,
+      backgroundColor: qBg,
       appBar: AppBar(
         systemOverlayStyle: SystemUiOverlayStyle.dark,
         toolbarHeight: 0,
@@ -83,8 +83,9 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                         alignment: Alignment.center,
                         child: Image.asset(
-                          'assets/images/QChain_logo.png',
-                          width: 200,
+                          'assets/images/wallet_icon_transparet.png',
+                          width: 150,
+                          height: 150,
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -102,11 +103,11 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                   const SizedBox(height: 3),
                   const Text(
-                    'security redefined',
+                    'QChain assets',
                     style: TextStyle(
                       fontSize: 8,
                       color: qText,
-                      letterSpacing: 2,
+                      letterSpacing: 1,
                       fontFamily: 'formula',
                     ),
                   ),
@@ -166,9 +167,27 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                   ),
                   const SizedBox(height: 20),
-                  const Text(
-                    'Powered by QChain',
-                    style: TextStyle(color: qDimmed, fontSize: 11),
+                  RichText(
+                    text: const TextSpan(
+                      children: <TextSpan>[
+                        TextSpan(
+                          text: 'Powered by ',
+                          style: TextStyle(
+                            color: qDimmed,
+                            fontSize: 11,
+                            fontFamily: 'SFPro',
+                          ),
+                        ),
+                        TextSpan(
+                          text: 'QChain',
+                          style: TextStyle(
+                            color: qDimmed,
+                            fontSize: 11,
+                            fontFamily: 'formula',
+                          ),
+                        )
+                      ]
+                    ), 
                   ),
                   const SizedBox(height: 40),
                 ],

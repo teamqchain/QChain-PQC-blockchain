@@ -6,7 +6,9 @@ import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
+import 'package:qwallet_mobileapp/services/crypto_service.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
+import 'package:qwallet_mobileapp/utils/logger.dart';
 
 enum ShareMode { otp, qr }
 
@@ -28,8 +30,6 @@ class _SelectiveShareScreenState extends State<SelectiveShareScreen> {
   bool _isLoading = false;
   late List<Map<String, dynamic>> _fields;
 
-  static const int _expiryDuration = 60; // 5 minutes
-
   @override
   void initState() {
     super.initState();
@@ -39,42 +39,49 @@ class _SelectiveShareScreenState extends State<SelectiveShareScreen> {
         'label': 'Document Type',
         'crucial': true,
         'hidden': false,
+        'value': widget.doc.credentialType,
       },
       {
         'key': 'credentialID',
         'label': 'Credential ID',
         'crucial': true,
         'hidden': false,
+        'value': widget.doc.credentialID,
       },
       {
         'key': 'status',
         'label': 'Verification Status',
         'crucial': true,
         'hidden': false,
+        'value': widget.doc.status,
       },
       {
         'key': 'issuedBy',
         'label': 'Issuing Authority',
         'crucial': true,
         'hidden': false,
+        'value': widget.doc.issuedBy,
       },
       {
         'key': 'holderEID',
         'label': 'National ID',
         'crucial': true,
         'hidden': false,
+        'value': widget.doc.holderEID,
       },
       {
         'key': 'holderName',
         'label': 'Issued To',
         'crucial': false,
         'hidden': false,
+        'value': widget.doc.holderName,
       },
       {
         'key': 'issuedAt',
         'label': 'Date of Issue',
         'crucial': false,
         'hidden': false,
+        'value': widget.doc.issuedAt,
       },
       if (widget.doc.expiryDate != null)
         {
@@ -82,27 +89,65 @@ class _SelectiveShareScreenState extends State<SelectiveShareScreen> {
           'label': 'Expiry Date',
           'crucial': false,
           'hidden': false,
+          'value': widget.doc.expiryDate,
         },
+      // Decrypted credential attributes (body fields the holder can hide).
+      ...widget.doc.attributes.entries.map(
+        (e) => {
+          'key': e.key,
+          'label': e.key,
+          'crucial': false,
+          'hidden': false,
+          'value': e.value,
+        },
+      ),
     ];
+  }
+
+  List<String> _hiddenKeys() {
+    return _fields
+        .where((f) => f['hidden'] == true && f['crucial'] == false)
+        .map((f) => f['key'] as String)
+        .toList();
+  }
+
+  /// Body attributes only (on-chain FieldHashes). Metadata stays UI-only.
+  Map<String, dynamic> _disclosedFieldsMap(List<String> hiddenKeys) {
+    return CryptoService.bodyDisclosedFields(
+      widget.doc.attributes,
+      hiddenKeys: hiddenKeys.toSet(),
+    );
+  }
+
+  Future<({String disclosedPayloadJson, String holderSignatureHex})>
+      _signDisclosed(List<String> hiddenKeys) {
+    return CryptoService.buildSignedDisclosedPayload(
+      credentialID: widget.doc.credentialID,
+      disclosedFields: _disclosedFieldsMap(hiddenKeys),
+    );
   }
 
   Future<void> _generateAndProceed() async {
     setState(() => _isLoading = true);
 
-    final hiddenKeys = _fields
-        .where((f) => f['hidden'] == true && f['crucial'] == false)
-        .map((f) => f['key'] as String)
-        .toList();
+    final hiddenKeys = _hiddenKeys();
 
     try {
+      final signed = await _signDisclosed(hiddenKeys);
+      logDebug(
+        '[SelectiveShare] signed disclosed payload for ${widget.doc.credentialID}',
+      );
+
       if (widget.mode == ShareMode.qr) {
         // ─── QR CODE MODE ──────────────────────────────────────────────
         final result = await ApiService.generatePresentation(
-          widget.doc.credentialID,
-          hiddenKeys,
-          _expiryDuration,
+          credentialID: widget.doc.credentialID,
+          hiddenFields: hiddenKeys,
+          disclosedPayload: signed.disclosedPayloadJson,
+          holderSignature: signed.holderSignatureHex,
         );
 
+        if (!mounted) return;
         setState(() => _isLoading = false);
 
         if (result != null) {
@@ -127,11 +172,13 @@ class _SelectiveShareScreenState extends State<SelectiveShareScreen> {
       } else {
         // ─── OTP MODE ──────────────────────────────────────────────────
         final result = await ApiService.generateVerificationOTP(
-          widget.doc.credentialID,
-          hiddenKeys,
-          _expiryDuration,
+          credentialID: widget.doc.credentialID,
+          hiddenFields: hiddenKeys,
+          disclosedPayload: signed.disclosedPayloadJson,
+          holderSignature: signed.holderSignatureHex,
         );
 
+        if (!mounted) return;
         setState(() => _isLoading = false);
 
         if (result != null) {
@@ -139,14 +186,16 @@ class _SelectiveShareScreenState extends State<SelectiveShareScreen> {
             context: context,
             barrierDismissible: false,
             builder: (_) => _OtpDialog(
-              initialOtp: result['otp'],
-              expiresAt: result['expiresAt'],
+              initialOtp: result['otp']?.toString() ?? '',
+              expiresAt: result['expiresAt']?.toString(),
               onRefresh: () async {
                 try {
+                  final refreshed = await _signDisclosed(hiddenKeys);
                   return await ApiService.generateVerificationOTP(
-                    widget.doc.credentialID,
-                    hiddenKeys,
-                    _expiryDuration,
+                    credentialID: widget.doc.credentialID,
+                    hiddenFields: hiddenKeys,
+                    disclosedPayload: refreshed.disclosedPayloadJson,
+                    holderSignature: refreshed.holderSignatureHex,
                   );
                 } catch (_) {
                   return null;
@@ -169,8 +218,9 @@ class _SelectiveShareScreenState extends State<SelectiveShareScreen> {
         }
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
-      // Get.snackbar('Network Error', e.toString(), snackPosition: SnackPosition.BOTTOM);
+      logDebug('[SelectiveShare] present/sign failed: $e');
       Get.snackbar(
         'Network Error',
         e.toString(),
@@ -186,7 +236,7 @@ class _SelectiveShareScreenState extends State<SelectiveShareScreen> {
     final isQr = widget.mode == ShareMode.qr;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
+      backgroundColor: qBgSurface,
       body: Column(
         children: [
           // ─── OLD UI HEADER ──────────────────────────────────────────
@@ -282,12 +332,14 @@ class _SelectiveShareScreenState extends State<SelectiveShareScreen> {
               children: [
                 const _ShareSectionLabel('Include in shared document'),
                 const SizedBox(height: 10),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
+                // Material so SwitchListTile ink/splash aren't hidden by a DecoratedBox.
+                Material(
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFEBEBEB)),
+                    side: const BorderSide(color: Color(0xFFEBEBEB)),
                   ),
+                  clipBehavior: Clip.antiAlias,
                   child: Column(
                     children: _fields.asMap().entries.map((e) {
                       final index = e.key;
@@ -478,9 +530,7 @@ class _OtpDialogState extends State<_OtpDialog> {
   void initState() {
     super.initState();
     _currentOtp = widget.initialOtp;
-    if (widget.expiresAt != null) {
-      _expiresAt = DateTime.tryParse(widget.expiresAt!);
-    }
+    _expiresAt = CryptoService.parseExpiresAt(widget.expiresAt);
     _startTimer();
   }
 
@@ -489,7 +539,9 @@ class _OtpDialogState extends State<_OtpDialog> {
       _expired = false;
       if (_expiresAt != null) {
         final diff = _expiresAt!.difference(DateTime.now().toUtc()).inSeconds;
-        _totalSeconds = diff > 0 ? diff : _SelectiveShareScreenState._expiryDuration;
+        _totalSeconds = diff > 0 ? diff : 60;
+      } else if (_totalSeconds <= 0) {
+        _totalSeconds = 60;
       }
       _secondsLeft = _totalSeconds;
     });
@@ -508,13 +560,14 @@ class _OtpDialogState extends State<_OtpDialog> {
   Future<void> _handleRefresh() async {
     setState(() => _isRefreshing = true);
     final result = await widget.onRefresh();
+    if (!mounted) return;
     setState(() => _isRefreshing = false);
 
     if (result != null) {
       setState(() {
-        _currentOtp = result['otp'];
+        _currentOtp = result['otp']?.toString() ?? _currentOtp;
         if (result['expiresAt'] != null) {
-          _expiresAt = DateTime.tryParse(result['expiresAt']);
+          _expiresAt = CryptoService.parseExpiresAt(result['expiresAt']?.toString());
         }
       });
       _startTimer();

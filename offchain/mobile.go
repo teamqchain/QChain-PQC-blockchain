@@ -13,14 +13,180 @@ package main
 import (
 	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// GET /mobile/checkKeys?emiratesID=XXX — check if a holder has registered public keys and return them.
+func handleCheckKeys(w http.ResponseWriter, r *http.Request) {
+	emiratesID := r.URL.Query().Get("emiratesID")
+	if emiratesID == "" {
+		writeError(w, http.StatusBadRequest, "missing emiratesID")
+		return
+	}
+
+	type checkKeysResponse struct {
+		HasKemKey     bool   `json:"hasKemKey"`
+		HasSigningKey bool   `json:"hasSigningKey"`
+		KemPublicKey  string `json:"kemPublicKey"`
+		DsaPublicKey  string `json:"dsaPublicKey"`
+	}
+
+	holderID, _, err := holderByEmiratesID(emiratesID)
+	if err != nil {
+		writeJSON(w, http.StatusOK, checkKeysResponse{
+			HasKemKey:     false,
+			HasSigningKey: false,
+			KemPublicKey:  "",
+			DsaPublicKey:  "",
+		})
+		return
+	}
+	var kemPub, dsaPub sql.NullString
+	_ = db.QueryRow(
+		`SELECT kem_public_key, dsa_public_key FROM holders WHERE holder_id = ?`,
+		holderID,
+	).Scan(&kemPub, &dsaPub)
+
+	var resp checkKeysResponse
+	if kemPub.Valid && kemPub.String != "" {
+		resp.HasKemKey = true
+		resp.KemPublicKey = kemPub.String
+	}
+	if dsaPub.Valid && dsaPub.String != "" {
+		resp.HasSigningKey = true
+		resp.DsaPublicKey = dsaPub.String
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// POST /mobile/registerHolderKeys — registers holder ML-KEM and ML-DSA public keys.
+// The backend never receives or persists private keys.
+func handleRegisterHolderKeys(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		EmiratesID    string `json:"emiratesID"`
+		KemPublicKey  string `json:"kemPublicKey"`
+		DsaPublicKey  string `json:"dsaPublicKey"`
+		KemPrivateKey string `json:"kemPrivateKey"`
+		DsaPrivateKey string `json:"dsaPrivateKey"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if req.KemPrivateKey != "" || req.DsaPrivateKey != "" {
+		log.Printf("SECURITY WARNING: received private key in registerHolderKeys for Emirates ID %s — ignoring", req.EmiratesID)
+	}
+	if req.EmiratesID == "" {
+		writeError(w, http.StatusBadRequest, "missing emiratesID")
+		return
+	}
+	if req.KemPublicKey == "" || req.DsaPublicKey == "" {
+		writeError(w, http.StatusBadRequest, "missing kemPublicKey or dsaPublicKey")
+		return
+	}
+	if _, err := hex.DecodeString(req.KemPublicKey); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid hex for kemPublicKey: "+err.Error())
+		return
+	}
+	if _, err := hex.DecodeString(req.DsaPublicKey); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid hex for dsaPublicKey: "+err.Error())
+		return
+	}
+
+	holderID, fabricHolderID, err := holderByEmiratesID(req.EmiratesID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "holder not found: "+err.Error())
+		return
+	}
+
+	// 1. Update MySQL
+	if err := updateHolderKeys(holderID, req.KemPublicKey, req.DsaPublicKey); err != nil {
+		writeError(w, http.StatusInternalServerError, "database error: "+err.Error())
+		return
+	}
+
+	// 2. Call chaincode bindHolderKeys via Fabric gateway
+	contract, gw, conn, err := getContract(issuerOrgName, issuerIdentity)
+	if err != nil {
+		log.Printf("WARNING: Fabric connect failed for bindHolderKeys: %v", err)
+		writeError(w, http.StatusInternalServerError, "blockchain gateway error: "+err.Error())
+		return
+	}
+	defer gw.Close()
+	defer conn.Close()
+
+	result, err := contract.SubmitTransaction("bindHolderKeys", fabricHolderID, req.KemPublicKey, req.DsaPublicKey)
+	if err != nil {
+		log.Printf("ERROR: chaincode bindHolderKeys failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "chaincode bindHolderKeys failed: "+err.Error())
+		return
+	}
+	var resp struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error,omitempty"`
+	}
+	_ = json.Unmarshal(result, &resp)
+	if !resp.Success && resp.Error != "" {
+		writeError(w, http.StatusInternalServerError, "chaincode bindHolderKeys error: "+resp.Error)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+// GET /mobile/getEnvelope?credentialID=CRED-XXXX — returns raw encrypted envelope JSON.
+func handleGetEnvelope(w http.ResponseWriter, r *http.Request) {
+	credentialID := r.URL.Query().Get("credentialID")
+	if credentialID == "" {
+		writeError(w, http.StatusBadRequest, "missing credentialID")
+		return
+	}
+	credData, err := getCredentialDataByID(credentialID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "credential envelope not found: "+err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(credData))
+}
+
+// GET /mobile/getHolderProfile?emiratesID=XXX — basic demographic info for a
+// holder (full name, email, Emirates ID, holder type, college). Works even when
+// the holder has no credentials yet.
+func handleMobileGetHolderProfile(w http.ResponseWriter, r *http.Request) {
+	emiratesID := r.URL.Query().Get("emiratesID")
+	if emiratesID == "" {
+		writeError(w, http.StatusBadRequest, "missing emiratesID")
+		return
+	}
+	profile, err := holderProfileByEmiratesID(emiratesID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not registered") {
+			writeError(w, http.StatusNotFound, err.Error())
+		} else {
+			writeError(w, http.StatusInternalServerError, "database error")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":    true,
+		"fullName":   profile.FullName,
+		"email":      profile.Email,
+		"emiratesID": profile.EmiratesID,
+		"holderType": holderTypeDBToAPI(profile.HolderType),
+		"college":    profile.College,
+	})
+}
 
 // GET /mobile/getCredentialsByHolder?emiratesID=XXX — credentials in a holder's wallet.
 func handleMobileGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) {
@@ -29,6 +195,7 @@ func handleMobileGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "missing emiratesID")
 		return
 	}
+
 	rows, err := getMobileCredentials(emiratesID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error")
@@ -40,8 +207,18 @@ func handleMobileGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) 
 		if c.ExpiryDate.Valid {
 			expiry = c.ExpiryDate.Time.Format(time.RFC3339)
 		}
-		var attrs map[string]any
-		_ = json.Unmarshal([]byte(c.CredentialData), &attrs)
+
+		// Track H: Stop server-side decryption. The server is zero-knowledge and sends
+		// ciphertext envelope directly to the phone for local on-device decryption.
+		var attrs any = nil
+		if !looksLikeEnvelope([]byte(c.CredentialData)) {
+			// Legacy plaintext credential
+			var parsedAttrs map[string]any
+			if err := json.Unmarshal([]byte(c.CredentialData), &parsedAttrs); err == nil {
+				attrs = parsedAttrs
+			}
+		}
+
 		out = append(out, map[string]any{
 			"credentialID":   c.CredentialID,
 			"credentialType": c.CredentialType,
@@ -54,6 +231,7 @@ func handleMobileGetCredentialsByHolder(w http.ResponseWriter, r *http.Request) 
 			"isFavorite":     c.IsFavorite,
 			"category":       c.Category,
 			"attributes":     attrs,
+			"envelope":       c.CredentialData, // 🔒 PRODUCTION ENCRYPTED ENVELOPE (Decrypted on-device)
 			"signature":      c.Signature,
 			"txHash":         c.FabricCredID,
 			"cid":            c.IPFSCID,
@@ -189,9 +367,10 @@ func handleRejectSubscription(w http.ResponseWriter, r *http.Request) {
 // POST /mobile/generateOTP — create a short-lived 6-digit OTP session for manual verify.
 func handleGenerateOTP(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		CredentialID string   `json:"credentialID"`
-		HiddenFields []string `json:"hiddenFields"`
-		ExpiresIn    int      `json:"expiresIn"`
+		CredentialID     string   `json:"credentialID"`
+		HiddenFields     []string `json:"hiddenFields"`
+		DisclosedPayload string   `json:"disclosedPayload"`
+		HolderSignature  string   `json:"holderSignature"`
 	}
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -200,9 +379,6 @@ func handleGenerateOTP(w http.ResponseWriter, r *http.Request) {
 	if req.CredentialID == "" {
 		writeError(w, http.StatusBadRequest, "missing credentialID")
 		return
-	}
-	if req.ExpiresIn <= 0 {
-		req.ExpiresIn = 120
 	}
 	holderID, err := credentialHolderID(req.CredentialID)
 	if err == sql.ErrNoRows {
@@ -227,24 +403,27 @@ func handleGenerateOTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "unable to generate unique OTP. Please try again.")
 		return
 	}
-	if err := insertMobileSession(otpID, "otp", req.CredentialID, holderID, req.HiddenFields, req.ExpiresIn); err != nil {
+
+	const sessionExpiresInSeconds = 120
+	if err := insertMobileSession(otpID, "otp", req.CredentialID, holderID, req.HiddenFields, req.DisclosedPayload, req.HolderSignature, sessionExpiresInSeconds); err != nil {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
 	}
-	expiresAt := time.Now().Add(time.Duration(req.ExpiresIn) * time.Second)
+	expiresAt := time.Now().In(mustLoadLocation("Asia/Dubai")).Add(time.Duration(sessionExpiresInSeconds) * time.Second)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":   true,
 		"otp":       otpID[4:],
-		"expiresAt": expiresAt.Format(time.RFC3339),
+		"expiresAt": expiresAt.Format("2006-01-02T15:04:05"),
 	})
 }
 
 // POST /mobile/generatePresentation — create a short-lived QR session ("PRES-...").
 func handleGeneratePresentation(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		CredentialID string   `json:"credentialID"`
-		HiddenFields []string `json:"hiddenFields"`
-		ExpiresIn    int      `json:"expiresIn"`
+		CredentialID     string   `json:"credentialID"`
+		HiddenFields     []string `json:"hiddenFields"`
+		DisclosedPayload string   `json:"disclosedPayload"`
+		HolderSignature  string   `json:"holderSignature"`
 	}
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -253,9 +432,6 @@ func handleGeneratePresentation(w http.ResponseWriter, r *http.Request) {
 	if req.CredentialID == "" {
 		writeError(w, http.StatusBadRequest, "missing credentialID")
 		return
-	}
-	if req.ExpiresIn <= 0 {
-		req.ExpiresIn = 120
 	}
 	holderID, err := credentialHolderID(req.CredentialID)
 	if err == sql.ErrNoRows {
@@ -281,15 +457,17 @@ func handleGeneratePresentation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "unable to generate unique session ID. Please try again.")
 		return
 	}
-	if err := insertMobileSession(presID, "qr", req.CredentialID, holderID, req.HiddenFields, req.ExpiresIn); err != nil {
+
+	const sessionExpiresInSeconds = 120
+	if err := insertMobileSession(presID, "qr", req.CredentialID, holderID, req.HiddenFields, req.DisclosedPayload, req.HolderSignature, sessionExpiresInSeconds); err != nil {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
 	}
-	expiresAt := time.Now().Add(time.Duration(req.ExpiresIn) * time.Second)
+	expiresAt := time.Now().In(mustLoadLocation("Asia/Dubai")).Add(time.Duration(sessionExpiresInSeconds) * time.Second)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":        true,
 		"presentationID": presID,
-		"expiresAt":      expiresAt.Format(time.RFC3339),
+		"expiresAt":      expiresAt.Format("2006-01-02T15:04:05"),
 	})
 }
 
@@ -393,7 +571,7 @@ func handleFetchDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	found, _, err := fetchDocumentInDB(req.HolderEID, req.IssuerID, req.ServiceName)
+	found, alreadyInWallet, err := fetchDocumentInDB(req.HolderEID, req.IssuerID, req.ServiceName)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
@@ -405,9 +583,18 @@ func handleFetchDocument(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if alreadyInWallet {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success":         false,
+			"alreadyInWallet": true,
+			"message":         "This document is already in your wallet.",
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"success": true,
-		"message": "Document retrieved successfully.",
+		"success":         true,
+		"alreadyInWallet": false,
+		"message":         "Document retrieved successfully.",
 	})
 }
 
@@ -484,7 +671,29 @@ func handleResolveSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	applySelectiveDisclosure(credData, session.HiddenFields)
+	// Track H: If disclosedPayload was provided in the session, parse disclosedFields
+	var disclosedFields map[string]any
+	if session.DisclosedPayload != "" {
+		var disclosedPayload map[string]any
+		if err := json.Unmarshal([]byte(session.DisclosedPayload), &disclosedPayload); err == nil {
+			if df, ok := disclosedPayload["disclosedFields"].(map[string]any); ok {
+				disclosedFields = df
+			}
+		}
+	}
+	if len(disclosedFields) > 0 {
+		credData = disclosedFields
+	} else {
+		applySelectiveDisclosure(credData, session.HiddenFields)
+	}
+
+	expiryDate = ""
+	if credData != nil {
+		if v, ok := credData["expiryDate"].(string); ok {
+			expiryDate = v
+		}
+	}
+
 	hiddenSet := make(map[string]bool, len(session.HiddenFields))
 	for _, f := range session.HiddenFields {
 		hiddenSet[f] = true
@@ -519,18 +728,80 @@ func handleResolveSession(w http.ResponseWriter, r *http.Request) {
 			"verifiedBy": resolveVerifiedBy, "status": status,
 			"issuedAt": issuedAtFromInfo, "expiryDate": expiryDate,
 			"credentialData": credData, "reason": strings.ToUpper(status),
-			"checks": map[string]bool{"existsOnChain": true, "notRevoked": false, "signatureValid": false, "hashMatches": false},
+			"checks": map[string]bool{
+				"existsOnChain":        true,
+				"notRevoked":           false,
+				"signatureValid":       false,
+				"fieldHashesValid":     false,
+				"holderSignatureValid": false,
+				"hashMatches":          false,
+			},
 		})
 		return
 	}
 
+	// --- ISSUER SIGNATURE CHECK (unchanged) ---
 	credHash, _ := cred["CredentialHash"].(string)
 	signature, _ := cred["Signature"].(string)
 	publicKey, _ := cred["PublicKey"].(string)
 	sigValid, _ := pqcVerify(credHash, signature, publicKey)
-	recomputed := sha3Hex(credInfoStr)
-	hashMatches := strings.EqualFold(recomputed, credHash)
-	verified := notRevoked && sigValid && hashMatches
+
+	// --- FIELD HASHES CHECK (REPLACES the old hashMatches) ---
+	// Old code: recomputed := sha3Hex(credInfoStr); hashMatches := recomputed == credHash
+	// That re-hashed the plaintext Info field — impossible once Info is encrypted/removed.
+	// New code: verify each DISCLOSED field's hash against the on-chain FieldHashes map.
+	fieldHashesStr, _ := cred["FieldHashes"].(string)
+	var fieldHashes map[string]string
+	if fieldHashesStr != "" {
+		_ = json.Unmarshal([]byte(fieldHashesStr), &fieldHashes)
+	}
+
+	legacyHashMatches := false
+	if credInfoStr != "" {
+		recomputed := sha3Hex(credInfoStr)
+		legacyHashMatches = strings.EqualFold(recomputed, credHash)
+	}
+
+	fieldHashesValid := true
+	if len(fieldHashes) == 0 {
+		// Legacy credential without FieldHashes — fall back to old hashMatches for A/B period.
+		fieldHashesValid = legacyHashMatches
+	} else {
+		// Parse the disclosedPayload the holder signed (stored on the session row).
+		if len(disclosedFields) == 0 {
+			fieldHashesValid = false
+		} else {
+			for field, value := range disclosedFields {
+				expectedHash, exists := fieldHashes[field]
+				if !exists {
+					fieldHashesValid = false
+					break
+				}
+				computed := sha3Hex(field + ":" + fmt.Sprintf("%v", value))
+				if !strings.EqualFold(computed, expectedHash) {
+					fieldHashesValid = false
+					break
+				}
+			}
+		}
+	}
+
+	// --- HOLDER SIGNATURE CHECK (NEW — 5th check) ---
+	// Fetch the holder's DSA public key from the DB (NOT from the request).
+	var holderDsaPub string
+	_ = db.QueryRow(
+		`SELECT dsa_public_key FROM holders WHERE holder_id = ?`,
+		session.HolderID,
+	).Scan(&holderDsaPub)
+
+	holderSigValid := false
+	if holderDsaPub != "" && session.DisclosedPayload != "" && session.HolderSignature != "" {
+		payloadHash := sha3Hex(session.DisclosedPayload)
+		holderSigValid, _ = pqcVerify(payloadHash, session.HolderSignature, holderDsaPub)
+	}
+
+	// --- FINAL VERDICT ---
+	verified := notRevoked && sigValid && fieldHashesValid && holderSigValid
 
 	result := "success"
 	failureReason := ""
@@ -538,12 +809,14 @@ func handleResolveSession(w http.ResponseWriter, r *http.Request) {
 		result = "failure"
 		if !sigValid {
 			failureReason = "signature_invalid"
-		} else if !hashMatches {
-			failureReason = "hash_mismatch"
+		} else if !fieldHashesValid {
+			failureReason = "field_hashes_invalid"
+		} else if !holderSigValid {
+			failureReason = "holder_signature_invalid"
 		}
 	}
 	logVerificationToDB(session.CredentialID, fabricCredID, "VER-UOS-0001", resolveVerifiedBy,
-		result, failureReason, true, hashMatches, sigValid, notRevoked, status)
+		result, failureReason, true, fieldHashesValid, sigValid, notRevoked, status)
 	deleteMobileSession(req.SessionToken)
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -555,8 +828,12 @@ func handleResolveSession(w http.ResponseWriter, r *http.Request) {
 		"issuedAt": issuedAtFromInfo, "expiryDate": expiryDate,
 		"credentialData": credData,
 		"checks": map[string]bool{
-			"existsOnChain": true, "notRevoked": notRevoked,
-			"signatureValid": sigValid, "hashMatches": hashMatches,
+			"existsOnChain":        true,
+			"notRevoked":           notRevoked,
+			"signatureValid":       sigValid,
+			"fieldHashesValid":     fieldHashesValid,
+			"holderSignatureValid": holderSigValid,
+			"hashMatches":          legacyHashMatches,
 		},
 	})
 }

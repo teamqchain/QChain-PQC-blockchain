@@ -280,6 +280,14 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
       });
       return;
     }
+    if (!holder.isWalletActivated) {
+      if (!mounted) return;
+      setState(() {
+        _issueError =
+            'Holder has not activated their wallet (no ML-KEM public key registered)';
+      });
+      return;
+    }
 
     setState(() {
       _isIssuing = true;
@@ -355,6 +363,11 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
 
       case 2:
         if (_selectedHolder == null) {
+          setState(() => _step2Error = true);
+          return;
+        }
+        // Wallet must be activated before continuing — issuance needs holder ML-KEM key.
+        if (!_selectedHolder!.isWalletActivated) {
           setState(() => _step2Error = true);
           return;
         }
@@ -832,12 +845,14 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
             child: Row(
               children: [
-                const SizedBox(width: 40),
+                // Match HolderRow: avatar lead + columns + status slot + action.
+                SizedBox(width: HolderTableLayout.avatarLeadWidth),
                 ColHead('NAME', flex: 3),
                 ColHead('TYPE', flex: 2),
                 ColHead('COLLEGE', flex: 3),
                 ColHead('EID', flex: 2),
-                const SizedBox(width: 80),
+                SizedBox(width: HolderTableLayout.statusSlotWidth),
+                SizedBox(width: HolderTableLayout.actionWidth),
               ],
             ),
           ),
@@ -877,25 +892,43 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFF4CAF50).withOpacity(0.1),
-                border: const Border(
-                  top: BorderSide(color: Color(0xFF4CAF50), width: 1),
+                color: _selectedHolder!.isWalletActivated
+                    ? const Color(0xFF4CAF50).withOpacity(0.1)
+                    : Colors.orange.withOpacity(0.1),
+                border: Border(
+                  top: BorderSide(
+                    color: _selectedHolder!.isWalletActivated
+                        ? const Color(0xFF4CAF50)
+                        : Colors.orange,
+                    width: 1,
+                  ),
                 ),
               ),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.check_circle,
+                  Icon(
+                    _selectedHolder!.isWalletActivated
+                        ? Icons.check_circle
+                        : Icons.warning_amber_rounded,
                     size: 13,
-                    color: Color(0xFF4CAF50),
+                    color: _selectedHolder!.isWalletActivated
+                        ? const Color(0xFF4CAF50)
+                        : Colors.orange[700],
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    '${_selectedHolder!.fullName} selected — ${_selectedHolder!.emiratesID}',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF4CAF50),
-                      fontWeight: FontWeight.w600,
+                  Expanded(
+                    child: Text(
+                      _selectedHolder!.isWalletActivated
+                          ? '${_selectedHolder!.fullName} selected — ${_selectedHolder!.emiratesID}'
+                          : '${_selectedHolder!.fullName} selected — wallet not activated. '
+                              'Issuance will fail until they register keys on QWallet.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: _selectedHolder!.isWalletActivated
+                            ? const Color(0xFF4CAF50)
+                            : Colors.orange[700],
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ],
@@ -1379,15 +1412,39 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
   // ─── BOTTOM BUTTONS ───────────────────────────────────────────────────────
 
   Widget _buildBottomButtons() {
+    final holderWalletInactive = _selectedHolder != null &&
+        !_selectedHolder!.isWalletActivated;
+    // Block Next on step 2, and Issue on the final step, when wallet is inactive.
+    final nextBlockedByWallet =
+        (_step == 2 || _step == _kTotalSteps) && holderWalletInactive;
+
     String? errorMsg;
     if (_step == 1 && _step1Error) {
       errorMsg = 'Please select a credential type to continue.';
+    } else if (_step == 2 && holderWalletInactive) {
+      // Selected holder cannot continue until QWallet is activated.
+      errorMsg =
+          'Holder wallet is not activated — ask them to register keys on QWallet.';
     } else if (_step == 2 && _step2Error) {
       errorMsg = 'Please select a holder to continue.';
     } else if (_step == 3 && _step3Error) {
       errorMsg = 'Please complete all required fields.';
+    } else if (_step == _kTotalSteps && holderWalletInactive) {
+      errorMsg =
+          'Holder wallet is not activated — ask them to register keys on QWallet.';
     } else if (_step == 5 && _issueError.isNotEmpty) {
       errorMsg = _issueError;
+    }
+
+    final bool nextEnabled;
+    if (_step == 2) {
+      // Must have a selected holder with an activated wallet.
+      nextEnabled = _selectedHolder != null &&
+          _selectedHolder!.isWalletActivated;
+    } else if (_step == _kTotalSteps) {
+      nextEnabled = _confirmed && !nextBlockedByWallet;
+    } else {
+      nextEnabled = true;
     }
 
     return Row(
@@ -1427,7 +1484,7 @@ class _IssueSingleCredentialPageState extends State<IssueSingleCredentialPage> {
           label: _step == _kTotalSteps ? 'Issue Credential' : 'Next →',
           backgroundColor: AppColors.issuingAccent,
           hoverColor: AppColors.issuingAccent.withOpacity(0.82),
-          enabled: _step == _kTotalSteps ? _confirmed : true,
+          enabled: nextEnabled,
           onTap: _goNext,
           width: _step == _kTotalSteps ? 150 : 90,
         ),
