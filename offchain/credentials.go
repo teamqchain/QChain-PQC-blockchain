@@ -351,6 +351,7 @@ func handleRevokeCredential(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(result, &parsed)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":      true,
+		"message":      "Credential revoked successfully",
 		"credentialID": req.CredentialID,
 		"result":       parsed,
 	})
@@ -454,6 +455,7 @@ func handleSuspendCredential(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":      true,
+		"message":      "Credential suspended successfully",
 		"credentialID": req.CredentialID,
 	})
 }
@@ -514,6 +516,7 @@ func handleRestoreCredential(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":      true,
+		"message":      "Credential restored successfully",
 		"credentialID": req.CredentialID,
 	})
 }
