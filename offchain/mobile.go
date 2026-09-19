@@ -24,17 +24,28 @@ import (
 	"time"
 )
 
-// GET /mobile/checkKeys?emiratesID=XXX — check if a holder has registered public keys.
+// GET /mobile/checkKeys?emiratesID=XXX — check if a holder has registered public keys and return them.
 func handleCheckKeys(w http.ResponseWriter, r *http.Request) {
 	emiratesID := r.URL.Query().Get("emiratesID")
 	if emiratesID == "" {
 		writeError(w, http.StatusBadRequest, "missing emiratesID")
 		return
 	}
+
+	type checkKeysResponse struct {
+		HasKemKey     bool   `json:"hasKemKey"`
+		HasSigningKey bool   `json:"hasSigningKey"`
+		KemPublicKey  string `json:"kemPublicKey"`
+		DsaPublicKey  string `json:"dsaPublicKey"`
+	}
+
 	holderID, _, err := holderByEmiratesID(emiratesID)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]bool{
-			"hasKemKey": false, "hasSigningKey": false,
+		writeJSON(w, http.StatusOK, checkKeysResponse{
+			HasKemKey:     false,
+			HasSigningKey: false,
+			KemPublicKey:  "",
+			DsaPublicKey:  "",
 		})
 		return
 	}
@@ -43,10 +54,18 @@ func handleCheckKeys(w http.ResponseWriter, r *http.Request) {
 		`SELECT kem_public_key, dsa_public_key FROM holders WHERE holder_id = ?`,
 		holderID,
 	).Scan(&kemPub, &dsaPub)
-	writeJSON(w, http.StatusOK, map[string]bool{
-		"hasKemKey":     kemPub.Valid && kemPub.String != "",
-		"hasSigningKey": dsaPub.Valid && dsaPub.String != "",
-	})
+
+	var resp checkKeysResponse
+	if kemPub.Valid && kemPub.String != "" {
+		resp.HasKemKey = true
+		resp.KemPublicKey = kemPub.String
+	}
+	if dsaPub.Valid && dsaPub.String != "" {
+		resp.HasSigningKey = true
+		resp.DsaPublicKey = dsaPub.String
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // POST /mobile/registerHolderKeys — registers holder ML-KEM and ML-DSA public keys.
