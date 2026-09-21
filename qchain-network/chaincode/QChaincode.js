@@ -32,6 +32,8 @@ class QChaincode extends Contract {
     // Track H: bind holder public keys (ML-KEM-768 for encryption + ML-DSA-44 for signing)
     async bindHolderKeys(ctx, holderID, kemPublicKey, dsaPublicKey) {
         try {
+            await this.checkAccess(ctx, "issuer");
+
             const holder = await this.getHolder(ctx, holderID);
             holder.KemPublicKey = kemPublicKey;
             holder.DsaPublicKey = dsaPublicKey;
