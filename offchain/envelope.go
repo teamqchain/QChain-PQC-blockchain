@@ -40,7 +40,6 @@ import (
 const (
 	envelopeMagic   = "qchain-env" // marker distinguishing an envelope from legacy plaintext JSON
 	envelopeVersion = 1
-	recipientOrg    = "org" // the only recipient today; holder/verifier come later (B2)
 )
 
 // KemWrap is one recipient's ML-KEM encapsulation of the shared secret.
@@ -234,14 +233,6 @@ func decryptCredentialData(stored, holderID, holderKemPrivHex string) (string, e
 		}
 		recipientHolder := fmt.Sprintf("holder:%s", holderID)
 		attrs, err = openAttributes(&env, recipientHolder, holderKemPrivHex)
-		if err == nil {
-			return formatDecryptedAttrs(attrs)
-		}
-	}
-
-	// 2. Fallback to legacy org key (B3 fallback if deployed)
-	if orgKemPrivHex != "" {
-		attrs, err := openAttributes(&env, recipientOrg, orgKemPrivHex)
 		if err == nil {
 			return formatDecryptedAttrs(attrs)
 		}
