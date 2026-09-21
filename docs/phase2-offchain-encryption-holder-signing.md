@@ -60,7 +60,6 @@ This limitation is intentional and bounded by the "don't touch on-chain / don't 
 | `offchain/db_holders.go` | Added `holderKemPubByID`, `holderKemPubByEmiratesID`, `updateHolderKemPub` functions. |
 | `offchain/envelope_test.go` | Tests updated for holder-key model: round-trip, tamper detection, holder key required, recipient verification. |
 | `qchain-network/scripts/registerEnroll.sh` | Enrolls `issuer1` and `verifier1` with `--id.attrs 'role=issuer:ecert'` and `--id.attrs 'role=verifier:ecert'` so chaincode `checkAccess` passes attribute verification. |
-
 | `qchain-network/chaincode/QChaincode.js` | Added `bindHolderKeys` transaction (guarded by `checkAccess("issuer")`) to store holder ML-KEM-768 and ML-DSA-44 public keys on-chain. Updated `issueCredential` signature to accept `fieldHashes` (stored on ledger to support 5-check presentation verification). |
 
 **Chaincode deployment note:** `qchain-network/chaincode/QChaincode.js` was modified with `bindHolderKeys` and `fieldHashes`. The chaincode package must be redeployed/upgraded on the Fabric network before running Track H presentations. No `configtx`, `core.yaml`, or channel policies were modified.
