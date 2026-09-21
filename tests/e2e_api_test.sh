@@ -175,7 +175,7 @@ assert_json "$ENV_RESP" "data.get('wraps')[0].get('recipient')" "holder" "Recipi
 # ─── 8. Generate Presentation Session ────────────────────────────────────────
 echo ""
 echo "8. Generating Presentation Session (/mobile/generatePresentation)..."
-DISCLOSED_PAYLOAD='{"disclosedFields":{"college":"CCI","degreeTitle":"BSc Computer Science","gpa":"3.8"}}'
+DISCLOSED_PAYLOAD='{"credentialID":"'"$CRED_ID"'","disclosedFields":{"college":"CCI","degreeTitle":"BSc Computer Science","gpa":"3.8"}}'
 
 # Sign the disclosed payload with the holder's ML-DSA-44 private key
 HOLDER_SIG=$(docker run --rm qchain-api:latest keygen sign "$HOLDER_DSA_PRIV" "$DISCLOSED_PAYLOAD")
@@ -219,7 +219,7 @@ echo ""
 echo "10. Running Tamper Detection Tests..."
 
 # Test A: GPA fabrication (holder tampers 3.8 -> 4.0 and re-signs)
-TAMPERED_PAYLOAD='{"disclosedFields":{"college":"CCI","degreeTitle":"BSc Computer Science","gpa":"4.0"}}'
+TAMPERED_PAYLOAD='{"credentialID":"'"$CRED_ID"'","disclosedFields":{"college":"CCI","degreeTitle":"BSc Computer Science","gpa":"4.0"}}'
 TAMPERED_SIG=$(docker run --rm qchain-api:latest keygen sign "$HOLDER_DSA_PRIV" "$TAMPERED_PAYLOAD")
 
 TAMPER_PRES_RESP=$(curl -s -X POST "$API_URL/mobile/generatePresentation" \
@@ -257,6 +257,19 @@ FORGED_RESOLVE=$(curl -s -X POST "$API_URL/resolveSession" \
 
 assert_json "$FORGED_RESOLVE" "data.get('verified')" "False" "Forged signature rejected (verified = false)"
 assert_json "$FORGED_RESOLVE" "data.get('checks', {}).get('holderSignatureValid')" "False" "Caught by holderSignatureValid = false"
+
+# Test C: Credential ID mismatch at generation (fails fast with HTTP 400)
+WRONG_CRED_PAYLOAD='{"credentialID":"CRED-9999","disclosedFields":{"college":"CCI","degreeTitle":"BSc Computer Science","gpa":"3.8"}}'
+WRONG_CRED_SIG=$(docker run --rm qchain-api:latest keygen sign "$HOLDER_DSA_PRIV" "$WRONG_CRED_PAYLOAD")
+WRONG_CRED_RESP=$(curl -s -X POST "$API_URL/mobile/generatePresentation" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"credentialID\": \"$CRED_ID\",
+        \"hiddenFields\": [],
+        \"disclosedPayload\": $(echo "$WRONG_CRED_PAYLOAD" | python3 -c 'import sys, json; print(json.dumps(sys.stdin.read().strip()))'),
+        \"holderSignature\": \"$WRONG_CRED_SIG\"
+    }")
+assert_json "$WRONG_CRED_RESP" "data.get('success')" "False" "Mismatched credentialID in disclosedPayload rejected at generation"
 
 # ─── 11. OTP Session Flow ───────────────────────────────────────────────────
 echo ""
