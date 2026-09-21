@@ -411,6 +411,15 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			wantErrorSubstr: "missing credentialID",
 		},
 		{
+			name:            "generateOTP credentialID mismatch",
+			handler:         handleGenerateOTP,
+			method:          http.MethodPost,
+			target:          "/mobile/generateOTP",
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"credentialID\":\"CRED-999\"}"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "does not match",
+		},
+		{
 			name:            "generatePresentation missing credentialID",
 			handler:         handleGeneratePresentation,
 			method:          http.MethodPost,
@@ -418,6 +427,15 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			body:            `{}`,
 			wantStatus:      http.StatusBadRequest,
 			wantErrorSubstr: "missing credentialID",
+		},
+		{
+			name:            "generatePresentation credentialID mismatch",
+			handler:         handleGeneratePresentation,
+			method:          http.MethodPost,
+			target:          "/mobile/generatePresentation",
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"credentialID\":\"CRED-999\"}"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "does not match",
 		},
 		{
 			name:            "resolveSession missing sessionToken",

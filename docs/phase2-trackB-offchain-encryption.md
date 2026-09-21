@@ -1,6 +1,6 @@
 # QChain — Phase 2 · Track B2: Off-Chain Credential-Data Encryption (Holder-Held Keys)
 
-**Status:** Implemented (holder-held-key phase / B2). Backend-only. No chaincode change, no ledger change, no network restart.
+**Status:** Implemented (holder-held-key phase / B2 + Track H). Chaincode updated with `bindHolderKeys` (with issuer access control) and `fieldHashes` on `issueCredential`; requires chaincode package upgrade.
 **Audience:** QChain contributors — past and future. Read this before touching credential storage or the crypto files.
 **Date:** 2026-09 (upgraded from B3 org-held-key phase, 2026-07)
 **Related:** `QChain_Phase2_Security_Plan.md` (gap analysis), `QChain_Phase2_TrackB_Implementation_Plan.md` (full design incl. Merkle-root selective disclosure and presentation re-wrap phases).
@@ -65,7 +65,9 @@ This limitation is intentional and bounded by the "don't touch on-chain / don't 
 | `offchain/envelope_test.go` | Tests updated for holder-key model: round-trip, tamper detection, holder key required, recipient verification. |
 | `qchain-network/scripts/registerEnroll.sh` | Enrolls `issuer1` and `verifier1` with `--id.attrs 'role=issuer:ecert'` and `--id.attrs 'role=verifier:ecert'` so chaincode `checkAccess` passes attribute verification. |
 
-**Nothing else was touched.** No file under `qchain-network/chaincode/` was modified. No `configtx`, `core.yaml`, docker, or channel artifact was modified.
+| `qchain-network/chaincode/QChaincode.js` | Added `bindHolderKeys` transaction (guarded by `checkAccess("issuer")`) to store holder ML-KEM-768 and ML-DSA-44 public keys on-chain. Updated `issueCredential` signature to accept `fieldHashes` (stored on ledger to support 5-check presentation verification). |
+
+**Chaincode deployment note:** `qchain-network/chaincode/QChaincode.js` was modified with `bindHolderKeys` and `fieldHashes`. The chaincode package must be redeployed/upgraded on the Fabric network before running Track H presentations. No `configtx`, `core.yaml`, or channel policies were modified.
 
 ---
 
