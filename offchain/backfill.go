@@ -56,7 +56,7 @@ func runBackfillEncrypt() {
 			continue
 		}
 		if r.holderKemPub == "" {
-			log.Printf("backfill: %s: skipping — holder %s has no kem_public_key (run GENERATE_HOLDER_KEYS=1 first)", r.id, r.holderID)
+			log.Printf("backfill: %s: skipping — holder %s has no kem_public_key registered (keys must be registered via /mobile/registerHolderKeys first)", r.id, r.holderID)
 			skipped++
 			continue
 		}

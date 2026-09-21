@@ -338,23 +338,14 @@ ENV
 
 # 4. Open offchain/.env in your text editor and insert the hex keys you generated in step 2
 
-# 5. Generate and backfill ML-KEM-768 key pairs for all database holders
-docker run --rm \
-  --network host \
-  --user "$(id -u):$(id -g)" \
-  --env-file offchain/.env \
-  -v "$PWD/offchain:/app" \
-  -e GENERATE_HOLDER_KEYS=1 \
-  qchain-api:latest
-
-# 6. Start the backend container
+# 5. Start the backend container
 bash offchain/docker-run.sh
 
-# 7. Seed the demo holders on Fabric via the API
+# 6. Seed the demo holders on Fabric via the API
 bash qchain-network/scripts/setup-demo.sh http://localhost:3000
 
-# 8. (Track H) Register holder public keys (wallet activation)
-# In production, the QWallet phone app generates keys locally and calls this endpoint.
+# 7. (Track H) Register holder public keys (wallet activation)
+# The QWallet mobile app generates keys locally on-device and registers public keys via /mobile/registerHolderKeys.
 # You can check if a holder has keys registered:
 curl -s "http://localhost:3000/mobile/checkKeys?emiratesID=784-1990-1234567-1"
 ```
