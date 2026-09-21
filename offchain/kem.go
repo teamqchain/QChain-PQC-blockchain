@@ -183,23 +183,6 @@ func unwrapKey(kwkHex, wrapHex string) ([]byte, error) {
 	return gcm.Open(nil, zeroNonce, wrap, nil)
 }
 
-// generateOrgKEM prints a fresh organisation ML-KEM key pair as .env lines, then
-// returns. It is invoked as a one-shot container mode (GENERATE_ORG_KEM=1) so
-// operators never need cmd/ in the Docker image or liboqs installed on the host —
-// the same running server image can generate the key.
-func generateOrgKEM() {
-	pub, sec, err := kemGenerateKeypair()
-	if err != nil {
-		fmt.Println("ERROR generating ML-KEM key pair:", err)
-		return
-	}
-	fmt.Println("# ─── Organisation ML-KEM Key Pair (Track B off-chain encryption) ──────────────")
-	fmt.Println("# Append these two lines to offchain/.env. Keep .env in .gitignore; never commit.")
-	fmt.Printf("# Algorithm: %s\n", kemName)
-	fmt.Printf("ORG_KEM_PUBLIC_KEY_HEX=%s\n", pub)
-	fmt.Printf("ORG_KEM_PRIVATE_KEY_HEX=%s\n", sec)
-}
-
 // newGCM builds an AES-256-GCM AEAD from a hex key.
 func newGCM(keyHex string) (cipher.AEAD, error) {
 	key, err := hex.DecodeString(keyHex)

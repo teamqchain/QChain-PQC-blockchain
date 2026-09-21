@@ -144,6 +144,8 @@ func handleRegisterHolderKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /mobile/getEnvelope?credentialID=CRED-XXXX — returns raw encrypted envelope JSON.
+// FUTURE (Track H / Gap G7): Add holder authorization check (e.g. require emiratesID / session token
+// and verify ownership against credentials table) before returning envelope ciphertext.
 func handleGetEnvelope(w http.ResponseWriter, r *http.Request) {
 	credentialID := r.URL.Query().Get("credentialID")
 	if credentialID == "" {
@@ -380,6 +382,19 @@ func handleGenerateOTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing credentialID")
 		return
 	}
+	if req.DisclosedPayload != "" {
+		var payload struct {
+			CredentialID string `json:"credentialID"`
+		}
+		if err := json.Unmarshal([]byte(req.DisclosedPayload), &payload); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON in disclosedPayload")
+			return
+		}
+		if payload.CredentialID != "" && payload.CredentialID != req.CredentialID {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("disclosedPayload credentialID %q does not match request credentialID %q", payload.CredentialID, req.CredentialID))
+			return
+		}
+	}
 	holderID, err := credentialHolderID(req.CredentialID)
 	if err == sql.ErrNoRows {
 		writeError(w, http.StatusNotFound, "credential not found")
@@ -432,6 +447,19 @@ func handleGeneratePresentation(w http.ResponseWriter, r *http.Request) {
 	if req.CredentialID == "" {
 		writeError(w, http.StatusBadRequest, "missing credentialID")
 		return
+	}
+	if req.DisclosedPayload != "" {
+		var payload struct {
+			CredentialID string `json:"credentialID"`
+		}
+		if err := json.Unmarshal([]byte(req.DisclosedPayload), &payload); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON in disclosedPayload")
+			return
+		}
+		if payload.CredentialID != "" && payload.CredentialID != req.CredentialID {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("disclosedPayload credentialID %q does not match request credentialID %q", payload.CredentialID, req.CredentialID))
+			return
+		}
 	}
 	holderID, err := credentialHolderID(req.CredentialID)
 	if err == sql.ErrNoRows {
@@ -673,12 +701,20 @@ func handleResolveSession(w http.ResponseWriter, r *http.Request) {
 
 	// Track H: If disclosedPayload was provided in the session, parse disclosedFields
 	var disclosedFields map[string]any
+	credentialIDMatches := true
 	if session.DisclosedPayload != "" {
 		var disclosedPayload map[string]any
 		if err := json.Unmarshal([]byte(session.DisclosedPayload), &disclosedPayload); err == nil {
+			if pCredID, ok := disclosedPayload["credentialID"].(string); ok && pCredID != "" {
+				if pCredID != session.CredentialID && pCredID != fabricCredID {
+					credentialIDMatches = false
+				}
+			}
 			if df, ok := disclosedPayload["disclosedFields"].(map[string]any); ok {
 				disclosedFields = df
 			}
+		} else {
+			credentialIDMatches = false
 		}
 	}
 	if len(disclosedFields) > 0 {
@@ -795,7 +831,7 @@ func handleResolveSession(w http.ResponseWriter, r *http.Request) {
 	).Scan(&holderDsaPub)
 
 	holderSigValid := false
-	if holderDsaPub != "" && session.DisclosedPayload != "" && session.HolderSignature != "" {
+	if holderDsaPub != "" && session.DisclosedPayload != "" && session.HolderSignature != "" && credentialIDMatches {
 		payloadHash := sha3Hex(session.DisclosedPayload)
 		holderSigValid, _ = pqcVerify(payloadHash, session.HolderSignature, holderDsaPub)
 	}
@@ -811,6 +847,8 @@ func handleResolveSession(w http.ResponseWriter, r *http.Request) {
 			failureReason = "signature_invalid"
 		} else if !fieldHashesValid {
 			failureReason = "field_hashes_invalid"
+		} else if !credentialIDMatches {
+			failureReason = "credential_id_mismatch"
 		} else if !holderSigValid {
 			failureReason = "holder_signature_invalid"
 		}
