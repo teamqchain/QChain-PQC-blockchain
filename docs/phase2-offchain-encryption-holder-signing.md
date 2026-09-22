@@ -1,185 +1,259 @@
-# QChain — Phase 2 · Track B2: Off-Chain Credential-Data Encryption (Holder-Held Keys)
+# QChain — Phase 2 · Track B2 & Track H: Off-Chain Credential Encryption & Holder Presentation Signing
 
-**Status:** Implemented (holder-held-key phase / B2 + Track H). Chaincode updated with `bindHolderKeys` (with issuer access control) and `fieldHashes` on `issueCredential`; requires chaincode package upgrade.
-**Audience:** QChain contributors — past and future. Read this before touching credential storage or the crypto files.
-**Date:** 2026-09 (upgraded from B3 org-held-key phase, 2026-07)
-**Related:** `QChain_Phase2_Security_Plan.md` (gap analysis), `QChain_Phase2_TrackB_Implementation_Plan.md` (full design incl. Merkle-root selective disclosure and presentation re-wrap phases).
+**Status:** Implemented (Track B2 holder-held-key encryption + Track H holder presentation signing & verification). Chaincode updated with `bindHolderKeys` (with issuer access control per Audit §4.1) and `fieldHashes` on `issueCredential`. Fail-closed presentation binding implemented per Audit §4.2. Requires chaincode package upgrade on Fabric.  
+**Audience:** QChain contributors — past and future. Read this before touching credential storage, presentation verification, or crypto modules.  
+**Date:** 2026-09 (upgraded from B3 org-held-key phase, 2026-07)  
+**Related:** `QChain_Phase2_Security_Plan.md` (gap analysis), `docs/phase2-trackB-offchain-encryption.md` (original track B specification).
 
 ---
 
 ## 1. TL;DR
 
-The credential *body* (the attribute JSON) used to be stored **in plaintext in three places**: on-chain in the `Info` field, in IPFS, and in the MySQL `credential_data` column. This change encrypts the **two off-chain copies** (IPFS + MySQL) using a post-quantum hybrid envelope (ML-KEM-768 + AES-256-GCM), **wrapping to the holder's ML-KEM public key** so only the holder can decrypt.
+Prior to Phase 2, credential attribute bodies were stored **in plaintext in three places**:
+1. On-chain in the Fabric ledger world-state (`Info` field).
+2. Off-chain in IPFS (addressed by content CID).
+3. Off-chain in the MySQL database (`credential_data` column).
 
-The **on-chain copy is deliberately left untouched** — we are not authorised to modify the chaincode, and the blockchain must not be restarted. On-chain confidentiality remains a known, documented gap owned by **Track A**. See §7 for exactly what is and isn't protected.
+This track accomplishes two major cryptographic upgrades:
 
-**Key change from B3 (org-held-key phase):** Encryption recipients changed from `"org"` → `"holder:<holderID>"`. Each credential is encrypted to its specific holder's public key. Org KEM keys have been completely removed.
+1. **Track B2 — Off-Chain At-Rest Confidentiality:** Encrypts the **two off-chain stores** (IPFS + MySQL) using a post-quantum hybrid envelope (**ML-KEM-768 + AES-256-GCM**), wrapping each attribute data key to the **holder's ML-KEM public key** (`"holder:<holderID>"`). Only the holder possesses the secret key required for decryption on their mobile device. All org KEM keys and server-side holder private key custody (`.env.holder_keys`) have been completely eradicated.
+2. **Track H — On-Device Holder Presentation Signing & 5-Check Verification:** The holder generates an **ML-DSA-44** key pair on device and registers the public key via `POST /mobile/registerHolderKeys`. When presenting credentials (via QR `PRES-...` or 6-digit `OTP-...`), the holder signs a canonical JSON payload binding the `credentialID` and disclosed fields. Verifiers resolve the session via `POST /resolveSession`, which evaluates **5 cryptographic checks** including verifying field hashes and holder ML-DSA signatures.
 
----
-
-## 2. Why this shape (the important context)
-
-While implementing, we verified against the actual code (not the README) and found that the Phase 2 plan's framing — *"only metadata is stored on-chain, so just encrypt IPFS"* — **does not match reality**:
-
-- `handleIssueCredential` (`offchain/credentials.go`) builds the full canonical JSON, **including every credential attribute**, and the chaincode writes that whole string to world-state in the `Info` field (`QChaincode.js`, `Info: credentialJSON`). So the complete plaintext credential lives on **every peer's ledger**.
-- **Verification never reads IPFS.** Both `handleVerifyCredential` and `handleResolveSession` fetch the credential from the **chain** (`getCredential`) and recompute the hash over the on-chain `Info`. The IPFS CID is written at issuance and never read back.
-
-**Consequence for this work:** encrypting the off-chain stores does **not** by itself make verification confidential, because verification uses the on-chain plaintext. What it *does* achieve is removing plaintext from the two off-chain stores (IPFS, which is content-addressed and reachable by CID; and the MySQL DB, which holds PII) — a real at-rest / "harvest-now-decrypt-later" improvement for those stores, and it closes the DB-plaintext gap (G3) at the same time. Full confidentiality additionally requires the on-chain plaintext to be addressed, which is **Track A** (see §8).
-
-This limitation is intentional and bounded by the "don't touch on-chain / don't restart the chain" constraint. **Do not remove the on-chain plaintext without doing Track A** — verification depends on it today.
+**Audit Remediations Included:**
+- **Audit §4.1 (Chaincode Access Control):** `bindHolderKeys` in `QChaincode.js` is guarded with `await this.checkAccess(ctx, "issuer")`, ensuring only authorized issuer gateway identities can bind public keys on ledger.
+- **Audit §4.2 (Fail-Closed Credential ID Binding):** Both presentation creation (`handleGenerateOTP`, `handleGeneratePresentation`) and resolution (`handleResolveSession`) strictly enforce non-empty, matching `credentialID` in the signed payload. Disclosed payload tampering or mismatched credential IDs fail closed immediately with `HTTP 400` or `failureReason = "credential_id_mismatch"`.
 
 ---
 
-## 3. What was changed (file by file)
+## 2. Architecture & Design Context
 
-### New files (B2 & Track H)
+While implementing Track B and Track H, analysis of the running codebase revealed that the original premise — *"only metadata is on-chain, so simply encrypt IPFS"* — did not match reality:
+- `handleIssueCredential` (`offchain/credentials.go`) serialized the full attribute JSON into the chaincode transaction payload, and the chaincode recorded that string directly on every peer's ledger in `Info`.
+- Legacy verification never fetched from IPFS; both `handleVerifyCredential` and `handleResolveSession` fetched `Info` from the chain and recomputed `SHA3-256(Info)`.
+
+### How Track H Decouples Presentation from On-Chain Plaintext
+To enable selective disclosure and prepare for eventual on-chain plaintext removal (Track A):
+1. During `issueCredential`, the backend computes a map of individual field hashes: `FieldHashes[field] = SHA3-256(field + ":" + value)`. This map is written to the ledger alongside the credential.
+2. When presenting, the holder shares only disclosed fields in `disclosedPayload` signed with their ML-DSA-44 private key.
+3. During verification in `handleResolveSession`, each disclosed field is verified against `FieldHashes`. The verifier no longer needs to re-hash the entire plaintext `Info` field.
+
+---
+
+## 3. What Was Changed (File by File)
+
+### New Files (B2 & Track H)
 
 | File | Purpose |
 |---|---|
-| `qchain-network/scripts/migrations/2026-09_trackB2_holder_keys.sql` | Migration marker documenting the B2 transition (no schema changes needed — `holders.kem_public_key` was already added in the B1 migration). |
-| `qchain-network/scripts/migrations/2026-09_trackH_holder_signing.sql` | Migration for Track H holder ML-DSA-44 public keys (`holders.dsa_public_key`) and wallet activation flag. |
+| `qchain-network/scripts/migrations/2026-09_trackB2_holder_keys.sql` | Migration marker documenting B2 transition (`holders.kem_public_key`). |
+| `qchain-network/scripts/migrations/2026-09_trackH_holder_signing.sql` | Migration adding `holders.dsa_public_key` and `holders.wallet_activated`. |
 
-### Files from B1 (unchanged by B2)
-
-| File | Purpose |
-|---|---|
-| `offchain/kem.go` | Low-level primitives: ML-KEM-768 encap/decap (via liboqs), HKDF-SHA3-256 key derivation, AES-256-GCM seal/open, single-use key wrapping. Recipient-agnostic. |
-| `qchain-network/scripts/migrations/2026-07_trackB_offchain_encryption.sql` | Additive columns: `credentials.enc_version`, `holders.kem_public_key`, `verifiers.kem_public_key`. MySQL-only. |
-
-### Edited files (B2 & Track H)
+### Core Backend & Crypto Files
 
 | File | Change |
 |---|---|
-| `offchain/config.go` | Issuer keys continue to be loaded from environment variables (`ISSUER_PRIVATE_KEY_HEX`, `ISSUER_PUBLIC_KEY_HEX`). Org KEM variables removed. |
-| `offchain/server.go` | Removed local testing-only holder private key custody (`.env.holder_keys`). Only issuer keys and database connection are loaded at startup. |
-| `offchain/envelope.go` | **Core B2 change:** `encryptCredentialData(credID, attrs, holderID, holderKemPubHex)` wraps to `"holder:<holderID>"` instead of `"org"`. |
-| `offchain/mobile.go` | `handleRegisterHolderKeys` (`POST /mobile/registerHolderKeys`) registers client-generated ML-KEM-768 and ML-DSA-44 public keys. `handleMobileGetCredentialsByHolder` serves encrypted envelopes directly to QWallet without server-side decryption. |
-| `offchain/credentials.go` | `handleIssueCredential` looks up holder's KEM public key and requires it. Added strict chaincode response checking: aborts immediately if chaincode returns failure or empty `fabricCredID` (preventing corrupted DB rows). |
-| `offchain/db_credentials.go` | Updated `fabricCredIDByDisplay` to detect empty `fabric_cred_id` and return a descriptive error before querying CouchDB. |
-| `offchain/backfill.go` | `runBackfillEncrypt()` now encrypts each credential to its **holder's** KEM public key (looked up from DB), not to a single org key. Skips credentials whose holder has no key. |
-| `offchain/db_holders.go` | Added `holderKemPubByID`, `holderKemPubByEmiratesID`, `updateHolderKemPub` functions. |
-| `offchain/envelope_test.go` | Tests updated for holder-key model: round-trip, tamper detection, holder key required, recipient verification. |
-| `qchain-network/scripts/registerEnroll.sh` | Enrolls `issuer1` and `verifier1` with `--id.attrs 'role=issuer:ecert'` and `--id.attrs 'role=verifier:ecert'` so chaincode `checkAccess` passes attribute verification. |
-| `qchain-network/chaincode/QChaincode.js` | Added `bindHolderKeys` transaction (guarded by `checkAccess("issuer")`) to store holder ML-KEM-768 and ML-DSA-44 public keys on-chain. Updated `issueCredential` signature to accept `fieldHashes` (stored on ledger to support 5-check presentation verification). |
+| `offchain/kem.go` | Low-level primitives: ML-KEM-768 encap/decap (via `liboqs`), HKDF-SHA3-256 derivation, AES-256-GCM seal/open. Removed org KEM key generation. |
+| `offchain/crypto.go` | ML-DSA-44 PQC signing (`pqcSign`) and verification (`pqcVerify`) via `liboqs-go`. Used for issuer credential signing and holder presentation verification. |
+| `offchain/envelope.go` | `encryptCredentialDataToHolder(credID, attrs, holderKemPubHex)` wraps attribute keys to `"holder"`. Client on-device decryption reverses this. |
+| `offchain/config.go` | Preserves issuer signing keys (`ISSUER_PRIVATE_KEY_HEX`, `ISSUER_PUBLIC_KEY_HEX`). All `ORG_KEM_*` variables removed. |
+| `offchain/server.go` | Removed local `.env.holder_keys` loading, removed `GENERATE_HOLDER_KEYS` and `GENERATE_ORG_KEM` one-shot triggers, removed deprecated `/mobile/registerHolderKey` endpoint. |
+| `offchain/mobile.go` | Core mobile API: `POST /mobile/registerHolderKeys` (binds KEM + DSA keys), `GET /mobile/getEnvelope` (returns encrypted ciphertext), `GET /mobile/getCredentialsByHolder` (returns ciphertext envelopes without server-side decryption), fail-closed `POST /mobile/generateOTP` & `POST /mobile/generatePresentation` (Audit §4.2), and 5-check `POST /resolveSession`. |
+| `offchain/credentials.go` | `handleIssueCredential` requires `holderKemPub`, generates `fieldHashes`, encrypts body to holder key, and passes `fieldHashes` to chaincode. |
+| `offchain/server_test.go` | Unit test suite with comprehensive commented-out run guide, handler input validation tests, selective disclosure tests, field hashes verification tests, presentation payload parsing tests, and ML-DSA presentation signing tests. |
+| `offchain/envelope_test.go` | Unit tests for ML-KEM-768 hybrid envelope encryption, decryption, tamper detection, and holder wrapping. |
+| `qchain-network/chaincode/QChaincode.js` | Added `bindHolderKeys(holderID, kemPubKey, dsaPubKey)` guarded by `await this.checkAccess(ctx, "issuer")`. Updated `issueCredential` to store `fieldHashes` map on ledger. |
+| `tests/e2e_api_test.sh` | Automated end-to-end integration script testing full issuance, envelope retrieval, presentation session creation, 5-check resolution, and tamper detection tests. |
 
-**Chaincode deployment note:** `qchain-network/chaincode/QChaincode.js` was modified with `bindHolderKeys` and `fieldHashes`. The chaincode package must be redeployed/upgraded on the Fabric network before running Track H presentations. No `configtx`, `core.yaml`, or channel policies were modified.
-
----
-
-## 4. How it works (crypto)
-
-Standard hybrid KEM-DEM (the pattern used by TLS 1.3, HPKE, `age`), specialised to per-field keys so future selective disclosure is possible:
-
-1. **One ML-KEM-768 encapsulation** to the **holder's** public key → a 32-byte shared secret `ss` (+ a KEM ciphertext stored in the envelope). Recipient = `"holder:<holderID>"`.
-2. For **each attribute field**: a random 32-byte data key `K_i` encrypts the field value with **AES-256-GCM** (random nonce).
-3. `K_i` is wrapped under `KWK_i = HKDF-SHA3-256(ss, "qchain/trackB/v1|"+credId+"|"+key_i)`. Because the HKDF context includes the field name, **every wrapping key is single-use**, so wrapping with a fixed nonce is safe.
-4. The envelope `{ _qc_env, v, kemAlg, aeadAlg, kdf, credId, wraps[], fields[] }` is stored as JSON in IPFS and in `credential_data`.
-
-Decryption reverses this: decapsulate `ss` from the KEM ciphertext with the holder's secret key, re-derive each `KWK_i`, unwrap `K_i`, AES-open the field. All algorithms are quantum-safe (AES-256 and SHA3 are Grover-only; ML-KEM is the NIST PQC KEM standard).
-
-**Envelope detection / backward compatibility:** stored values carry a `"_qc_env": "qchain-env"` marker. `decryptCredentialData` returns non-envelope values untouched, so pre-Track-B plaintext rows and post-Track-B encrypted rows coexist. `enc_version` (0/1) records which is which.
+### Decommissioned Elements
+- `offchain/holder_keys.go`: **Deleted.**
+- `offchain/cmd/kemkeygen/`: **Deleted.**
+- `.env.holder_keys`: **Eradicated.** Server never holds holder private keys.
 
 ---
 
-## 5. Deploying this change
+## 4. Cryptographic Specifications
 
-Order matters, but every step is safe on a live system and none touches the blockchain.
+### 4.1 Hybrid KEM-DEM Envelope Encryption (Track B2)
+Envelopes stored in MySQL `credential_data` and IPFS use quantum-safe hybrid encryption:
 
-1. **Run the DB migration** (adds columns; no data change — skip if already done for B1):
+1. **Encapsulation:** The backend encapsulates a 32-byte shared secret `ss` to the holder's ML-KEM-768 public key (`kemPublicKey`), yielding KEM ciphertext `ct`. Recipient is marked as `"holder"`.
+2. **Per-Field Data Keys:** For each attribute field `i`:
+   - Generate a random 32-byte data key $K_i$.
+   - Encrypt the field value with AES-256-GCM using a random 12-byte nonce: $C_i = \text{AES-GCM-Seal}(K_i, \text{nonce}_i, \text{value}_i)$.
+   - Derive a key-wrapping key: $KWK_i = \text{HKDF-SHA3-256}(ss, \text{"qchain/trackB/v1|" } + \text{credID} + \text{"|" } + \text{key}_i)$.
+   - Wrap $K_i$ under $KWK_i$ using AES-256-GCM with a fixed nonce (safe because every $KWK_i$ is single-use).
+3. **Envelope JSON:**
+   ```json
+   {
+     "_qc_env": "qchain-env",
+     "v": 1,
+     "kemAlg": "ML-KEM-768",
+     "aeadAlg": "AES-256-GCM",
+     "kdf": "HKDF-SHA3-256",
+     "credId": "CRED-XXXX",
+     "wraps": [{ "recipient": "holder", "enc": "<hex>" }],
+     "fields": [
+       {
+         "key": "gpa",
+         "wrap": { "holder": { "wkey": "<hex>", "tag": "<hex>" } },
+         "nonce": "<hex>",
+         "ct": "<hex>"
+       }
+     ]
+   }
    ```
-   mysql -u root -p qchain_db < qchain-network/scripts/migrations/2026-07_trackB_offchain_encryption.sql
-   ```
+4. **On-Device Decryption (`UI_App/lib/services/crypto_service.dart`):**
+   The mobile app decapsulates `ss` using its local ML-KEM-768 private key, derives $KWK_i$, unwraps $K_i$, and decrypts each field.
 
-2. **On-device holder key registration:** The QWallet mobile app generates ML-KEM-768 and ML-DSA-44 key pairs locally on the device (storing private keys in iOS Keychain / Android Keystore) and registers the public keys via `POST /mobile/registerHolderKeys`:
-   ```bash
-   curl -X POST http://localhost:3000/mobile/registerHolderKeys \
-     -H 'Content-Type: application/json' \
-     -d '{
-       "emiratesID": "784-XXXX-XXXXXXX-X",
-       "kemPublicKey": "<hex>",
-       "dsaPublicKey": "<hex>"
-     }'
-   ```
+### 4.2 Presentation Signing & 5-Check Verification (Track H)
 
-3. **Restart the Go backend.** From now on, new issuances encrypt to the holder's key. Verify the startup log shows:
-   ```
-   KEM algo: ML-KEM-768 (off-chain encryption: holder-held keys)
-   ```
+#### Presentation Payload Structure
+The mobile app constructs a canonical JSON string:
+```json
+{
+  "credentialID": "CRED-2026-0001",
+  "disclosedFields": {
+    "college": "CCI",
+    "degreeTitle": "BSc Computer Science",
+    "gpa": "3.8"
+  },
+  "timestamp": "2026-09-22T13:00:00"
+}
+```
+The holder signs `SHA3-256(canonical JSON string)` using their **ML-DSA-44** private key stored in iOS Keychain / Android Keystore.
 
-4. **(Optional) Encrypt existing plaintext rows** — one-shot, idempotent, re-runnable:
-   ```
-   RUN_BACKFILL_ENCRYPT=1 <your normal backend start command>
-   ```
-   This encrypts `credential_data` for all `enc_version = 0` rows using each credential's holder key, then exits. Credentials whose holder has no key registered are skipped. It does **not** re-upload to IPFS (see §6).
+#### Fail-Closed Session Creation (`/mobile/generateOTP`, `/mobile/generatePresentation`)
+1. Rejects if `credentialID`, `disclosedPayload`, or `holderSignature` is missing/empty (`HTTP 400`).
+2. Unmarshals `disclosedPayload` JSON. Rejects if `credentialID` is missing or does not match request `credentialID` (`HTTP 400`).
+3. Saves the session with 120-second TTL in Asia/Dubai local timestamp format.
+
+#### 5-Check Verification (`/resolveSession`)
+When a verifier resolves a QR code or OTP token:
+```
+                                 ┌──────────────────────────────────┐
+                                 │  POST /resolveSession (token)    │
+                                 └─────────────────┬────────────────┘
+                                                   │
+                ┌──────────────────────────────────┴─────────────────────────────────┐
+                ▼                                                                    ▼
+      1. Check Existence & Status                                           2. Check Signatures & Integrity
+      • existsOnChain == true                                               • signatureValid == true (Issuer ML-DSA-44)
+      • notRevoked == true (status == "active")                             • credentialIDMatches == true (Audit §4.2)
+                                                                            • fieldHashesValid == true (Disclosed fields)
+                                                                            • holderSignatureValid == true (Holder ML-DSA-44)
+```
+
+1. **`existsOnChain`:** Credential record retrieved from Fabric ledger.
+2. **`notRevoked`:** Status on ledger equals `"active"` (returns immediately with `reason: SUSPENDED/REVOKED` if inactive).
+3. **`signatureValid`:** Issuer ML-DSA-44 signature over `CredentialHash` is verified with issuer's public key.
+4. **`fieldHashesValid`:** For each attribute in `disclosedFields`, checks that `SHA3-256(field + ":" + value)` matches the entry in on-chain `FieldHashes`.
+5. **`holderSignatureValid`:** Verifies holder's ML-DSA-44 signature against `SHA3-256(session.DisclosedPayload)` using holder's DSA public key from database. Requires `credentialIDMatches == true`.
+
+If verification fails, `failureReason` explicitly reports:
+- `"signature_invalid"`
+- `"credential_id_mismatch"` (Audit §4.2)
+- `"field_hashes_invalid"`
+- `"holder_signature_invalid"`
 
 ---
 
-## 6. Known limitations & deliberate scope cuts
+## 5. Deployment & Migration Procedure
 
-- **On-chain plaintext remains.** By design (no chaincode change / no restart). Verification still reads it. This is the biggest residual exposure and is **Track A's** responsibility. Do not advertise the system as fully confidential yet.
-- **IPFS backfill of legacy blobs is not automated.** New issuances put ciphertext on IPFS. Existing IPFS blobs (uploaded before this change) remain plaintext. Since nothing reads IPFS, this is low-risk, but to clean it up you can re-upload the encrypted body and update the CID via the existing `/setCID` admin endpoint.
-- **Client-side decryption in QWallet.** The backend never holds holder private keys. Envelopes are decrypted on-device in the QWallet app using `crypto_service.dart`.
-- **Selective disclosure is still server-side redaction** (`applySelectiveDisclosure` in `mobile.go`, unchanged). The envelope is *structured* per-field so real cryptographic selective disclosure can be built later (Track B3 + Merkle root).
-- **Holder key is REQUIRED for issuance.** If a holder has no `kem_public_key` registered, issuance fails with a clear error. The holder registers their keys from the mobile app via `POST /mobile/registerHolderKeys`.
+### Step 1: Database Migrations
+Run the migration scripts to add holder key columns:
+```bash
+mysql -u root -p qchain_db < qchain-network/scripts/migrations/2026-07_trackB_offchain_encryption.sql
+mysql -u root -p qchain_db < qchain-network/scripts/migrations/2026-09_trackH_holder_signing.sql
+```
+
+### Step 2: Chaincode Package Upgrade
+`qchain-network/chaincode/QChaincode.js` includes `bindHolderKeys` and `fieldHashes`. Upgrade the chaincode definition on the channel (increment version/sequence).
+
+### Step 3: Backend Deployment
+Rebuild and run the backend Docker container:
+```bash
+cd offchain
+docker build -t qchain-api:latest .
+./docker-run.sh
+```
+Verify startup log confirms:
+```
+KEM algo: ML-KEM-768 (off-chain encryption: holder-held keys)
+```
+
+### Step 4: Mobile Onboarding
+Upon first launch, QWallet generates key pairs on device and registers them:
+```bash
+curl -X POST http://localhost:3000/mobile/registerHolderKeys \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "emiratesID": "784-XXXX-XXXXXXX-X",
+    "kemPublicKey": "<hex>",
+    "dsaPublicKey": "<hex>"
+  }'
+```
 
 ---
 
-## 7. Threat model — what is and isn't protected now
+## 6. Threat Model & Security Posture
 
-| Adversary / exposure | Before | After this change |
+| Threat / Attack Vector | Before B2/Track H | Current State |
 |---|---|---|
-| Reads the IPFS blob by CID (content is public/addressable) | sees full plaintext | sees ciphertext only |
-| Steals / reads the MySQL DB (PII: Emirates ID, email, attributes) | sees full plaintext | sees ciphertext only (holder keys not in DB) |
-| Has read access to the Fabric ledger / a peer | sees full plaintext on-chain | **still sees full plaintext on-chain** (Track A) |
-| Compromises the backend host | — | cannot decrypt holders' credentials; holder private keys reside exclusively on devices (iOS Keychain / Android Keystore) |
-| Future quantum adversary harvesting off-chain data now | plaintext, trivially exposed | protected by ML-KEM-768 + AES-256 |
-
-Net: closes the off-chain at-rest exposure (IPFS + DB / PII, gaps G1 & G3); does **not** close the on-chain exposure (G2 — Track A).
-
----
-
-## 8. What's left to do (roadmap for the next contributor)
-
-In rough priority order. The design doc (`QChain_Phase2_TrackB_Implementation_Plan.md`) has the detail.
-
-1. **Client-side decryption in QWallet (COMPLETED).** Implemented on-device in QWallet (`crypto_service.dart`). Local `.env.holder_keys` has been completely decommissioned.
-2. **Verifier keys + presentation re-wrap (B3).** Let the holder re-wrap disclosed fields to a verifier at presentation, so the server never sees plaintext. Reworks `/resolveSession`. See design doc §7.3 (protocol P-A).
-3. **Real cryptographic selective disclosure.** Salted-Merkle commitments signed by the org key so a disclosed *subset* stays verifiable; replaces server-side redaction. Requires changing what the signature covers — coordinate with Track A since it borders on-chain data. Design doc §6.
-4. **IPFS as a real verification source.** Add `downloadFromIPFS` + verify-from-IPFS so the encrypted off-chain body becomes load-bearing (prerequisite for eventually shrinking the on-chain copy under Track A).
-5. **Track A** — on-chain metadata/body confidentiality (Private Data Collections or on-chain encryption) + PQC MSP. Removes the residual on-chain plaintext.
-6. **Key custody (G12).** Holder key backup/recovery before B2 ships to production (losing a holder key = losing that holder's data).
+| Public IPFS access by CID | Plaintext credential attributes exposed | **Ciphertext only** (sealed to holder's ML-KEM-768 key) |
+| Database dump / MySQL breach | Plaintext PII (Emirates ID, GPA, Degree) exposed | **Ciphertext only**; holder private keys are never in DB |
+| Backend server compromise | Attacker could steal all holder private keys | **Zero holder private keys on server** (held in device Keychains) |
+| Presentation field fabrication (e.g. GPA 3.8 → 4.0) | Allowed in legacy verifier | **Caught by Check 4 (`fieldHashesValid = false`)** |
+| Credential ID swapping (Audit §4.2) | Session created without binding credential ID | **Rejected fast (HTTP 400 / `credential_id_mismatch`)** |
+| Unauthorized key binding (Audit §4.1) | Direct peer invocation possible | **Blocked by chaincode `checkAccess("issuer")`** |
+| Harvest-now-decrypt-later quantum adversary | Vulnerable | **Protected by ML-KEM-768 and ML-DSA-44** |
+| Direct Fabric peer ledger read | Plaintext on-chain | Known residual gap owned by **Track A** (see §8) |
 
 ---
 
-## 9. Testing
+## 7. Test Suites & Verification
 
+### Unit Tests (`offchain/server_test.go` & `offchain/envelope_test.go`)
+
+#### Running in VM:
+```bash
+cd offchain
+go test -v ./...
 ```
-cd offchain && go test -run TestEnvelope -v
+
+#### Running in Docker:
+```bash
+cd offchain
+docker build -t qchain-api:latest .
+docker run --rm qchain-api:latest go test -v ./...
 ```
 
-Tests use real ML-KEM-768 via liboqs, so run them in the Docker build environment (the image already installs liboqs). They need neither MySQL, IPFS, nor Fabric.
+#### Test Coverage Summary:
+- **`TestHandlersValidationAndHealth`:** Exercises input validation across all endpoints (`/registerHolderKeys`, `/mobile/generateOTP`, `/mobile/generatePresentation`, `/resolveSession`, etc.), ensuring malformed JSON, missing fields, and mismatched IDs fail closed.
+- **`TestApplySelectiveDisclosure`:** Tests selective disclosure redaction for nil inputs, empty arrays, top-level fields, and dotted nested paths.
+- **`TestFieldHashesVerificationLogic`:** Tests positive and negative cases for field hashes integrity verification.
+- **`TestPresentationPayloadBindingParsing`:** Validates canonical JSON presentation parsing and credential ID extraction.
+- **`TestMLDSAPresentationSigning`:** Tests end-to-end ML-DSA-44 keygen, signing, verification, and tamper rejection.
+- **`TestDubaiTimezoneFormat`:** Validates local Asia/Dubai timestamp format (no trailing UTC 'Z').
+- **`TestEnvelopeRoundTrip`:** Validates ML-KEM-768 + AES-256-GCM encryption, decryption, and authentication tamper detection.
 
-**Test cases:**
-- `TestEnvelopeRoundTrip` — encrypt with holder key, decrypt with holder key, verify JSON equivalence.
-- `TestLegacyPlaintextPassthrough` — non-envelope values pass through `decryptCredentialData` untouched.
-- `TestEncryptionRequiresHolderKey` — encrypting with empty holder key returns error (no silent plaintext fallback).
-- `TestTamperedFieldFailsAuth` — flipping ciphertext bytes triggers AES-GCM authentication failure.
-- `TestEnvelopeRecipientIsHolder` — verifies envelope wraps use `"holder:<holderID>"` not `"org"`.
-
-**Manual smoke test after deploy:**
-```sql
-SELECT enc_version, LEFT(credential_data, 60) FROM credentials ORDER BY issued_at DESC LIMIT 1;
+### Automated End-to-End Test (`tests/e2e_api_test.sh`)
+```bash
+./tests/e2e_api_test.sh
 ```
-Should show `enc_version = 1` and a value starting `{"_qc_env":"qchain-env"...` with `"holder:H-..."` in the wraps. Open the QWallet for that holder — attributes are decrypted on-device in QWallet via `crypto_service.dart`. Verify the credential in QPortal — verification is unchanged (reads on-chain) and should still pass all four checks.
+Executes full real-world flow against running Fabric network, MySQL, and IPFS:
+1. Registers holder keys (`POST /mobile/registerHolderKeys`).
+2. Issues credential with `fieldHashes` (`POST /issueCredential`).
+3. Fetches encrypted envelope ciphertext (`GET /mobile/getEnvelope`).
+4. Generates presentation session with ML-DSA signature (`POST /mobile/generatePresentation`).
+5. Resolves session with 5 checks (`POST /resolveSession`).
+6. Runs tamper tests (fabricating GPA, corrupting signature, presenting mismatched credential ID).
+7. Tests OTP presentation flow (`POST /mobile/generateOTP` -> `POST /resolveSession`).
+8. Tests lifecycle transitions (`suspendCredential` -> `restoreCredential` -> `revokeCredential`).
 
 ---
 
-## 10. Quick reference — key entry points
+## 8. Remaining Roadmap (Next Steps)
 
-- **Holder key registration:** `POST /mobile/registerHolderKeys` (client generates ML-KEM-768 & ML-DSA-44 keys on-device and sends public keys to server).
-- **Holder key storage:** Public keys in DB (`holders.kem_public_key`, `holders.dsa_public_key`) and Fabric ledger (`bindHolderKeys`). Private keys remain exclusively on device.
-- **Encrypt on write:** `encryptCredentialData(credentialHash, req.Info, holderID, holderKemPub)` in `credentials.go`.
-- **Decrypt on read:** On-device decryption in QWallet (`crypto_service.dart`).
-- **Envelope format & crypto:** `envelope.go`, `kem.go`.
-- **Backfill encryption:** `RUN_BACKFILL_ENCRYPT=1`.
-- **The on-chain path (do not change without Track A):** `SubmitTransaction("issueCredential", …)` in `credentials.go`, and the verification reads in `verification.go` / `mobile.go`.
+1. **Track A (On-Chain Confidentiality):** Address on-chain plaintext `Info` field using Hyperledger Fabric Private Data Collections (PDC) or on-chain attribute encryption.
+2. **Gap G7 / User Authentication:** Add UAE Pass / session authentication to gate `POST /mobile/registerHolderKeys` and `GET /mobile/getEnvelope`.
+3. **Key Backup & Recovery (Gap G12):** Device key recovery mechanism for holders before full production rollout.
