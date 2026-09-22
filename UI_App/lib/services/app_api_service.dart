@@ -4,7 +4,9 @@ import 'package:qwallet_mobileapp/model/activity_model.dart';
 import 'package:qwallet_mobileapp/model/catalog_model.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/model/subscription_model.dart';
+import 'package:qwallet_mobileapp/services/crypto_service.dart';
 import 'package:qwallet_mobileapp/utils/app_config.dart';
+import 'package:qwallet_mobileapp/utils/alice_inspector.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
 
 class ConnectionException implements Exception {
@@ -15,7 +17,208 @@ class ConnectionException implements Exception {
 }
 
 class ApiService {
-  static final _client = http.Client();
+  // Alice-backed client in debug; plain http.Client in release.
+  static final http.Client _client = createAliceHttpClient();
+
+  // GET /mobile/checkKeys — has this holder already registered PQC public keys?
+  // May also include kemPublicKey / dsaPublicKey (public only) for mismatch checks.
+  static Future<Map<String, dynamic>> checkKeys(String emiratesID) async {
+    logDebug('[ApiService] checkKeys called for $emiratesID');
+    try {
+      final res = await _client
+          .get(
+            Uri.parse(
+              '$kApiBaseUrl/mobile/checkKeys?emiratesID=$emiratesID',
+            ),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        final hasKemKey = body['hasKemKey'] == true;
+        final hasSigningKey = body['hasSigningKey'] == true;
+        final kemPublicKey = body['kemPublicKey']?.toString() ?? '';
+        final dsaPublicKey = body['dsaPublicKey']?.toString() ?? '';
+        logDebug(
+          '[ApiService] checkKeys success: hasKemKey=$hasKemKey hasSigningKey=$hasSigningKey '
+          'kemPubLen=${kemPublicKey.length}',
+        );
+        return {
+          'hasKemKey': hasKemKey,
+          'hasSigningKey': hasSigningKey,
+          if (kemPublicKey.isNotEmpty) 'kemPublicKey': kemPublicKey,
+          if (dsaPublicKey.isNotEmpty) 'dsaPublicKey': dsaPublicKey,
+        };
+      }
+      logDebug('[ApiService] checkKeys failed: HTTP ${res.statusCode}');
+      throw ConnectionException('Failed to check wallet keys.');
+    } catch (e) {
+      if (e is ConnectionException) rethrow;
+      logDebug('[ApiService] checkKeys exception: $e');
+      throw ConnectionException('Failed to check wallet keys.');
+    }
+  }
+
+  // POST /mobile/registerHolderKeys — public keys only. Never send private keys.
+  static Future<bool> registerHolderKeys({
+    required String emiratesID,
+    required String kemPublicKey,
+    required String dsaPublicKey,
+  }) async {
+    logDebug('[ApiService] registerHolderKeys called for $emiratesID');
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$kApiBaseUrl/mobile/registerHolderKeys'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'emiratesID': emiratesID,
+              'kemPublicKey': kemPublicKey,
+              'dsaPublicKey': dsaPublicKey,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        final success = body['success'] == true;
+        logDebug('[ApiService] registerHolderKeys result: success=$success');
+        return success;
+      }
+      logDebug(
+        '[ApiService] registerHolderKeys failed: HTTP ${res.statusCode}',
+      );
+      return false;
+    } catch (e) {
+      logDebug('[ApiService] registerHolderKeys exception: $e');
+      throw ConnectionException('Failed to register wallet keys.');
+    }
+  }
+
+  // GET /mobile/getEnvelope — encrypted credential body. Backend does not decrypt.
+  static Future<Map<String, dynamic>> getEnvelope(String credentialID) async {
+    logDebug('[ApiService] getEnvelope called for $credentialID');
+    try {
+      final res = await _client
+          .get(
+            Uri.parse(
+              '$kApiBaseUrl/mobile/getEnvelope?credentialID=$credentialID',
+            ),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        if (body is Map<String, dynamic>) {
+          logDebug('[ApiService] getEnvelope success');
+          return body;
+        }
+        if (body is Map) {
+          return Map<String, dynamic>.from(body);
+        }
+        throw ConnectionException('Invalid envelope response.');
+      }
+      logDebug('[ApiService] getEnvelope failed: HTTP ${res.statusCode}');
+      throw ConnectionException('Failed to load credential envelope.');
+    } catch (e) {
+      if (e is ConnectionException) rethrow;
+      logDebug('[ApiService] getEnvelope exception: $e');
+      throw ConnectionException('Failed to load credential envelope.');
+    }
+  }
+
+  /// Fetch encrypted envelope + decrypt on-device. Plaintext stays in memory.
+  /// Throws on network / missing key / decrypt failure.
+  static Future<Map<String, dynamic>> fetchAndDecryptAttributes(
+    String credentialID, {
+    String? emiratesID,
+  }) async {
+    logDebug('[ApiService] fetchAndDecryptAttributes for $credentialID');
+    final raw = await getEnvelope(credentialID);
+    final envelope = CryptoService.unwrapEnvelopePayload(raw);
+    final kemPrivHex = await CryptoService.readKemPrivateKey();
+    if (kemPrivHex == null || kemPrivHex.isEmpty) {
+      throw StateError('ML-KEM private key not found on this device');
+    }
+    try {
+      final attrs = CryptoService.decryptEnvelope(envelope, kemPrivHex);
+      logDebug(
+        '[ApiService] fetchAndDecryptAttributes success: ${attrs.length} fields',
+      );
+      return attrs;
+    } catch (e) {
+      // Surface the #1 real-world cause: wrong ML-KEM keypair on device.
+      try {
+        final localPub = await CryptoService.readKemPublicKey();
+        logDebug(
+          '[ApiService] decrypt failed. localKemPubLen=${localPub?.length ?? 0} '
+          'privLen=${kemPrivHex.length} envelopeCredId=${envelope['credId']} '
+          'err=$e',
+        );
+        if (localPub != null && localPub.isNotEmpty) {
+          // Full pub so you can paste it next to holders.kem_public_key.
+          logDebugLong('[ApiService] device kem_pub_key at decrypt fail', localPub);
+        }
+        if (emiratesID != null && emiratesID.isNotEmpty) {
+          final status = await checkKeys(emiratesID);
+          final backendPub = status['kemPublicKey']?.toString() ?? '';
+          if (backendPub.isNotEmpty) {
+            final diag = await CryptoService.verifyKemKeyMatch(backendPub);
+            logDebug('[ApiService] key match after decrypt fail:\n$diag');
+            logDebugLong(
+              '[ApiService] backend kem_public_key at decrypt fail',
+              backendPub,
+            );
+          } else {
+            logDebug(
+              '[ApiService] checkKeys has no kemPublicKey — deploy backend '
+              'change that returns kemPublicKey from /mobile/checkKeys, then '
+              'retry. Until then compare holders.kem_public_key with the '
+              'device pub above. If they differ, CRED was sealed to another '
+              'key → re-issue.',
+            );
+          }
+        }
+      } catch (_) {}
+      rethrow;
+    }
+  }
+
+  // GET /mobile/getHolderProfile — basic demographic info for a holder (full
+  // name, email, Emirates ID, holder type, college). Works even before any
+  // credential is issued, so the home screen can greet the holder by name right
+  // after key generation.
+  static Future<Map<String, dynamic>?> getHolderProfile(
+    String emiratesID,
+  ) async {
+    logDebug('[ApiService] getHolderProfile called for $emiratesID');
+    try {
+      final res = await _client
+          .get(
+            Uri.parse(
+              '$kApiBaseUrl/mobile/getHolderProfile?emiratesID=$emiratesID',
+            ),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        if (body is Map<String, dynamic> && body['success'] == true) {
+          logDebug('[ApiService] getHolderProfile success: ${body['fullName']}');
+          return body;
+        }
+        logDebug(
+          '[ApiService] getHolderProfile failed: invalid body or success=false',
+        );
+        return null;
+      }
+      logDebug('[ApiService] getHolderProfile failed: HTTP ${res.statusCode}');
+      return null;
+    } catch (e) {
+      logDebug('[ApiService] getHolderProfile exception: $e');
+      return null;
+    }
+  }
 
   // Fetch live credentials for the dashboard
   static Future<List<CredentialModel>> getMyCredentials(
@@ -46,16 +249,16 @@ class ApiService {
     }
   }
 
-  // Request a live OTP for verification (Now with Selective Disclosure)
-  static Future<Map<String, dynamic>?> generateVerificationOTP(
-    String credentialID,
-    List<String> hiddenFields, // <-- ADD THIS PARAMETER
-    int expiresIn,
-  ) async {
+  // POST /mobile/generateOTP — holder-signed disclosed payload. No expiresIn.
+  static Future<Map<String, dynamic>?> generateVerificationOTP({
+    required String credentialID,
+    required List<String> hiddenFields,
+    required String disclosedPayload,
+    required String holderSignature,
+  }) async {
     logDebug(
       '[ApiService] generateVerificationOTP called for $credentialID with ${hiddenFields.length} hidden fields',
     );
-    logDebug('[ApiService] OTP time-to-live: $expiresIn seconds');
     try {
       final res = await _client
           .post(
@@ -63,11 +266,12 @@ class ApiService {
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'credentialID': credentialID,
-              'hiddenFields': hiddenFields, // <-- SEND TO BACKEND
-              'expiresIn': expiresIn,
+              'hiddenFields': hiddenFields,
+              'disclosedPayload': disclosedPayload,
+              'holderSignature': holderSignature,
             }),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 15));
 
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
@@ -75,7 +279,7 @@ class ApiService {
           logDebug('[ApiService] generateVerificationOTP success');
           return {
             'otp': body['otp']?.toString(),
-            'expiresAt': body['expiresAt'],
+            'expiresAt': body['expiresAt']?.toString(),
           };
         } else {
           logDebug(
@@ -165,16 +369,16 @@ class ApiService {
     }
   }
 
-  // Generate a selective disclosure presentation session
-  static Future<Map<String, dynamic>?> generatePresentation(
-    String credentialID,
-    List<String> hiddenFields,
-    int expiresIn,
-  ) async {
+  // POST /mobile/generatePresentation — holder-signed disclosed payload. No expiresIn.
+  static Future<Map<String, dynamic>?> generatePresentation({
+    required String credentialID,
+    required List<String> hiddenFields,
+    required String disclosedPayload,
+    required String holderSignature,
+  }) async {
     logDebug(
       '[ApiService] generatePresentation called for $credentialID with ${hiddenFields.length} hidden fields',
     );
-    logDebug('[ApiService] qr time-to-live: $expiresIn seconds');
     try {
       final res = await _client
           .post(
@@ -183,10 +387,11 @@ class ApiService {
             body: jsonEncode({
               'credentialID': credentialID,
               'hiddenFields': hiddenFields,
-              'expiresIn': expiresIn,
+              'disclosedPayload': disclosedPayload,
+              'holderSignature': holderSignature,
             }),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 15));
 
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
@@ -195,8 +400,8 @@ class ApiService {
             '[ApiService] generatePresentation success: ID ${body['presentationID']}',
           );
           return {
-            'presentationID': body['presentationID'],
-            'expiresAt': body['expiresAt'],
+            'presentationID': body['presentationID']?.toString(),
+            'expiresAt': body['expiresAt']?.toString(),
           };
         } else {
           logDebug(
@@ -272,14 +477,20 @@ class ApiService {
 
       final body = jsonDecode(res.body);
       final success = body['success'] == true;
+      final alreadyInWallet = body['alreadyInWallet'] == true;
       logDebug(
-        '[ApiService] fetchDocument HTTP ${res.statusCode}, success: $success, message: ${body['message']}',
+        '[ApiService] fetchDocument HTTP ${res.statusCode}, success: $success, alreadyInWallet: $alreadyInWallet, message: ${body['message']}',
       );
 
       return {
         'success': success,
-        'message':
-            body['message'] ?? (success ? 'Success' : 'Document not found.'),
+        'alreadyInWallet': alreadyInWallet,
+        'message': body['message'] ??
+            (success
+                ? 'Success'
+                : alreadyInWallet
+                    ? 'This document is already in your wallet.'
+                    : 'Document not found.'),
       };
     } catch (e) {
       logDebug('[ApiService] fetchDocument exception: $e');

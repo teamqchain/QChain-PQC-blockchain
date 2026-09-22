@@ -81,7 +81,7 @@ class _CertificateViewerScreenState extends State<CertificateViewerScreen>
     final topPad = MediaQuery.of(context).padding.top;
 
     return Scaffold(
-      backgroundColor: qBg,
+      backgroundColor: qBgSurface,
       body: Column(
         children: [
           // ── Black hero header ──────────────────────────────────────────

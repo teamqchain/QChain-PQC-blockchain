@@ -15,7 +15,7 @@ class Onboard1Screen extends StatelessWidget {
   Widget build(BuildContext context) {
     return QOnboardScaffold(
       step: 1,
-      onSkip: () => Get.offAllNamed(Routes.SHELL),
+      // onSkip: () => Get.offAllNamed(Routes.SHELL),
       ctaLabel: 'Continue',
       onCta: () => Get.toNamed(Routes.ONBOARD2),
       child: const Column(
@@ -197,6 +197,7 @@ class _PrimaryCard extends StatelessWidget {
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.5,
+                  fontFamily: "formula"
                 ),
               ),
               Icon(Icons.qr_code_2_rounded, color: obBg, size: 16),

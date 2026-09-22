@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
+import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
+import 'package:qwallet_mobileapp/services/crypto_service.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -261,27 +265,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  void _showPublicKeysDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => const _PublicKeysDialog(),
+    );
+  }
+
+  Future<void> _openDocumentation() async {
+    final uri = Uri.parse('https://teamqchain.github.io');
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched) {
+      Get.snackbar(
+        'Unable to open',
+        'Could not open the documentation website.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    }
+  }
+
   static const _sections = [
     (
       'Security',
       [
         (Icons.lock, 'Biometric Lock — On'),
         (Icons.change_circle, 'Change PIN'),
-        (Icons.key, 'View My Public Key'),
+        (Icons.key, 'View My Keys'),
       ],
     ),
     (
       'Backup',
       [(Icons.backup, 'Backup Wallet'), (Icons.restore, 'Restore from Backup')],
     ),
-    ('Appearance', [(Icons.dark_mode, 'Theme — Dark')]),
+    ('Appearance', [(Icons.dark_mode, 'Theme')]),
     (
       'About',
-      [
-        (Icons.info, 'QChain v2.0.0'),
-        (Icons.lock_person, 'Algorithm: CRYSTALS-Dilithium3'),
-        (Icons.article, 'Documentation'),
-      ],
+      [(Icons.info, 'QChain v2.0.0'), (Icons.article, 'Documentation')],
     ),
   ];
 
@@ -290,7 +309,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
+      backgroundColor: qBgSurface,
+      // backgroundColor: const Color(0xFFF7F7F7),
       body: Column(
         children: [
           // ── BLACK HERO BOX ──────────────────────────────────────────
@@ -343,6 +363,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 isLast: isLast,
                                 onTap: label == 'QChain v2.0.0'
                                     ? () => _showTeamDialog(context)
+                                    : label == 'View My Keys'
+                                    ? () => _showPublicKeysDialog(context)
+                                    : label == 'Documentation'
+                                    ? () => _openDocumentation()
                                     : () {},
                               );
                             }).toList(),
@@ -400,9 +424,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
 class _SettingsHeroBox extends StatelessWidget {
   const _SettingsHeroBox();
 
+  String _initials(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return 'H';
+    if (parts.length == 1) {
+      final word = parts.first;
+      return word.substring(0, word.length >= 2 ? 2 : 1).toUpperCase();
+    }
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
   @override
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
+    final wallet = Get.isRegistered<WalletController>()
+        ? Get.find<WalletController>()
+        : Get.put(WalletController());
 
     return Container(
       width: double.infinity,
@@ -417,112 +458,80 @@ class _SettingsHeroBox extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Screen label
-          // const Text(
-          //   'Settings',
-          //   style: TextStyle(
-          //     color: Color(0xFF888888),
-          //     fontSize: 13,
-          //     letterSpacing: 0.2,
-          //   ),
-          // ),
-          // const SizedBox(height: 2),
-          // const Text(
-          //   'Your Account',
-          //   style: TextStyle(
-          //     color: Colors.white,
-          //     fontSize: 24,
-          //     fontWeight: FontWeight.w800,
-          //     letterSpacing: -0.5,
-          //   ),
-          // ),
           QPageTitle(mainTitle: "Settings", subTitle: "Your Account"),
 
           const SizedBox(height: 22),
 
-          // Profile card inside hero
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: qBg,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFF222222)),
-            ),
-            child: Row(
-              children: [
-                // Avatar
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: qBg,
-                    border: Border.all(
-                      color: const Color(0xFF444444),
-                      width: 2,
+          // Profile card inside hero — live holder name from WalletController
+          Obx(() {
+            final userName = wallet.displayHolderName;
+            return Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: qBg,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF222222)),
+              ),
+              child: Row(
+                children: [
+                  // Avatar
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: qBg,
+                      border: Border.all(
+                        color: const Color(0xFF444444),
+                        width: 2,
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      _initials(userName),
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                  alignment: Alignment.center,
-                  child: const Text(
-                    'A',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
+
+                  const SizedBox(width: 16),
+
+                  // Name
+                  Expanded(
+                    child: Text(
+                      userName,
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.3,
+                      ),
                     ),
                   ),
-                ),
 
-                const SizedBox(width: 16),
-
-                // Name + DID
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Ahmed Salih',
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        'did:fabric:0x3f...8a2c',
-                        style: TextStyle(
-                          color: Colors.black.withOpacity(0.35),
-                          fontSize: 11,
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                    ],
+                  // Edit icon button
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: qBg,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: qText),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.edit_outlined,
+                      color: Colors.black.withOpacity(0.6),
+                      size: 16,
+                    ),
                   ),
-                ),
-
-                // Edit icon button
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: qBg,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: qText),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    Icons.edit_outlined,
-                    color: Colors.black.withOpacity(0.6),
-                    size: 16,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-
+                ],
+              ),
+            );
+          }),
         ],
       ),
     );
@@ -581,15 +590,300 @@ class _SettingsTile extends StatelessWidget {
                   ),
                 ),
               ),
-              const Icon(
-                Icons.chevron_right,
-                color: qPrimary,
-                size: 18,
+              const Icon(Icons.chevron_right, color: qPrimary, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KEYS DIALOG — public + private (DEBUG). Same style as the team dialog.
+// ─────────────────────────────────────────────────────────────────────────────
+class _PublicKeysDialog extends StatefulWidget {
+  const _PublicKeysDialog();
+
+  @override
+  State<_PublicKeysDialog> createState() => _PublicKeysDialogState();
+}
+
+class _PublicKeysDialogState extends State<_PublicKeysDialog> {
+  bool _loading = true;
+  String? _kemPubHex;
+  String? _dsaPubHex;
+  String? _kemPrivHex;
+  String? _dsaPrivHex;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadKeys();
+  }
+
+  Future<void> _loadKeys() async {
+    final pubs = await CryptoService.readAllPublicKeys();
+    final kemPriv = await CryptoService.readKemPrivateKey();
+    final dsaPriv = await CryptoService.readDsaPrivateKey();
+    if (!mounted) return;
+    setState(() {
+      _kemPubHex = pubs.kemPubHex;
+      _dsaPubHex = pubs.dsaPubHex;
+      _kemPrivHex = kemPriv;
+      _dsaPrivHex = dsaPriv;
+      _loading = false;
+    });
+  }
+
+  String _truncate(String hex, {int head = 28, int tail = 20}) {
+    if (hex.length <= head + tail + 3) return hex;
+    return '${hex.substring(0, head)}…${hex.substring(hex.length - tail)}';
+  }
+
+  Future<void> _copy(String label, String value) async {
+    await Clipboard.setData(ClipboardData(text: value));
+    if (!mounted) return;
+    // ScaffoldMessenger.of(context).showSnackBar(
+    //   SnackBar(
+    //     content: Text('$label copied'),
+    //     duration: const Duration(seconds: 2),
+    //     behavior: SnackBarBehavior.floating,
+    //   ),
+    // );
+
+    Get.snackbar(
+      'Copied',
+      '$label copied',
+      snackPosition: SnackPosition.BOTTOM,
+      backgroundColor: Colors.green,
+      colorText: Colors.white,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF111111),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+        side: BorderSide(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+          maxWidth: 420,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E1E1E),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white.withOpacity(0.08)),
+                    ),
+                    child: const Icon(Icons.key, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'My Keys',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        Text(
+                          'DEBUG — includes private keys',
+                          style: TextStyle(
+                            color: Color(0xFFEF4444),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Divider(color: Colors.white.withOpacity(0.08), height: 1),
+              const SizedBox(height: 18),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                )
+              else
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _KeyBlock(
+                          title: 'ML-KEM-768 · Public',
+                          value: _kemPubHex,
+                          truncated: _kemPubHex == null || _kemPubHex!.isEmpty
+                              ? null
+                              : _truncate(_kemPubHex!),
+                          onCopy: _kemPubHex == null || _kemPubHex!.isEmpty
+                              ? null
+                              : () => _copy('KEM public key', _kemPubHex!),
+                        ),
+                        const SizedBox(height: 14),
+                        _KeyBlock(
+                          title: 'ML-KEM-768 · Private',
+                          value: _kemPrivHex,
+                          truncated: _kemPrivHex == null || _kemPrivHex!.isEmpty
+                              ? null
+                              : _truncate(_kemPrivHex!),
+                          onCopy: _kemPrivHex == null || _kemPrivHex!.isEmpty
+                              ? null
+                              : () => _copy('KEM private key', _kemPrivHex!),
+                          isPrivate: true,
+                        ),
+                        const SizedBox(height: 14),
+                        _KeyBlock(
+                          title: 'ML-DSA-44 · Public',
+                          value: _dsaPubHex,
+                          truncated: _dsaPubHex == null || _dsaPubHex!.isEmpty
+                              ? null
+                              : _truncate(_dsaPubHex!),
+                          onCopy: _dsaPubHex == null || _dsaPubHex!.isEmpty
+                              ? null
+                              : () => _copy('DSA public key', _dsaPubHex!),
+                        ),
+                        const SizedBox(height: 14),
+                        _KeyBlock(
+                          title: 'ML-DSA-44 · Private',
+                          value: _dsaPrivHex,
+                          truncated: _dsaPrivHex == null || _dsaPrivHex!.isEmpty
+                              ? null
+                              : _truncate(_dsaPrivHex!),
+                          onCopy: _dsaPrivHex == null || _dsaPrivHex!.isEmpty
+                              ? null
+                              : () => _copy('DSA private key', _dsaPrivHex!),
+                          isPrivate: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: TextButton.styleFrom(
+                    backgroundColor: qSecondary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                  ),
+                  child: const Text(
+                    'Close',
+                    style: TextStyle(
+                      color: qPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _KeyBlock extends StatelessWidget {
+  final String title;
+  final String? value;
+  final String? truncated;
+  final VoidCallback? onCopy;
+  final bool isPrivate;
+
+  const _KeyBlock({
+    required this.title,
+    required this.value,
+    required this.truncated,
+    required this.onCopy,
+    this.isPrivate = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final missing = value == null || value!.isEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  color: isPrivate
+                      ? const Color(0xFFEF4444)
+                      : const Color(0xFFAAAAAA),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (onCopy != null)
+              GestureDetector(
+                onTap: onCopy,
+                child: const Icon(
+                  Icons.copy_rounded,
+                  color: Color(0xFF888888),
+                  size: 16,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isPrivate
+                  ? const Color(0xFFEF4444).withOpacity(0.35)
+                  : Colors.white.withOpacity(0.08),
+            ),
+          ),
+          child: SelectableText(
+            missing
+                ? 'Not found — complete onboarding first'
+                : '${value!.length} hex chars (${value!.length ~/ 2} bytes)\n$truncated',
+            style: TextStyle(
+              color: missing ? const Color(0xFFEF4444) : Colors.white,
+              fontSize: 11,
+              fontFamily: 'monospace',
+              height: 1.5,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
