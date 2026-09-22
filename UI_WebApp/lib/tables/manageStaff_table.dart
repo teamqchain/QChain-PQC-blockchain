@@ -110,7 +110,9 @@ class ManageTable extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          const SizedBox(width: 17,), // Spacing to align with the selection stripe
+          const SizedBox(
+            width: 17,
+          ), // Spacing to align with the selection stripe
           ColHead('STAFF ID', flex: 2),
           ColHead('NAME', flex: 4),
           ColHead('EMAIL', flex: 4),
@@ -149,9 +151,6 @@ class _StaffRow extends StatefulWidget {
 
 class _StaffRowState extends State<_StaffRow> {
   bool _hovered = false;
-
-
-  
 
   @override
   Widget build(BuildContext context) {
@@ -281,10 +280,18 @@ class _StaffRowState extends State<_StaffRow> {
               ),
 
               // Status
-              Expanded(flex: 3, child: Padding(
-                padding: const EdgeInsets.only(right: 70.0),
-                child: StatusBadge(fg: c, label: s.status.label, iconPresent: true, icon: icon),
-              )),
+              Expanded(
+                flex: 3,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 70.0),
+                  child: StatusBadge(
+                    fg: c,
+                    label: s.status.label,
+                    iconPresent: true,
+                    icon: icon,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
