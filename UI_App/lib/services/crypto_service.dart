@@ -403,7 +403,12 @@ class CryptoService {
   /// ```json
   /// { "credentialID", "disclosedFields": { body… }, "timestamp" }
   /// ```
+  /// `credentialID` is plain text inside the signed JSON (not per-field hashed).
+  /// That binds the presentation to one credential so a signature over shared
+  /// field values cannot be applied to a different credentialID.
+  ///
   /// Backend verifies:
+  /// - payload.credentialID is present and matches the session target
   /// - holderSig = ML-DSA over SHA3-256(this JSON string) as hex UTF-8
   /// - each disclosedFields[k] vs on-chain FieldHashes[k]
   static Future<({String disclosedPayloadJson, String holderSignatureHex})>
@@ -411,6 +416,14 @@ class CryptoService {
     required String credentialID,
     required Map<String, dynamic> disclosedFields,
   }) async {
+    final trimmedCredID = credentialID.trim();
+    if (trimmedCredID.isEmpty) {
+      throw StateError(
+        'credentialID is required in the signed disclosed payload '
+        '(binds the presentation to one credential)',
+      );
+    }
+
     final dsaPrivHex = await readDsaPrivateKey();
     if (dsaPrivHex == null || dsaPrivHex.isEmpty) {
       throw StateError('ML-DSA private key not found on this device');
@@ -429,8 +442,10 @@ class CryptoService {
       );
     }
 
+    // Plain credentialID is intentional: public lookup id, cryptographically
+    // bound because the holder signs SHA3-256(canonical JSON of this object).
     final disclosedPayload = <String, dynamic>{
-      'credentialID': credentialID,
+      'credentialID': trimmedCredID,
       'disclosedFields': bodyOnly,
       'timestamp': DateTime.now().toIso8601String(),
     };
@@ -438,7 +453,8 @@ class CryptoService {
     final payloadHash = sha3Hex(payloadJson);
     final holderSignatureHex = signPayload(payloadHash, dsaPrivHex);
     logDebug(
-      '[presentation] signed body fields=${bodyOnly.keys.toList()} '
+      '[presentation] signed cred=$trimmedCredID '
+      'fields=${bodyOnly.keys.toList()} '
       'hash0=${payloadHash.substring(0, 16)}…',
     );
     return (
