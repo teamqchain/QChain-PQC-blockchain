@@ -12,7 +12,14 @@ class CredentialModel {
   final String status;
   bool isFavorite;
   final String category;
+
+  /// Plaintext attribute map that lives in phone memory only after local
+  /// ML-KEM decrypt. Never treat an envelope/ciphertext blob as attributes.
   final Map<String, dynamic> attributes;
+
+  /// True when [attributes] were produced by local envelope decrypt.
+  final bool attributesDecrypted;
+
   final String? txHash;
   final String? cid;
 
@@ -28,18 +35,47 @@ class CredentialModel {
     this.isFavorite = false,
     required this.category,
     this.attributes = const {},
+    this.attributesDecrypted = false,
     this.txHash,
     this.cid,
   });
 
-  factory CredentialModel.fromJson(Map<String, dynamic> json) {
-    final rawAttrs = json['attributes'];
+  /// True when a map looks like a Track B/H encrypted envelope, not plaintext fields.
+  static bool looksLikeEnvelope(Map? raw) {
+    if (raw == null || raw.isEmpty) return false;
+    if (raw.containsKey('_qc_env')) return true;
+    if (raw.containsKey('wraps') && raw.containsKey('fields')) return true;
+    if (raw.containsKey('kemAlg') && raw.containsKey('fields')) return true;
+    return false;
+  }
+
+  /// Parse a backend attributes payload into plaintext-only display attrs.
+  /// Envelope-shaped maps are rejected (empty) so ciphertext never renders as fields.
+  static Map<String, dynamic> parseDisplayAttributes(dynamic rawAttrs) {
+    if (rawAttrs is! Map) return {};
+    if (looksLikeEnvelope(rawAttrs)) return {};
     final attrs = <String, dynamic>{};
-    if (rawAttrs is Map) {
-      rawAttrs.forEach((k, v) {
-        if (k != null) attrs[k.toString()] = v;
-      });
-    }
+    rawAttrs.forEach((k, v) {
+      if (k == null) return;
+      final key = k.toString();
+      // Skip envelope scaffolding keys if a mixed map slips through.
+      if (key == '_qc_env' ||
+          key == 'wraps' ||
+          key == 'fields' ||
+          key == 'kemAlg' ||
+          key == 'aeadAlg' ||
+          key == 'kdf' ||
+          key == 'credId' ||
+          key == 'v') {
+        return;
+      }
+      attrs[key] = v;
+    });
+    return attrs;
+  }
+
+  factory CredentialModel.fromJson(Map<String, dynamic> json) {
+    final attrs = parseDisplayAttributes(json['attributes']);
 
     return CredentialModel(
       credentialID: json['credentialID'] ?? '',
@@ -52,9 +88,45 @@ class CredentialModel {
       status: json['status'] ?? 'active',
       isFavorite: json['isFavorite'] == true || json['isFavorite'] == 1,
       category: json['category'] ?? 'General',
+      // List endpoint must not be treated as decrypted source of truth.
       attributes: attrs,
+      attributesDecrypted: false,
       txHash: json['txHash']?.toString(),
       cid: json['cid']?.toString(),
+    );
+  }
+
+  CredentialModel copyWith({
+    String? credentialID,
+    String? credentialType,
+    String? holderName,
+    String? holderEID,
+    String? issuedBy,
+    String? issuedAt,
+    String? expiryDate,
+    String? status,
+    bool? isFavorite,
+    String? category,
+    Map<String, dynamic>? attributes,
+    bool? attributesDecrypted,
+    String? txHash,
+    String? cid,
+  }) {
+    return CredentialModel(
+      credentialID: credentialID ?? this.credentialID,
+      credentialType: credentialType ?? this.credentialType,
+      holderName: holderName ?? this.holderName,
+      holderEID: holderEID ?? this.holderEID,
+      issuedBy: issuedBy ?? this.issuedBy,
+      issuedAt: issuedAt ?? this.issuedAt,
+      expiryDate: expiryDate ?? this.expiryDate,
+      status: status ?? this.status,
+      isFavorite: isFavorite ?? this.isFavorite,
+      category: category ?? this.category,
+      attributes: attributes ?? this.attributes,
+      attributesDecrypted: attributesDecrypted ?? this.attributesDecrypted,
+      txHash: txHash ?? this.txHash,
+      cid: cid ?? this.cid,
     );
   }
 

@@ -66,7 +66,7 @@ class _ManageSubscriptionsScreenState extends State<ManageSubscriptionsScreen> {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
     return Scaffold(
-      backgroundColor: qBg,
+      backgroundColor: qBgSurface,
       body: Column(
         children: [
           // Screen Hero
@@ -218,7 +218,7 @@ class _ManageSubscriptionsScreenState extends State<ManageSubscriptionsScreen> {
                         child: Text(
                           'PENDING REQUESTS',
                           style: TextStyle(
-                            color: Color(0xFFAAAAAA),
+                            color: qPrimary,
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1.2,
@@ -240,7 +240,7 @@ class _ManageSubscriptionsScreenState extends State<ManageSubscriptionsScreen> {
                         child: Text(
                           'ACTIVE & PAST SUBSCRIPTIONS',
                           style: TextStyle(
-                            color: Color(0xFFAAAAAA),
+                            color: qPrimary,
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1.2,

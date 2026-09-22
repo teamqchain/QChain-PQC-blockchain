@@ -7,7 +7,10 @@ import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/screens/selective_screen.dart';
 import 'package:qwallet_mobileapp/screens/certificate_viewer_screen.dart';
 import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
+import 'package:qwallet_mobileapp/services/app_api_service.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
+import 'package:qwallet_mobileapp/utils/app_config.dart';
+import 'package:qwallet_mobileapp/utils/logger.dart';
 import 'package:qchain_shared/certificate_template.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -155,10 +158,101 @@ class DocumentDetailScreen extends StatefulWidget {
 class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   late final DocWrapper doc;
 
+  /// Locally decrypted attributes (memory only). Never cached to disk.
+  Map<String, dynamic> _decryptedAttrs = const {};
+  bool _decrypting = false;
+  String? _decryptError;
+
   @override
   void initState() {
     super.initState();
     doc = DocWrapper(Get.arguments);
+    // Never seed from list-payload attributes — those may be empty or envelope-
+    // shaped after Track H. Only show fields after local decrypt succeeds.
+    _decryptedAttrs = const {};
+    _bootstrapDecryptedAttributes();
+  }
+
+  /// Prefer already-decrypted in-memory attrs from WalletController; otherwise
+  /// fetch envelope + decrypt on this screen.
+  Future<void> _bootstrapDecryptedAttributes() async {
+    final credentialID = doc.credentialID;
+    if (credentialID.isEmpty || credentialID == 'DOC-UNKNOWN') return;
+
+    // If wallet already decrypted this cred (after fetch or list load), reuse it.
+    try {
+      final wallet = Get.find<WalletController>();
+      final live = wallet.credentials.firstWhereOrNull(
+        (c) => c.credentialID == credentialID,
+      );
+      if (live != null &&
+          live.attributesDecrypted &&
+          live.attributes.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _decryptedAttrs = Map<String, dynamic>.from(live.attributes);
+          _decrypting = false;
+          _decryptError = null;
+        });
+        return;
+      }
+    } catch (_) {
+      // Controller may not be registered in rare routes — fall through to fetch.
+    }
+
+    await _loadDecryptedAttributes();
+  }
+
+  Future<void> _loadDecryptedAttributes() async {
+    final credentialID = doc.credentialID;
+    if (credentialID.isEmpty || credentialID == 'DOC-UNKNOWN') return;
+
+    setState(() {
+      _decrypting = true;
+      _decryptError = null;
+      _decryptedAttrs = const {};
+    });
+
+    try {
+      final attrs = await ApiService.fetchAndDecryptAttributes(
+        credentialID,
+        emiratesID: userEmiratesID,
+      );
+      if (!mounted) return;
+      setState(() {
+        _decryptedAttrs = attrs;
+        _decrypting = false;
+        _decryptError = null;
+      });
+
+      // Keep wallet in-memory model in sync (no second network round-trip).
+      try {
+        final wallet = Get.find<WalletController>();
+        final index = wallet.credentials.indexWhere(
+          (c) => c.credentialID == credentialID,
+        );
+        if (index >= 0) {
+          wallet.credentials[index] = wallet.credentials[index].copyWith(
+            attributes: attrs,
+            attributesDecrypted: true,
+          );
+          wallet.credentials.refresh();
+        }
+      } catch (_) {}
+
+      logDebug(
+        '[DocumentDetail] decrypted ${attrs.length} fields for $credentialID',
+      );
+    } catch (e) {
+      logDebug('[DocumentDetail] decrypt failed: $e');
+      if (!mounted) return;
+      setState(() {
+        _decrypting = false;
+        _decryptError = e.toString();
+        // Honest failure: no plaintext fallback.
+        _decryptedAttrs = const {};
+      });
+    }
   }
 
   @override
@@ -166,10 +260,10 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
+      backgroundColor: qBgSurface,
       body: Column(
         children: [
-          _DocHeroBox(doc: doc),
+          _DocHeroBox(doc: doc, attributes: _decryptedAttrs),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
@@ -178,7 +272,13 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 children: [
                   _ValidBar(doc: doc),
                   const SizedBox(height: 24),
-                  _DetailsSection(doc: doc),
+                  _DetailsSection(
+                    doc: doc,
+                    attributes: _decryptedAttrs,
+                    decrypting: _decrypting,
+                    decryptError: _decryptError,
+                    onRetryDecrypt: _loadDecryptedAttributes,
+                  ),
                   const SizedBox(height: 28),
                   _BottomActions(doc: doc),
                 ],
@@ -197,7 +297,8 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
 
 class _DocHeroBox extends StatelessWidget {
   final DocWrapper doc;
-  const _DocHeroBox({required this.doc});
+  final Map<String, dynamic> attributes;
+  const _DocHeroBox({required this.doc, this.attributes = const {}});
 
   @override
   Widget build(BuildContext context) {
@@ -472,8 +573,19 @@ class _DocHeroBox extends StatelessWidget {
               fgColor: qBg,
               // border: const Color(0xFFEBEBEB),
               onTap: () {
+                // Certificate body fields come only from locally decrypted attrs.
+                if (attributes.isEmpty) {
+                  Get.snackbar(
+                    'Unavailable',
+                    'Decrypt attributes first to view the certificate.',
+                    snackPosition: SnackPosition.BOTTOM,
+                    backgroundColor: Colors.redAccent,
+                    colorText: Colors.white,
+                  );
+                  return;
+                }
                 final fieldMap = <String, String>{};
-                doc.attributes.forEach((k, v) {
+                attributes.forEach((k, v) {
                   fieldMap[k] = v?.toString() ?? '';
                 });
 
@@ -595,7 +707,18 @@ class _ValidBarState extends State<_ValidBar>
 
 class _DetailsSection extends StatelessWidget {
   final DocWrapper doc;
-  const _DetailsSection({required this.doc});
+  final Map<String, dynamic> attributes;
+  final bool decrypting;
+  final String? decryptError;
+  final VoidCallback? onRetryDecrypt;
+
+  const _DetailsSection({
+    required this.doc,
+    this.attributes = const {},
+    this.decrypting = false,
+    this.decryptError,
+    this.onRetryDecrypt,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -617,16 +740,20 @@ class _DetailsSection extends StatelessWidget {
       ),
     ];
 
-    doc.attributes.forEach((key, value) {
+    // Insert decrypted attribute rows before the date fields.
+    final attrEntries = attributes.entries.toList();
+    for (var i = 0; i < attrEntries.length; i++) {
+      final key = attrEntries[i].key;
+      final value = attrEntries[i].value;
       final formattedKey = key.replaceAll(RegExp(r'(?<!^)(?=[A-Z])'), ' ');
-      final finalKey =
-          formattedKey[0].toUpperCase() + formattedKey.substring(1);
-
-      // fields.insert(
-      //   fields.length - 1,
-      //   _DetailRow(label: finalKey, value: value.toString()),
-      // );
-    });
+      final finalKey = formattedKey.isEmpty
+          ? key
+          : formattedKey[0].toUpperCase() + formattedKey.substring(1);
+      fields.insert(
+        fields.length - 2,
+        _DetailRow(label: finalKey, value: value?.toString() ?? ''),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -641,6 +768,51 @@ class _DetailsSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
+        if (decrypting)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 10),
+                Text(
+                  'Decrypting attributes…',
+                  style: TextStyle(
+                    color: Color(0xFF666666),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (decryptError != null && !decrypting)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Could not decrypt attributes',
+                    style: TextStyle(
+                      color: Color(0xFFB45309),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (onRetryDecrypt != null)
+                  TextButton(
+                    onPressed: onRetryDecrypt,
+                    child: const Text('Retry'),
+                  ),
+              ],
+            ),
+          ),
         Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -760,103 +932,94 @@ class _BottomActions extends StatelessWidget {
   final DocWrapper doc;
   const _BottomActions({required this.doc});
 
-  void _handleGenerateOTP(BuildContext context) async {
-    final WalletController controller = Get.find<WalletController>();
-
-    Get.dialog(
-      const Center(child: CircularProgressIndicator(color: Colors.white)),
-      barrierDismissible: false,
-    );
-
+  /// Prefer the in-memory decrypted CredentialModel from WalletController so
+  /// selective disclosure signs real attribute values, not an empty/envelope map.
+  CredentialModel? _resolvedCredential() {
+    if (doc.raw is! CredentialModel) return null;
+    final fallback = doc.raw as CredentialModel;
     try {
-      final result = await controller.requestOTP(doc.credentialID);
+      final wallet = Get.find<WalletController>();
+      final live = wallet.credentials.firstWhereOrNull(
+        (c) => c.credentialID == fallback.credentialID,
+      );
+      if (live != null) return live;
+    } catch (_) {}
+    return fallback;
+  }
 
-      Get.back(); // Close loading dialog
-
-      if (result != null) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => _OtpDialog(
-            initialOtp: result['otp'],
-            expiresAt: result['expiresAt'],
-            onRefresh: () async {
-               try {
-                 final res = await controller.requestOTP(doc.credentialID);
-                 return res != null ? {'otp': res['otp'], 'expiresAt': res['expiresAt']} : null;
-               } catch (_) {
-                 return null;
-               }
-            },
-            onDone: () {
-              Get.back(); // Close the dialog only
-            },
-          ),
-        );
-      } else {
-        Get.snackbar(
-          'Error',
-          'Failed to generate OTP.',
-          snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.redAccent,
-          colorText: Colors.white,
-        );
-      }
-    } catch (e) {
-      Get.back(); // Close loading dialog
+  Future<void> _openShare(ShareMode mode) async {
+    final cred = _resolvedCredential();
+    if (cred == null) {
       Get.snackbar(
-        'Network Error',
-        e.toString(),
+        'Error',
+        'Credential not available.',
         snackPosition: SnackPosition.BOTTOM,
         backgroundColor: Colors.redAccent,
         colorText: Colors.white,
       );
+      return;
     }
+
+    if (!cred.attributesDecrypted || cred.attributes.isEmpty) {
+      Get.dialog(
+        const Center(child: CircularProgressIndicator(color: Colors.white)),
+        barrierDismissible: false,
+      );
+      try {
+        final wallet = Get.find<WalletController>();
+        final ok = await wallet.decryptCredentialById(cred.credentialID);
+        Get.back();
+        if (!ok) {
+          Get.snackbar(
+            'Could not decrypt',
+            'Decrypt attributes before sharing this document.',
+            snackPosition: SnackPosition.BOTTOM,
+            backgroundColor: Colors.redAccent,
+            colorText: Colors.white,
+          );
+          return;
+        }
+      } catch (e) {
+        Get.back();
+        Get.snackbar(
+          'Could not decrypt',
+          e.toString(),
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.redAccent,
+          colorText: Colors.white,
+        );
+        return;
+      }
+    }
+
+    final latest = _resolvedCredential() ?? cred;
+    Get.to(() => SelectiveShareScreen(doc: latest, mode: mode));
   }
 
   @override
   Widget build(BuildContext context) {
-    // if (doc.status.toLowerCase() != 'active') {
-    //   return const SizedBox.shrink(); // Hide if revoked/suspended/expired
-    // }
-
     return Column(
       children: [
         Row(
           children: [
             Expanded(
-              child: 
-
-              _ActionBtn(
+              child: _ActionBtn(
                 icon: Icons.pin_outlined,
                 label: 'Generate OTP',
-                
-
                 bgColor: Colors.white,
                 fgColor: const Color(0xFF111111),
                 border: const Color(0xFFEBEBEB),
-                onTap: () {
-                  Get.to(
-                    () =>
-                        SelectiveShareScreen(doc: doc.raw, mode: ShareMode.otp),
-                  );
-                },
+                onTap: () => _openShare(ShareMode.otp),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: 
-              _ActionBtn(
+              child: _ActionBtn(
                 icon: Icons.qr_code_scanner,
                 label: 'Present',
                 bgColor: const Color(0xFF111111),
                 fgColor: Colors.white,
-                onTap: () {
-                  Get.to(
-                    () =>
-                        SelectiveShareScreen(doc: doc.raw, mode: ShareMode.qr),
-                  );
-                },
+                onTap: () => _openShare(ShareMode.qr),
               ),
             ),
           ],
