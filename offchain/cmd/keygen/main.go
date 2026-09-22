@@ -10,11 +10,85 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/open-quantum-safe/liboqs-go/oqs"
+	"golang.org/x/crypto/sha3"
 )
 
+func sha3Hex(data string) string {
+	digest := sha3.Sum256([]byte(data))
+	return hex.EncodeToString(digest[:])
+}
+
 func main() {
+	if len(os.Args) >= 2 {
+		cmd := os.Args[1]
+		switch cmd {
+		case "kem":
+			name := "ML-KEM-768"
+			probe := oqs.KeyEncapsulation{}
+			if err := probe.Init(name, nil); err != nil {
+				probe.Clean()
+				name = "Kyber768"
+			} else {
+				probe.Clean()
+			}
+			kem := oqs.KeyEncapsulation{}
+			defer kem.Clean()
+			if err := kem.Init(name, nil); err != nil {
+				log.Fatalf("init %s: %v", name, err)
+			}
+			pubKey, err := kem.GenerateKeyPair()
+			if err != nil {
+				log.Fatalf("generate KEM key pair: %v", err)
+			}
+			secKey := kem.ExportSecretKey()
+			fmt.Printf("KEM_PUBLIC_KEY_HEX=%s\n", hex.EncodeToString(pubKey))
+			fmt.Printf("KEM_PRIVATE_KEY_HEX=%s\n", hex.EncodeToString(secKey))
+			return
+
+		case "dsa":
+			signer := oqs.Signature{}
+			defer signer.Clean()
+			if err := signer.Init("ML-DSA-44", nil); err != nil {
+				log.Fatalf("init ML-DSA-44 signer: %v", err)
+			}
+			pubKey, err := signer.GenerateKeyPair()
+			if err != nil {
+				log.Fatalf("generate key pair: %v", err)
+			}
+			privKey := signer.ExportSecretKey()
+			fmt.Printf("DSA_PUBLIC_KEY_HEX=%s\n", hex.EncodeToString(pubKey))
+			fmt.Printf("DSA_PRIVATE_KEY_HEX=%s\n", hex.EncodeToString(privKey))
+			return
+
+		case "sign":
+			if len(os.Args) < 4 {
+				log.Fatal("usage: keygen sign <private_key_hex> <payload>")
+			}
+			privKeyHex := os.Args[2]
+			payload := os.Args[3]
+
+			privKeyBytes, err := hex.DecodeString(privKeyHex)
+			if err != nil {
+				log.Fatalf("decode private key hex: %v", err)
+			}
+			signer := oqs.Signature{}
+			defer signer.Clean()
+			if err := signer.Init("ML-DSA-44", privKeyBytes); err != nil {
+				log.Fatalf("init signer: %v", err)
+			}
+			payloadHash := sha3Hex(payload)
+			sig, err := signer.Sign([]byte(payloadHash))
+			if err != nil {
+				log.Fatalf("sign error: %v", err)
+			}
+			fmt.Println(hex.EncodeToString(sig))
+			return
+		}
+	}
+
 	const sigName = "ML-DSA-44"
 
 	signer := oqs.Signature{}
