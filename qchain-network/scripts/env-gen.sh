@@ -1,6 +1,7 @@
 #!/bin/bash
-NETWORK_ROOT="$HOME/Desktop/QChain/QChain-PQC-blockchain/qchain-network"
-export NETWORK_ROOT="$HOME/Desktop/QChain/QChain-PQC-blockchain/qchain-network"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export NETWORK_ROOT="${NETWORK_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+export ORDERER_CA="${ORDERER_CA:-$NETWORK_ROOT/crypto-material/ordererOrganizations/orderer.example.com/orderers/orderer0.orderer.example.com/tls/ca.crt}"
 export FABRIC_LOGGING_SPEC=ERROR
 export FABRIC_CFG_PATH="$NETWORK_ROOT/config"
 export CORE_PEER_TLS_ENABLED=true

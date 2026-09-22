@@ -26,12 +26,13 @@ func handleGetHolders(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]any, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, map[string]any{
-			"holderID":   r.HolderID,
-			"fullName":   r.FullName,
-			"email":      r.Email,
-			"emiratesID": r.EmiratesID,
-			"type":       holderTypeDBToAPI(r.HolderType),
-			"college":    r.College,
+			"holderID":          r.HolderID,
+			"fullName":          r.FullName,
+			"email":             r.Email,
+			"emiratesID":        r.EmiratesID,
+			"type":              holderTypeDBToAPI(r.HolderType),
+			"college":           r.College,
+			"isWalletActivated": r.IsWalletActivated,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

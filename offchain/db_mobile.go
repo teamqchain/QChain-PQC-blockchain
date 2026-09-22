@@ -16,18 +16,21 @@ import (
 // ─── MOBILE SESSIONS ─────────────────────────────────────────────────────────
 
 // MobileSessionRow is one OTP/QR presentation session. HiddenFields lists the
-// credential attributes the holder chose not to disclose.
+// credential attributes the holder chose not to disclose. DisclosedPayload and
+// HolderSignature store the phone's signed presentation (Track H).
 type MobileSessionRow struct {
-	ID           string
-	SessionType  string
-	CredentialID string
-	HolderID     string
-	HiddenFields []string
-	ExpiresAt    time.Time
+	ID               string
+	SessionType      string
+	CredentialID     string
+	HolderID         string
+	HiddenFields     []string
+	DisclosedPayload string
+	HolderSignature  string
+	ExpiresAt        time.Time
 }
 
 // insertMobileSession stores a new OTP/QR session that expires after expiresInSeconds.
-func insertMobileSession(id, sessionType, credentialID, holderID string, hiddenFields []string, expiresInSeconds int) error {
+func insertMobileSession(id, sessionType, credentialID, holderID string, hiddenFields []string, disclosedPayload, holderSignature string, expiresInSeconds int) error {
 	if db == nil {
 		return fmt.Errorf("database not configured")
 	}
@@ -39,25 +42,33 @@ func insertMobileSession(id, sessionType, credentialID, holderID string, hiddenF
 			return err
 		}
 	}
+	var payloadVal any = nil
+	if disclosedPayload != "" {
+		payloadVal = disclosedPayload
+	}
+	var sigVal any = nil
+	if holderSignature != "" {
+		sigVal = holderSignature
+	}
 	_, err := db.Exec(`
-		INSERT INTO mobile_sessions (id, session_type, credential_id, holder_id, hidden_fields, expires_at)
-		VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND))`,
-		id, sessionType, credentialID, holderID, hiddenJSON, expiresInSeconds,
+		INSERT INTO mobile_sessions (id, session_type, credential_id, holder_id, hidden_fields, disclosed_payload, holder_signature, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND))`,
+		id, sessionType, credentialID, holderID, hiddenJSON, payloadVal, sigVal, expiresInSeconds,
 	)
 	return err
 }
 
-// getMobileSession fetches a session by token, decoding its hidden-fields JSON.
+// getMobileSession fetches a session by token, decoding its hidden-fields JSON, disclosed_payload, and holder_signature.
 func getMobileSession(id string) (MobileSessionRow, error) {
 	var r MobileSessionRow
 	if db == nil {
 		return r, fmt.Errorf("database not configured")
 	}
-	var hiddenJSON sql.NullString
+	var hiddenJSON, payloadVal, sigVal sql.NullString
 	err := db.QueryRow(`
-		SELECT id, session_type, credential_id, holder_id, hidden_fields, expires_at
+		SELECT id, session_type, credential_id, holder_id, hidden_fields, disclosed_payload, holder_signature, expires_at
 		  FROM mobile_sessions WHERE id = ? LIMIT 1`, id).Scan(
-		&r.ID, &r.SessionType, &r.CredentialID, &r.HolderID, &hiddenJSON, &r.ExpiresAt,
+		&r.ID, &r.SessionType, &r.CredentialID, &r.HolderID, &hiddenJSON, &payloadVal, &sigVal, &r.ExpiresAt,
 	)
 	if err == sql.ErrNoRows {
 		return r, sql.ErrNoRows
@@ -67,6 +78,12 @@ func getMobileSession(id string) (MobileSessionRow, error) {
 	}
 	if hiddenJSON.Valid && hiddenJSON.String != "" {
 		_ = json.Unmarshal([]byte(hiddenJSON.String), &r.HiddenFields)
+	}
+	if payloadVal.Valid {
+		r.DisclosedPayload = payloadVal.String
+	}
+	if sigVal.Valid {
+		r.HolderSignature = sigVal.String
 	}
 	return r, nil
 }

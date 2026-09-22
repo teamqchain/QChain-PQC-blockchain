@@ -29,11 +29,29 @@ class QChaincode extends Contract {
         }
     }
 
-    // Fix 5: accepts the canonical JSON, its SHA3-256 hash, the ML-DSA-44 signature,
-    // the org public key, and the IPFS CID — all computed by the Go server before
+    // Track H: bind holder public keys (ML-KEM-768 for encryption + ML-DSA-44 for signing)
+    async bindHolderKeys(ctx, holderID, kemPublicKey, dsaPublicKey) {
+        try {
+            await this.checkAccess(ctx, "issuer");
+
+            const holder = await this.getHolder(ctx, holderID);
+            holder.KemPublicKey = kemPublicKey;
+            holder.DsaPublicKey = dsaPublicKey;
+            await ctx.stub.putState(
+                holderID,
+                Buffer.from(stringify(sortKeysRecursive(holder)))
+            );
+            return JSON.stringify({ success: true });
+        } catch (error) {
+            return JSON.stringify({ success: false, error: error.message });
+        }
+    }
+
+    // Fix 5 & Track H: accepts the canonical JSON, its SHA3-256 hash, the ML-DSA-44 signature,
+    // the org public key, the IPFS CID, and fieldHashes — all computed by the Go server before
     // calling this transaction. CID is passed here so issuance is atomic (no
     // separate setCID call needed).
-    async issueCredential(ctx, holderID, credentialJSON, credentialHash, issuerSignature, issuerPublicKey, ipfsCID) {
+    async issueCredential(ctx, holderID, credentialJSON, credentialHash, issuerSignature, issuerPublicKey, ipfsCID, fieldHashes) {
         try {
             await this.checkAccess(ctx, "issuer");
 
@@ -47,8 +65,9 @@ class QChaincode extends Contract {
                 Holder:         Holder.ID,
                 Issuer:         ctx.clientIdentity.getID(),
                 Status:         "active",
-                Info:           credentialJSON,    // canonical JSON string (signed payload)
+                Info:           credentialJSON,    // KEEP for now (A/B test); Track B removes this later
                 CredentialHash: credentialHash,    // SHA3-256 hex of Info
+                FieldHashes:    fieldHashes,       // NEW — JSON string: { "field": "SHA3-256(field:value)", ... }
                 Signature:      issuerSignature,   // hex ML-DSA-44 signature over CredentialHash
                 PublicKey:      issuerPublicKey,   // hex org public key at issuance time
                 CID:            ipfsCID,           // IPFS CID of the JSON (may be "" if upload skipped)
@@ -97,7 +116,7 @@ class QChaincode extends Contract {
             Credential.Status = "revoked";
             // Fix 8: PublicKey and Signature are preserved for historical audit.
             // A RevokedAt timestamp is added instead of nulling the key.
-            Credential.RevokedAt = new Date().toISOString();
+            Credential.RevokedAt = this.getTxTimestampISO(ctx);
 
             await ctx.stub.putState(credID, Buffer.from(stringify(sortKeysRecursive(Credential))));
 
@@ -127,7 +146,7 @@ class QChaincode extends Contract {
             }
 
             Credential.Status = "suspended";
-            Credential.SuspendedAt = new Date().toISOString();
+            Credential.SuspendedAt = this.getTxTimestampISO(ctx);
             Credential.SuspendedReason = reason || "";
 
             await ctx.stub.putState(credID, Buffer.from(stringify(sortKeysRecursive(Credential))));
@@ -156,7 +175,7 @@ class QChaincode extends Contract {
             Credential.Status = "active";
             delete Credential.SuspendedAt;
             delete Credential.SuspendedReason;
-            Credential.RestoredAt = new Date().toISOString();
+            Credential.RestoredAt = this.getTxTimestampISO(ctx);
 
             await ctx.stub.putState(credID, Buffer.from(stringify(sortKeysRecursive(Credential))));
 
@@ -189,6 +208,17 @@ class QChaincode extends Contract {
             throw new Error(`Access denied. Only a ${role} official may access this function.`);
         }
         return true;
+    }
+
+    getTxTimestampISO(ctx) {
+        try {
+            const t = ctx.stub.getTxTimestamp();
+            if (t && t.seconds) {
+                const sec = Number(t.seconds.low !== undefined ? t.seconds.low : t.seconds);
+                return new Date(sec * 1000).toISOString();
+            }
+        } catch (e) {}
+        return new Date().toISOString().split('.')[0] + 'Z';
     }
 
     async getHolder(ctx, holderID) {

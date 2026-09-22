@@ -11,12 +11,13 @@ import (
 
 // HolderRow is the projection used by /getHolders responses.
 type HolderRow struct {
-	HolderID   string
-	FullName   string
-	Email      string
-	EmiratesID string
-	HolderType string
-	College    string
+	HolderID          string
+	FullName          string
+	Email             string
+	EmiratesID        string
+	HolderType        string
+	College           string
+	IsWalletActivated bool
 }
 
 // holderByEmiratesID looks up a holder by their UAE Emirates ID.
@@ -36,6 +37,45 @@ func holderByEmiratesID(emiratesID string) (holderID, fabricHolderID string, err
 	return
 }
 
+// HolderProfileRow is the basic demographic projection used by
+// /mobile/getHolderProfile — available even before any credential is issued.
+type HolderProfileRow struct {
+	FullName   string
+	Email      string
+	EmiratesID string
+	HolderType string
+	College    string
+}
+
+// holderProfileByEmiratesID returns the holder's basic demographic info
+// (full name, email, Emirates ID, holder type, college) keyed by Emirates ID.
+// Works regardless of whether the holder has been issued any credential.
+func holderProfileByEmiratesID(emiratesID string) (HolderProfileRow, error) {
+	var r HolderProfileRow
+	if db == nil {
+		return r, fmt.Errorf("database not configured — set MYSQL_DSN")
+	}
+	var first, last, em sql.NullString
+	row := db.QueryRow(`
+		SELECT first_name,
+		       last_name,
+		       email,
+		       emirates_id,
+		       COALESCE(holder_type, '') AS holder_type,
+		       COALESCE(college, '') AS college
+		  FROM holders
+		 WHERE emirates_id = ?`, emiratesID)
+	if err := row.Scan(&first, &last, &em, &r.EmiratesID, &r.HolderType, &r.College); err != nil {
+		if err == sql.ErrNoRows {
+			return r, fmt.Errorf("Emirates ID %q not registered", emiratesID)
+		}
+		return r, err
+	}
+	r.FullName = strings.TrimSpace(first.String + " " + last.String)
+	r.Email = em.String
+	return r, nil
+}
+
 // insertHolder saves a new holder row into MySQL.
 // Called by handleRegisterHolder (setup script path).
 func insertHolder(holderID, emiratesID, firstName, lastName string) error {
@@ -45,9 +85,70 @@ func insertHolder(holderID, emiratesID, firstName, lastName string) error {
 	_, err := db.Exec(
 		`INSERT INTO holders (holder_id, emirates_id, first_name, last_name, fabric_holder_id, is_wallet_activated)
 		 VALUES (?, ?, ?, ?, ?, FALSE)
-		 ON DUPLICATE KEY UPDATE first_name = VALUES(first_name), last_name = VALUES(last_name)`,
+		 ON DUPLICATE KEY UPDATE first_name = VALUES(first_name), last_name = VALUES(last_name), emirates_id = VALUES(emirates_id)`,
 		holderID, emiratesID, firstName, lastName, holderID,
 	)
+	return err
+}
+
+// holderKemPubByID returns the ML-KEM-768 public key hex for holderID.
+func holderKemPubByID(holderID string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("database not configured")
+	}
+	var pub sql.NullString
+	err := db.QueryRow(`SELECT kem_public_key FROM holders WHERE holder_id = ?`, holderID).Scan(&pub)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("holder %q not found", holderID)
+	}
+	if err != nil {
+		return "", err
+	}
+	if !pub.Valid {
+		return "", nil
+	}
+	return pub.String, nil
+}
+
+// holderDsaPubByID returns the ML-DSA-44 public key hex for holderID.
+func holderDsaPubByID(holderID string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("database not configured")
+	}
+	var pub sql.NullString
+	err := db.QueryRow(`SELECT dsa_public_key FROM holders WHERE holder_id = ?`, holderID).Scan(&pub)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("holder %q not found", holderID)
+	}
+	if err != nil {
+		return "", err
+	}
+	if !pub.Valid {
+		return "", nil
+	}
+	return pub.String, nil
+}
+
+// updateHolderKeys sets kem_public_key, dsa_public_key, and marks is_wallet_activated = TRUE.
+func updateHolderKeys(holderID, kemPublicKey, dsaPublicKey string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	_, err := db.Exec(
+		`UPDATE holders
+		    SET kem_public_key = ?, dsa_public_key = ?, is_wallet_activated = TRUE
+		  WHERE holder_id = ?`,
+		kemPublicKey, dsaPublicKey, holderID,
+	)
+	return err
+}
+
+// updateHolderKemPub updates only the ML-KEM public key (legacy Track B helper).
+func updateHolderKemPub(holderID, pubHex string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
+	}
+	_, err := db.Exec(`UPDATE holders SET kem_public_key = ? WHERE holder_id = ?`, pubHex, holderID)
 	return err
 }
 
@@ -96,7 +197,8 @@ func searchHolders(searchQuery, typeFilterDB string) ([]HolderRow, error) {
 		       COALESCE(email, '') AS email,
 		       emirates_id,
 		       COALESCE(holder_type, '') AS holder_type,
-		       COALESCE(college, '') AS college
+		       COALESCE(college, '') AS college,
+		       COALESCE(is_wallet_activated, FALSE) AS is_wallet_activated
 		  FROM holders`
 	conds := []string{}
 	args := []any{}
@@ -104,9 +206,10 @@ func searchHolders(searchQuery, typeFilterDB string) ([]HolderRow, error) {
 	if searchQuery != "" {
 		conds = append(conds, `(CONCAT_WS(' ', first_name, last_name) LIKE ?
 		                       OR emirates_id LIKE ?
-		                       OR email LIKE ?)`)
+		                       OR email LIKE ?
+		                       OR holder_id LIKE ?)`)
 		like := "%" + searchQuery + "%"
-		args = append(args, like, like, like)
+		args = append(args, like, like, like, like)
 	}
 	if typeFilterDB != "" {
 		conds = append(conds, `holder_type = ?`)
@@ -129,7 +232,7 @@ func searchHolders(searchQuery, typeFilterDB string) ([]HolderRow, error) {
 	out := []HolderRow{}
 	for rows.Next() {
 		var r HolderRow
-		if err := rows.Scan(&r.HolderID, &r.FullName, &r.Email, &r.EmiratesID, &r.HolderType, &r.College); err != nil {
+		if err := rows.Scan(&r.HolderID, &r.FullName, &r.Email, &r.EmiratesID, &r.HolderType, &r.College, &r.IsWalletActivated); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
