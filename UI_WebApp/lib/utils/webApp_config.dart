@@ -5,9 +5,7 @@
 // The web-gateway Docker image passes this automatically. When no value is
 // supplied (a plain `flutter run` during development) it falls back to the
 // local backend on port 3000.
-const String kApiBaseUrl = "https://satisfied-dame-sao-straight.trycloudflare.com";
-// const String kApiBaseUrl = "https://qchain.tail4fff4b.ts.net/api";
-// const String kApiBaseUrl = String.fromEnvironment(
-//   'API_BASE_URL',
-//   defaultValue: 'http://localhost:3000',
-// );
+const String kApiBaseUrl = String.fromEnvironment(
+  'API_BASE_URL',
+  defaultValue: 'http://localhost:3000',
+);
