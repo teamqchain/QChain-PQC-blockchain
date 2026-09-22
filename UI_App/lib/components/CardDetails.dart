@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/components/overlays.dart';
-import 'package:qwallet_mobileapp/model/IdentityDoc.dart';
+import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/screens/selective_screen.dart';
@@ -47,6 +47,34 @@ class _CardDetailOverlayState extends State<CardDetailOverlay>
   Future<void> _close() async {
     await _ctrl.reverse();
     widget.onClose();
+  }
+
+  /// Resolve the latest in-memory decrypted model (or decrypt now).
+  Future<CredentialModel?> _liveDecryptedDoc(CredentialModel fallback) async {
+    try {
+      final wallet = Get.find<WalletController>();
+      final live = wallet.credentials.firstWhereOrNull(
+        (c) => c.credentialID == fallback.credentialID,
+      );
+      if (live != null &&
+          live.attributesDecrypted &&
+          live.attributes.isNotEmpty) {
+        return live;
+      }
+      final ok = await wallet.decryptCredentialById(fallback.credentialID);
+      if (!ok) return null;
+      final refreshed = wallet.credentials.firstWhereOrNull(
+        (c) => c.credentialID == fallback.credentialID,
+      );
+      if (refreshed != null &&
+          refreshed.attributesDecrypted &&
+          refreshed.attributes.isNotEmpty) {
+        return refreshed;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
@@ -260,10 +288,22 @@ class _CardDetailOverlayState extends State<CardDetailOverlay>
                                     child: OverlayBtn(
                                       icon: Icons.qr_code_2,
                                       label: 'Present',
-                                      onTap: () {
+                                      onTap: () async {
+                                        final live =
+                                            await _liveDecryptedDoc(doc);
+                                        if (live == null) {
+                                          Get.snackbar(
+                                            'Could not decrypt',
+                                            'Decrypt attributes before sharing.',
+                                            snackPosition: SnackPosition.BOTTOM,
+                                            backgroundColor: Colors.redAccent,
+                                            colorText: Colors.white,
+                                          );
+                                          return;
+                                        }
                                         Get.to(
                                           () => SelectiveShareScreen(
-                                            doc: doc,
+                                            doc: live,
                                             mode: ShareMode.qr,
                                           ),
                                         );
@@ -272,32 +312,25 @@ class _CardDetailOverlayState extends State<CardDetailOverlay>
                                     ),
                                   ),
                                   const SizedBox(width: 12),
-                                  // The OTP Button
-                                  // Expanded(
-                                  //   child: OverlayBtn(
-                                  //     icon: Icons.pin_outlined,
-                                  //     label:
-                                  //         'OTP', // Or 'Generate OTP' depending on your design space
-                                  //     onTap: () {
-                                  //       Get.to(
-                                  //         () => SelectiveShareScreen(
-                                  //           doc: doc,
-                                  //           mode: ShareMode.otp,
-                                  //         ),
-                                  //       );
-                                  //       _close();
-                                  //     },
-                                  //   ),
-                                  // ),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: OverlayBtn(
                                       icon: Icons.info_outline_rounded,
                                       label: 'Details',
                                       onTap: () {
+                                        final live =
+                                            Get.isRegistered<WalletController>()
+                                            ? Get.find<WalletController>()
+                                                  .credentials
+                                                  .firstWhereOrNull(
+                                                    (c) =>
+                                                        c.credentialID ==
+                                                        doc.credentialID,
+                                                  )
+                                            : null;
                                         Get.toNamed(
                                           Routes.DETAIL,
-                                          arguments: doc,
+                                          arguments: live ?? doc,
                                         );
                                         _close();
                                       },
