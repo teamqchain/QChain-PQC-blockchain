@@ -24,7 +24,8 @@ type CredentialInsert struct {
 	Signature      string       // hex ML-DSA-44 signature
 	PublicKey      string       // hex org public key
 	IPFSCID        string       // IPFS CID (may be empty)
-	CredentialData string       // raw info JSON for display
+	CredentialData string       // Track B: encrypted envelope JSON (or plaintext in legacy mode)
+	EncVersion     int          // 0 = legacy plaintext, 1 = Track B envelope
 	IssuedAt       time.Time
 	ExpiryDate     sql.NullTime // parsed from inner info JSON; NULL if none
 }
@@ -89,13 +90,13 @@ func insertCredential(c CredentialInsert) error {
 		`INSERT INTO credentials
 		 (credential_id, fabric_cred_id, holder_id, issuer_id, org_id,
 		  credential_type, credential_hash, issuer_signature, issuer_public_key,
-		  signing_algorithm, ipfs_cid, status, credential_data, issued_at, expiry_date)
+		  signing_algorithm, ipfs_cid, status, credential_data, enc_version, issued_at, expiry_date)
 		 VALUES (?, ?, ?, 'ISS-UOS-0001', 'ORG-UOS-001',
 		         ?, ?, ?, ?,
-		         'dilithium', ?, 'active', ?, ?, ?)`,
+		         'dilithium', ?, 'active', ?, ?, ?, ?)`,
 		c.CredentialID, c.FabricCredID, c.HolderID,
 		c.CredentialType, c.CredentialHash, c.Signature, c.PublicKey,
-		c.IPFSCID, c.CredentialData, c.IssuedAt, c.ExpiryDate,
+		c.IPFSCID, c.CredentialData, c.EncVersion, c.IssuedAt, c.ExpiryDate,
 	)
 	return err
 }
@@ -114,7 +115,13 @@ func fabricCredIDByDisplay(displayID string) (string, error) {
 	if err == sql.ErrNoRows {
 		return "", fmt.Errorf("credential %q not found", displayID)
 	}
-	return fabricID, err
+	if err != nil {
+		return "", err
+	}
+	if fabricID == "" {
+		return "", fmt.Errorf("credential %q has no on-chain Fabric ID (blockchain issuance failed)", displayID)
+	}
+	return fabricID, nil
 }
 
 // markCredentialRevoked updates the credential status to revoked in MySQL.
@@ -428,4 +435,26 @@ func credentialHolderID(credentialID string) (string, error) {
 		return "", sql.ErrNoRows
 	}
 	return holderID, err
+}
+
+// getCredentialDataByID returns the stored credential_data JSON string for display credentialID or fabric_cred_id.
+func getCredentialDataByID(credentialID string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("database not configured")
+	}
+	var data sql.NullString
+	err := db.QueryRow(
+		`SELECT credential_data FROM credentials WHERE credential_id = ? OR fabric_cred_id = ? LIMIT 1`,
+		credentialID, credentialID,
+	).Scan(&data)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("credential %q not found", credentialID)
+	}
+	if err != nil {
+		return "", err
+	}
+	if !data.Valid {
+		return "{}", nil
+	}
+	return data.String, nil
 }

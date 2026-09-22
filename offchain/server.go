@@ -47,8 +47,22 @@ func main() {
 		log.Fatal("ISSUER_PRIVATE_KEY_HEX and ISSUER_PUBLIC_KEY_HEX must be set — run offchain/cmd/keygen/main.go once to generate them")
 	}
 
+	// Track B2 / H — holder-level ML-KEM key pairs for OFF-CHAIN credential-data encryption.
+	// Keys are generated on the holder's mobile device (QWallet) and registered via
+	// POST /mobile/registerHolderKeys; the server never holds holder private keys.
+	if n := resolveKEMName(); n != "" {
+		kemName = n
+	}
+
 	// Connect to MySQL (non-fatal if not configured — warnings logged per request)
 	initDB()
+
+	// One-shot maintenance mode: encrypt any legacy plaintext credential_data rows
+	// in place, then exit. Run with RUN_BACKFILL_ENCRYPT=1. Does not touch the blockchain.
+	if os.Getenv("RUN_BACKFILL_ENCRYPT") == "1" {
+		runBackfillEncrypt()
+		return
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /registerHolder", handleRegisterHolder)
@@ -83,6 +97,10 @@ func main() {
 	mux.HandleFunc("POST /deleteStaff", handleDeleteStaff)
 
 	// QWallet — mobile endpoints
+	mux.HandleFunc("GET /mobile/checkKeys", handleCheckKeys)
+	mux.HandleFunc("POST /mobile/registerHolderKeys", handleRegisterHolderKeys)
+	mux.HandleFunc("GET /mobile/getEnvelope", handleGetEnvelope)
+	mux.HandleFunc("GET /mobile/getHolderProfile", handleMobileGetHolderProfile)
 	mux.HandleFunc("GET /mobile/getCredentialsByHolder", handleMobileGetCredentialsByHolder)
 	mux.HandleFunc("POST /mobile/toggleFavorite", handleToggleFavorite)
 	mux.HandleFunc("GET /mobile/getActivity", handleGetActivity)
@@ -105,6 +123,7 @@ func main() {
 	fmt.Printf("  Chaincode:     %s\n", chaincodeName)
 	fmt.Printf("  IPFS host:     %s\n", ipfsHost)
 	fmt.Printf("  PQC algo:      %s\n", sigName)
+	fmt.Printf("  KEM algo:      %s (off-chain encryption: holder-held keys)\n", kemName)
 	fmt.Printf("  Issuer org:    %s / %s\n", issuerOrgName, issuerIdentity)
 	fmt.Printf("  Verifier org:  %s / %s\n", verifierOrgName, verifierIdentity)
 	fmt.Printf("  Issuer org ID: %s\n", issuerOrgID)
