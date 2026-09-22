@@ -1,32 +1,58 @@
 package main
 
+/*
+================================================================================
+QCHAIN OFFCHAIN BACKEND TEST RUN GUIDE
+================================================================================
+
+1. Running Unit Tests in the VM (Native Environment):
+   --------------------------------------------------
+   If running directly on the VM with Go (1.20+) and liboqs installed:
+     $ cd offchain
+     $ go test -v ./...
+
+   Run specific test suites:
+     $ go test -v -run TestHandlersValidationAndHealth
+     $ go test -v -run TestApplySelectiveDisclosure
+     $ go test -v -run TestFieldHashesVerificationLogic
+     $ go test -v -run TestPresentationPayloadBindingParsing
+     $ go test -v -run TestMLDSAPresentationSigning
+     $ go test -v -run TestDubaiTimezoneFormat
+     $ go test -v -run TestEnvelopeRoundTrip
+
+   Run with clean cache and coverage:
+     $ go test -count=1 -cover ./...
+
+2. Running Unit Tests via Docker (liboqs Containerized):
+   -----------------------------------------------------
+   Since ML-KEM-768 and ML-DSA-44 require liboqs C library bindings, tests can be
+   executed inside the pre-built Docker image:
+     $ cd offchain
+     $ docker build -t qchain-api:latest .
+     $ docker run --rm qchain-api:latest go test -v ./...
+
+   Mounting local directory into container for instant test iterations:
+     $ docker run --rm -v "$PWD:/app" -w /app qchain-api:latest go test -v ./...
+
+3. Running End-to-End (E2E) API Tests:
+   -----------------------------------
+   With the full network running (Fabric, MySQL, IPFS, Backend API):
+     $ ./tests/e2e_api_test.sh
+
+================================================================================
+*/
+
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
-
-// Test Guide for New Contributors
-//
-// Run all tests in this module:
-//   go test ./...
-//
-// Run with detailed pass/fail output:
-//   go test -v ./...
-//
-// Run only this file's tests:
-//   go test -v -run 'Test(GetEnv|PathHelpers|LoadWalletIdentity|PQCSignVerifyRoundTrip|PQCDecodeFailures|WriteHelpers|DecodeBody|HandlersValidationAndHealth)$'
-//
-// Run one specific test:
-//   go test -v -run TestHandlersValidationAndHealth
-//
-// Notes:
-// - Most tests here are unit/validation tests and do not require Fabric or IPFS.
-// - Cryptography tests rely on liboqs being available in the runtime environment.
 
 // TestGetEnv verifies the environment override helper used by runtime config.
 // New contributors can read this as: env value wins, otherwise fallback is used.
@@ -411,11 +437,38 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			wantErrorSubstr: "missing credentialID",
 		},
 		{
+			name:            "generateOTP missing disclosedPayload",
+			handler:         handleGenerateOTP,
+			method:          http.MethodPost,
+			target:          "/mobile/generateOTP",
+			body:            `{"credentialID":"CRED-001"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing disclosedPayload",
+		},
+		{
+			name:            "generateOTP missing holderSignature",
+			handler:         handleGenerateOTP,
+			method:          http.MethodPost,
+			target:          "/mobile/generateOTP",
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"credentialID\":\"CRED-001\"}"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing holderSignature",
+		},
+		{
+			name:            "generateOTP missing payload credentialID",
+			handler:         handleGenerateOTP,
+			method:          http.MethodPost,
+			target:          "/mobile/generateOTP",
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"disclosedFields\":{}}","holderSignature":"sig123"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "disclosedPayload missing credentialID",
+		},
+		{
 			name:            "generateOTP credentialID mismatch",
 			handler:         handleGenerateOTP,
 			method:          http.MethodPost,
 			target:          "/mobile/generateOTP",
-			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"credentialID\":\"CRED-999\"}"}`,
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"credentialID\":\"CRED-999\"}","holderSignature":"sig123"}`,
 			wantStatus:      http.StatusBadRequest,
 			wantErrorSubstr: "does not match",
 		},
@@ -429,13 +482,58 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			wantErrorSubstr: "missing credentialID",
 		},
 		{
+			name:            "generatePresentation missing disclosedPayload",
+			handler:         handleGeneratePresentation,
+			method:          http.MethodPost,
+			target:          "/mobile/generatePresentation",
+			body:            `{"credentialID":"CRED-001"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing disclosedPayload",
+		},
+		{
+			name:            "generatePresentation missing holderSignature",
+			handler:         handleGeneratePresentation,
+			method:          http.MethodPost,
+			target:          "/mobile/generatePresentation",
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"credentialID\":\"CRED-001\"}"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing holderSignature",
+		},
+		{
+			name:            "generatePresentation missing payload credentialID",
+			handler:         handleGeneratePresentation,
+			method:          http.MethodPost,
+			target:          "/mobile/generatePresentation",
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"disclosedFields\":{}}","holderSignature":"sig123"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "disclosedPayload missing credentialID",
+		},
+		{
 			name:            "generatePresentation credentialID mismatch",
 			handler:         handleGeneratePresentation,
 			method:          http.MethodPost,
 			target:          "/mobile/generatePresentation",
-			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"credentialID\":\"CRED-999\"}"}`,
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"credentialID\":\"CRED-999\"}","holderSignature":"sig123"}`,
 			wantStatus:      http.StatusBadRequest,
 			wantErrorSubstr: "does not match",
+		},
+		{
+			name:            "generateOTP malformed json in disclosedPayload",
+			handler:         handleGenerateOTP,
+			method:          http.MethodPost,
+			target:          "/mobile/generateOTP",
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{invalid-json","holderSignature":"sig123"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "invalid JSON in disclosedPayload",
+		},
+		{
+			name:            "generatePresentation malformed json in disclosedPayload",
+			handler:         handleGeneratePresentation,
+			method:          http.MethodPost,
+			target:          "/mobile/generatePresentation",
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{invalid-json","holderSignature":"sig123"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "invalid JSON in disclosedPayload",
 		},
 		{
 			name:            "resolveSession missing sessionToken",
@@ -445,6 +543,96 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			body:            `{}`,
 			wantStatus:      http.StatusBadRequest,
 			wantErrorSubstr: "missing sessionToken",
+		},
+		{
+			name:            "toggleFavorite missing holderEID",
+			handler:         handleToggleFavorite,
+			method:          http.MethodPost,
+			target:          "/mobile/toggleFavorite",
+			body:            `{"credentialID":"CRED-001"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing holderEID",
+		},
+		{
+			name:            "toggleFavorite missing credentialID",
+			handler:         handleToggleFavorite,
+			method:          http.MethodPost,
+			target:          "/mobile/toggleFavorite",
+			body:            `{"holderEID":"784-1234"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing credentialID",
+		},
+		{
+			name:            "fetchDocument missing holderEID",
+			handler:         handleFetchDocument,
+			method:          http.MethodPost,
+			target:          "/mobile/fetchDocument",
+			body:            `{"issuerID":"iss-1","serviceName":"deg"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing holderEID",
+		},
+		{
+			name:            "fetchDocument missing issuerID",
+			handler:         handleFetchDocument,
+			method:          http.MethodPost,
+			target:          "/mobile/fetchDocument",
+			body:            `{"holderEID":"784-1234","serviceName":"deg"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing issuerID",
+		},
+		{
+			name:            "fetchDocument missing serviceName",
+			handler:         handleFetchDocument,
+			method:          http.MethodPost,
+			target:          "/mobile/fetchDocument",
+			body:            `{"holderEID":"784-1234","issuerID":"iss-1"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing serviceName",
+		},
+		{
+			name:            "getSubscriptions missing emiratesID",
+			handler:         handleGetMobileSubscriptions,
+			method:          http.MethodGet,
+			target:          "/mobile/getSubscriptions",
+			body:            "",
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "emiratesID is required",
+		},
+		{
+			name:            "approveSubscription missing params",
+			handler:         handleApproveSubscription,
+			method:          http.MethodPost,
+			target:          "/mobile/approveSubscription",
+			body:            `{"subscriptionID":"SUB-1"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "subscriptionID and emiratesID are required",
+		},
+		{
+			name:            "rejectSubscription missing params",
+			handler:         handleRejectSubscription,
+			method:          http.MethodPost,
+			target:          "/mobile/rejectSubscription",
+			body:            `{"subscriptionID":"SUB-1"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "subscriptionID and emiratesID are required",
+		},
+		{
+			name:            "suspendCredential missing credentialID",
+			handler:         handleSuspendCredential,
+			method:          http.MethodPost,
+			target:          "/suspendCredential",
+			body:            `{"reason":"test investigation"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing credentialID",
+		},
+		{
+			name:            "restoreCredential missing credentialID",
+			handler:         handleRestoreCredential,
+			method:          http.MethodPost,
+			target:          "/restoreCredential",
+			body:            `{}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "missing credentialID",
 		},
 	}
 
@@ -516,5 +704,209 @@ func TestDubaiTimezoneFormat(t *testing.T) {
 	}
 	if len(formatted) != 19 || formatted[10] != 'T' {
 		t.Fatalf("unexpected format for Dubai time: %s", formatted)
+	}
+}
+
+// TestApplySelectiveDisclosure validates the selective disclosure redaction helper.
+func TestApplySelectiveDisclosure(t *testing.T) {
+	// Nil handling: must not panic
+	applySelectiveDisclosure(nil, []string{"gpa"})
+
+	// Empty hiddenFields: leaves map untouched
+	data := map[string]any{
+		"holderName": "Fatima Al Mansoori",
+		"gpa":        "3.9",
+		"college":    "Engineering",
+	}
+	applySelectiveDisclosure(data, []string{})
+	if data["holderName"] != "Fatima Al Mansoori" || data["gpa"] != "3.9" || data["college"] != "Engineering" {
+		t.Fatalf("expected data to remain untouched with empty hidden fields")
+	}
+
+	// Single top-level field blanking
+	applySelectiveDisclosure(data, []string{"gpa"})
+	if data["gpa"] != nil {
+		t.Fatalf("expected gpa to be nil after disclosure redaction, got %v", data["gpa"])
+	}
+	if data["college"] != "Engineering" {
+		t.Fatalf("expected college to remain untouched, got %v", data["college"])
+	}
+
+	// Nested dotted path blanking (e.g. details.score)
+	nested := map[string]any{
+		"student": "Rashid",
+		"details": map[string]any{
+			"major": "Computer Science",
+			"score": "A+",
+		},
+	}
+	applySelectiveDisclosure(nested, []string{"details.score"})
+	detailsMap, ok := nested["details"].(map[string]any)
+	if !ok || detailsMap["score"] != nil {
+		t.Fatalf("expected details.score to be nil, got %v", detailsMap["score"])
+	}
+	if detailsMap["major"] != "Computer Science" {
+		t.Fatalf("expected details.major to remain untouched, got %v", detailsMap["major"])
+	}
+
+	// Non-existent hidden fields: safe and produces no side-effects
+	applySelectiveDisclosure(data, []string{"nonExistentField", "unknown.subfield"})
+	if data["college"] != "Engineering" {
+		t.Fatalf("expected college to remain intact")
+	}
+}
+
+// TestFieldHashesVerificationLogic verifies that the attribute-integrity loop correctly
+// validates disclosed attributes against on-chain fieldHashes and detects tampering.
+func TestFieldHashesVerificationLogic(t *testing.T) {
+	// Simulated on-chain FieldHashes map computed at issuance
+	onChainFieldHashes := map[string]string{
+		"college":     sha3Hex("college:CCI"),
+		"degreeTitle": sha3Hex("degreeTitle:BSc Computer Science"),
+		"gpa":         sha3Hex("gpa:3.8"),
+	}
+
+	// Case 1: Valid disclosed fields matching on-chain hashes
+	validFields := map[string]any{
+		"college":     "CCI",
+		"degreeTitle": "BSc Computer Science",
+		"gpa":         "3.8",
+	}
+	valid := true
+	for k, v := range validFields {
+		expectedHash, exists := onChainFieldHashes[k]
+		if !exists || !strings.EqualFold(sha3Hex(k+":"+fmt.Sprintf("%v", v)), expectedHash) {
+			valid = false
+			break
+		}
+	}
+	if !valid {
+		t.Fatalf("valid disclosed fields failed fieldHashes verification")
+	}
+
+	// Case 2: Tampered field value (holder attempts GPA elevation 3.8 -> 4.0)
+	tamperedFields := map[string]any{
+		"college":     "CCI",
+		"degreeTitle": "BSc Computer Science",
+		"gpa":         "4.0",
+	}
+	tamperedValid := true
+	for k, v := range tamperedFields {
+		expectedHash, exists := onChainFieldHashes[k]
+		if !exists || !strings.EqualFold(sha3Hex(k+":"+fmt.Sprintf("%v", v)), expectedHash) {
+			tamperedValid = false
+			break
+		}
+	}
+	if tamperedValid {
+		t.Fatalf("tampered field value (3.8 -> 4.0) unexpectedly passed fieldHashes verification")
+	}
+
+	// Case 3: Injected attribute not present in on-chain FieldHashes
+	injectedFields := map[string]any{
+		"college":     "CCI",
+		"distinction": "Dean's List",
+	}
+	injectedValid := true
+	for k, v := range injectedFields {
+		expectedHash, exists := onChainFieldHashes[k]
+		if !exists || !strings.EqualFold(sha3Hex(k+":"+fmt.Sprintf("%v", v)), expectedHash) {
+			injectedValid = false
+			break
+		}
+	}
+	if injectedValid {
+		t.Fatalf("injected attribute not on ledger unexpectedly passed fieldHashes verification")
+	}
+}
+
+// TestPresentationPayloadBindingParsing tests canonical JSON presentation payload
+// unmarshaling, whitespace trimming, and credentialID binding validation.
+func TestPresentationPayloadBindingParsing(t *testing.T) {
+	// Case 1: Valid canonical JSON payload
+	rawJSON := `{"credentialID":"CRED-2026-001","disclosedFields":{"college":"CCI","gpa":"3.8"},"timestamp":"2026-09-22T12:00:00"}`
+	var payload struct {
+		CredentialID    string         `json:"credentialID"`
+		DisclosedFields map[string]any `json:"disclosedFields"`
+		Timestamp       string         `json:"timestamp"`
+	}
+	if err := json.Unmarshal([]byte(rawJSON), &payload); err != nil {
+		t.Fatalf("unmarshal canonical payload failed: %v", err)
+	}
+	if strings.TrimSpace(payload.CredentialID) != "CRED-2026-001" {
+		t.Fatalf("credentialID mismatch. got=%q, want=%q", payload.CredentialID, "CRED-2026-001")
+	}
+	if payload.DisclosedFields["gpa"] != "3.8" {
+		t.Fatalf("disclosed attribute mismatch. got=%v, want=3.8", payload.DisclosedFields["gpa"])
+	}
+
+	// Case 2: Whitespace padding in credentialID is trimmed cleanly
+	paddedJSON := `{"credentialID":"  CRED-2026-001  "}`
+	var paddedPayload struct {
+		CredentialID string `json:"credentialID"`
+	}
+	if err := json.Unmarshal([]byte(paddedJSON), &paddedPayload); err != nil {
+		t.Fatalf("unmarshal padded payload failed: %v", err)
+	}
+	if strings.TrimSpace(paddedPayload.CredentialID) != "CRED-2026-001" {
+		t.Fatalf("expected trimmed credentialID, got=%q", strings.TrimSpace(paddedPayload.CredentialID))
+	}
+
+	// Case 3: Missing credentialID results in empty string
+	missingIDJSON := `{"disclosedFields":{"gpa":"3.8"}}`
+	var missingPayload struct {
+		CredentialID string `json:"credentialID"`
+	}
+	_ = json.Unmarshal([]byte(missingIDJSON), &missingPayload)
+	if strings.TrimSpace(missingPayload.CredentialID) != "" {
+		t.Fatalf("expected empty credentialID for missing field")
+	}
+}
+
+// TestMLDSAPresentationSigning verifies end-to-end holder presentation signing:
+// generating an ML-DSA-44 keypair, signing the SHA3-256 hash of canonical JSON,
+// and verifying with public key + detecting tampered payloads or key substitutions.
+func TestMLDSAPresentationSigning(t *testing.T) {
+	// 1. Generate holder's ML-DSA-44 key pair
+	holderPub, holderPriv, err := pqcGenKeyPair()
+	if err != nil {
+		t.Fatalf("pqcGenKeyPair failed: %v", err)
+	}
+
+	// 2. Build canonical presentation payload
+	disclosedPayload := `{"credentialID":"CRED-2026-001","disclosedFields":{"college":"CCI","degreeTitle":"BSc Computer Science","gpa":"3.8"},"timestamp":"2026-09-22T13:00:00"}`
+	payloadHash := sha3Hex(disclosedPayload)
+
+	// 3. Holder signs hash with private key
+	sig, err := pqcSign(payloadHash, holderPriv)
+	if err != nil {
+		t.Fatalf("pqcSign failed: %v", err)
+	}
+
+	// 4. Verifier verifies signature with holder public key
+	valid, err := pqcVerify(payloadHash, sig, holderPub)
+	if err != nil {
+		t.Fatalf("pqcVerify returned error: %v", err)
+	}
+	if !valid {
+		t.Fatalf("expected holder presentation signature to verify successfully")
+	}
+
+	// 5. Tampered payload (e.g. gpa modified 3.8 -> 4.0) must fail verification
+	tamperedPayload := `{"credentialID":"CRED-2026-001","disclosedFields":{"college":"CCI","degreeTitle":"BSc Computer Science","gpa":"4.0"},"timestamp":"2026-09-22T13:00:00"}`
+	tamperedHash := sha3Hex(tamperedPayload)
+	tamperedValid, _ := pqcVerify(tamperedHash, sig, holderPub)
+	if tamperedValid {
+		t.Fatalf("expected signature verification to fail for tampered payload")
+	}
+
+	// 6. Presentation verified with different holder's public key must fail
+	otherPub, _, err := pqcGenKeyPair()
+	if err != nil {
+		t.Fatalf("pqcGenKeyPair for second keypair failed: %v", err)
+	}
+	otherKeyValid, _ := pqcVerify(payloadHash, sig, otherPub)
+	if otherKeyValid {
+		t.Fatalf("expected signature verification to fail with wrong holder public key")
 	}
 }

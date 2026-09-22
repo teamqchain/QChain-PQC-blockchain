@@ -378,22 +378,33 @@ func handleGenerateOTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	if req.CredentialID == "" {
+	if strings.TrimSpace(req.CredentialID) == "" {
 		writeError(w, http.StatusBadRequest, "missing credentialID")
 		return
 	}
-	if req.DisclosedPayload != "" {
-		var payload struct {
-			CredentialID string `json:"credentialID"`
-		}
-		if err := json.Unmarshal([]byte(req.DisclosedPayload), &payload); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON in disclosedPayload")
-			return
-		}
-		if payload.CredentialID != "" && payload.CredentialID != req.CredentialID {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("disclosedPayload credentialID %q does not match request credentialID %q", payload.CredentialID, req.CredentialID))
-			return
-		}
+	if strings.TrimSpace(req.DisclosedPayload) == "" {
+		writeError(w, http.StatusBadRequest, "missing disclosedPayload")
+		return
+	}
+	if strings.TrimSpace(req.HolderSignature) == "" {
+		writeError(w, http.StatusBadRequest, "missing holderSignature")
+		return
+	}
+	var payload struct {
+		CredentialID string `json:"credentialID"`
+	}
+	if err := json.Unmarshal([]byte(req.DisclosedPayload), &payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON in disclosedPayload: "+err.Error())
+		return
+	}
+	payloadCredID := strings.TrimSpace(payload.CredentialID)
+	if payloadCredID == "" {
+		writeError(w, http.StatusBadRequest, "disclosedPayload missing credentialID")
+		return
+	}
+	if payloadCredID != strings.TrimSpace(req.CredentialID) {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("disclosedPayload credentialID %q does not match request credentialID %q", payloadCredID, req.CredentialID))
+		return
 	}
 	holderID, err := credentialHolderID(req.CredentialID)
 	if err == sql.ErrNoRows {
@@ -444,22 +455,33 @@ func handleGeneratePresentation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	if req.CredentialID == "" {
+	if strings.TrimSpace(req.CredentialID) == "" {
 		writeError(w, http.StatusBadRequest, "missing credentialID")
 		return
 	}
-	if req.DisclosedPayload != "" {
-		var payload struct {
-			CredentialID string `json:"credentialID"`
-		}
-		if err := json.Unmarshal([]byte(req.DisclosedPayload), &payload); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON in disclosedPayload")
-			return
-		}
-		if payload.CredentialID != "" && payload.CredentialID != req.CredentialID {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("disclosedPayload credentialID %q does not match request credentialID %q", payload.CredentialID, req.CredentialID))
-			return
-		}
+	if strings.TrimSpace(req.DisclosedPayload) == "" {
+		writeError(w, http.StatusBadRequest, "missing disclosedPayload")
+		return
+	}
+	if strings.TrimSpace(req.HolderSignature) == "" {
+		writeError(w, http.StatusBadRequest, "missing holderSignature")
+		return
+	}
+	var payload struct {
+		CredentialID string `json:"credentialID"`
+	}
+	if err := json.Unmarshal([]byte(req.DisclosedPayload), &payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON in disclosedPayload: "+err.Error())
+		return
+	}
+	payloadCredID := strings.TrimSpace(payload.CredentialID)
+	if payloadCredID == "" {
+		writeError(w, http.StatusBadRequest, "disclosedPayload missing credentialID")
+		return
+	}
+	if payloadCredID != strings.TrimSpace(req.CredentialID) {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("disclosedPayload credentialID %q does not match request credentialID %q", payloadCredID, req.CredentialID))
+		return
 	}
 	holderID, err := credentialHolderID(req.CredentialID)
 	if err == sql.ErrNoRows {
@@ -701,20 +723,19 @@ func handleResolveSession(w http.ResponseWriter, r *http.Request) {
 
 	// Track H: If disclosedPayload was provided in the session, parse disclosedFields
 	var disclosedFields map[string]any
-	credentialIDMatches := true
-	if session.DisclosedPayload != "" {
+	credentialIDMatches := false
+	if strings.TrimSpace(session.DisclosedPayload) != "" {
 		var disclosedPayload map[string]any
 		if err := json.Unmarshal([]byte(session.DisclosedPayload), &disclosedPayload); err == nil {
-			if pCredID, ok := disclosedPayload["credentialID"].(string); ok && pCredID != "" {
-				if pCredID != session.CredentialID && pCredID != fabricCredID {
-					credentialIDMatches = false
+			if pCredID, ok := disclosedPayload["credentialID"].(string); ok {
+				trimmedID := strings.TrimSpace(pCredID)
+				if trimmedID != "" && (trimmedID == session.CredentialID || trimmedID == fabricCredID) {
+					credentialIDMatches = true
 				}
 			}
 			if df, ok := disclosedPayload["disclosedFields"].(map[string]any); ok {
 				disclosedFields = df
 			}
-		} else {
-			credentialIDMatches = false
 		}
 	}
 	if len(disclosedFields) > 0 {
@@ -845,10 +866,10 @@ func handleResolveSession(w http.ResponseWriter, r *http.Request) {
 		result = "failure"
 		if !sigValid {
 			failureReason = "signature_invalid"
-		} else if !fieldHashesValid {
-			failureReason = "field_hashes_invalid"
 		} else if !credentialIDMatches {
 			failureReason = "credential_id_mismatch"
+		} else if !fieldHashesValid {
+			failureReason = "field_hashes_invalid"
 		} else if !holderSigValid {
 			failureReason = "holder_signature_invalid"
 		}
