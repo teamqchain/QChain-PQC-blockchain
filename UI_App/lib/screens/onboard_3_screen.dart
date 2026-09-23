@@ -3,7 +3,7 @@ import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
 import 'package:qwallet_mobileapp/services/crypto_service.dart';
-import 'package:qwallet_mobileapp/utils/app_config.dart';
+import 'package:qwallet_mobileapp/utils/runtime_config.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
 import 'package:qwallet_mobileapp/widgets/QOnboardScaffold.dart';
 
@@ -56,7 +56,7 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
     }
     logDebug('[Onboard3] key generation started');
     try {
-      final status = await ApiService.checkKeys(userEmiratesID);
+      final status = await ApiService.checkKeys(RuntimeConfig.to.emiratesID);
       final backendReady =
           status['hasKemKey'] == true && status['hasSigningKey'] == true;
       final localReady = await CryptoService.hasLocalPrivateKeys();
@@ -124,7 +124,7 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
           );
         }
         final registered = await ApiService.registerHolderKeys(
-          emiratesID: userEmiratesID,
+          emiratesID: RuntimeConfig.to.emiratesID,
           kemPublicKey: pubs.kemPubHex!,
           dsaPublicKey: pubs.dsaPubHex!,
         );
@@ -181,7 +181,7 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
       }
 
       final registered = await ApiService.registerHolderKeys(
-        emiratesID: userEmiratesID,
+        emiratesID: RuntimeConfig.to.emiratesID,
         kemPublicKey: kem.pubHex,
         dsaPublicKey: dsa.pubHex,
       );
