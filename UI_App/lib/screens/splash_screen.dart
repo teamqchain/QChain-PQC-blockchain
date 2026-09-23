@@ -75,18 +75,27 @@ class _SplashScreenState extends State<SplashScreen>
                         builder: (_, __) =>
                             const SizedBox(width: 120, height: 120),
                       ),
-                      Container(
-                        width: 200,
-                        height: 200,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        alignment: Alignment.center,
-                        child: Image.asset(
-                          'assets/images/wallet_icon_transparet.png',
-                          width: 150,
-                          height: 150,
-                          fit: BoxFit.contain,
+                      // Logo only (D4) — not title, not Get Started, not full screen.
+                      // STORE GATE — remove onDoubleTap (or wrap in kDebugMode)
+                      // before any App Store / production build (with Alice).
+                      GestureDetector(
+                        onDoubleTap: () {
+                          HapticFeedback.lightImpact();
+                          Get.toNamed(Routes.DEV_RUNTIME_CONFIG);
+                        },
+                        child: Container(
+                          width: 200,
+                          height: 200,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          alignment: Alignment.center,
+                          child: Image.asset(
+                            'assets/images/wallet_icon_transparet.png',
+                            width: 150,
+                            height: 150,
+                            fit: BoxFit.contain,
+                          ),
                         ),
                       ),
                     ],
