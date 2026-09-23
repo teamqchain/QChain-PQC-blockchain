@@ -5,14 +5,22 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:liboqs/liboqs.dart';
 // Hide Signature — collides with liboqs Signature (ML-DSA).
 import 'package:pointycastle/export.dart' hide Signature;
+import 'package:qwallet_mobileapp/utils/app_config.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
+import 'package:qwallet_mobileapp/utils/runtime_config.dart';
 
 /// Holder-side PQC helpers. Private keys stay on-device in secure storage.
+///
+/// Keychain slots are namespaced by the effective Emirates ID (D1 Option B):
+/// `kem_priv_key::{eid}`, etc. Chunks keep the existing `{base}_N` layout under
+/// that scoped base. Unscoped legacy keys migrate once onto the build-default
+/// EID only — never onto a different holder.
 class CryptoService {
   CryptoService._();
 
   static const kemAlgorithm = 'ML-KEM-768';
   static const dsaAlgorithm = 'ML-DSA-44';
+  /// Unscoped base names. Actual storage keys are [base]::[emiratesID].
   static const kemPrivStorageKey = 'kem_priv_key';
   static const dsaPrivStorageKey = 'dsa_priv_key';
   static const kemPubStorageKey = 'kem_pub_key';
@@ -21,6 +29,12 @@ class CryptoService {
   static const gcmNonceLen = 12;
   static const gcmTagLen = 16;
   static const aesKeyLen = 32;
+
+  /// Effective holder for this process (RuntimeConfig override or build default).
+  static String get _eid => RuntimeConfig.to.emiratesID;
+
+  /// `base::emiratesID` — every secure read/write uses this form.
+  static String _scoped(String base) => '$base::$_eid';
 
   /// Max bytes per keychain entry. iOS Keychain silently truncates values
   /// beyond ~2048 bytes. ML-KEM-768 private key is 2400 bytes = 4800 hex chars
@@ -159,6 +173,7 @@ class CryptoService {
 
   /// Persist private keys in Keychain/Keystore, and public keys so the app
   /// can show them later (Settings → View My Public Key).
+  /// Always written under the effective EID slot (`base::emiratesID`).
   /// Throws if secure storage silently truncates / loses any key material.
   static Future<void> storePrivateKeys({
     required String kemPrivHex,
@@ -173,8 +188,8 @@ class CryptoService {
         '(expected 4800).',
       );
     }
-    await _secureWrite(kemPrivStorageKey, kemPrivHex);
-    await _secureWrite(dsaPrivStorageKey, dsaPrivHex);
+    await _secureWrite(_scoped(kemPrivStorageKey), kemPrivHex);
+    await _secureWrite(_scoped(dsaPrivStorageKey), dsaPrivHex);
     // Public keys are long enough that iOS Keychain can also truncate them
     // (~2k+ hex chars) — store via the same chunked verified path.
     if (kemPubHex != null && kemPubHex.isNotEmpty) {
@@ -184,10 +199,10 @@ class CryptoService {
           '(expected 2368).',
         );
       }
-      await _secureWrite(kemPubStorageKey, kemPubHex);
+      await _secureWrite(_scoped(kemPubStorageKey), kemPubHex);
     }
     if (dsaPubHex != null && dsaPubHex.isNotEmpty) {
-      await _secureWrite(dsaPubStorageKey, dsaPubHex);
+      await _secureWrite(_scoped(dsaPubStorageKey), dsaPubHex);
     }
   }
 
@@ -202,16 +217,39 @@ class CryptoService {
         kem.length == 4800;
   }
 
+  /// Read scoped first; on miss for the build-default EID only, migrate
+  /// unscoped legacy keys into that slot (one-time, D1).
+  static Future<String?> _readScopedOrMigrate(String base) async {
+    final scopedKey = _scoped(base);
+    final scoped = await _secureRead(scopedKey);
+    if (scoped != null && scoped.isNotEmpty) return scoped;
+
+    // Only the build-default holder may claim unscoped pre-PR2 keys.
+    // Attaching them to any other EID would orphan the real owner's DB pubs.
+    if (_eid != userEmiratesID) return null;
+
+    final legacy = await _secureRead(base);
+    if (legacy == null || legacy.isEmpty) return null;
+
+    logDebug(
+      '[CryptoService] migrating legacy "$base" → "$scopedKey" '
+      '(${legacy.length} hex chars)',
+    );
+    await _secureWrite(scopedKey, legacy);
+    await _secureDelete(base);
+    return legacy;
+  }
+
   static Future<String?> readKemPrivateKey() async {
-    return _secureRead(kemPrivStorageKey);
+    return _readScopedOrMigrate(kemPrivStorageKey);
   }
 
   static Future<String?> readDsaPrivateKey() async {
-    return _secureRead(dsaPrivStorageKey);
+    return _readScopedOrMigrate(dsaPrivStorageKey);
   }
 
   static Future<String?> readKemPublicKey() async {
-    return _secureRead(kemPubStorageKey);
+    return _readScopedOrMigrate(kemPubStorageKey);
   }
 
   /// Extract the ML-KEM-768 public key embedded in a FIPS-203 expanded secret key.
@@ -302,7 +340,7 @@ class CryptoService {
   }
 
   static Future<String?> readDsaPublicKey() async {
-    return _secureRead(dsaPubStorageKey);
+    return _readScopedOrMigrate(dsaPubStorageKey);
   }
 
   static Future<({String? kemPubHex, String? dsaPubHex})>
