@@ -568,18 +568,25 @@ class ApiService {
 
   /// GET {base}/getHolders — holder directory for Dev Config (PR3).
   /// [search] is appended only when non-empty. [timeout] lets the connection
-  /// test use a short deadline. Throws [ConnectionException] on any failure.
+  /// test use a short deadline. [baseUrlOverride] uses a pending paste before
+  /// Save (D3 trim + one trailing slash). Throws [ConnectionException] on failure.
   static Future<List<Map<String, dynamic>>> getHolders({
     String search = '',
     Duration timeout = const Duration(seconds: 15),
+    String? baseUrlOverride,
   }) async {
     final query = search.trim().isEmpty
         ? ''
         : '?search=${Uri.encodeQueryComponent(search.trim())}';
-    logDebug('[ApiService] getHolders called search="$search"');
+    var base = baseUrlOverride?.trim() ?? '';
+    if (base.endsWith('/')) {
+      base = base.substring(0, base.length - 1);
+    }
+    if (base.isEmpty) base = _base;
+    logDebug('[ApiService] getHolders called search="$search" base=$base');
     try {
       final res = await _client
-          .get(Uri.parse('$_base/getHolders$query'))
+          .get(Uri.parse('$base/getHolders$query'))
           .timeout(timeout);
 
       if (res.statusCode == 200) {

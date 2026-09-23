@@ -7,7 +7,7 @@ import 'package:qwallet_mobileapp/utils/app_config.dart';
 /// only (D6): kill the app and the next cold start is back to defaults.
 /// There is no disk persistence and no mid-session reset (D2, D8).
 ///
-/// PR1 only exposes the getters. Dev Config (PR3) is what writes overrides.
+/// Dev Config (PR3) writes overrides. Until then, getters return defaults.
 class RuntimeConfig extends GetxController {
   static RuntimeConfig get to => Get.find<RuntimeConfig>();
 
@@ -36,24 +36,29 @@ class RuntimeConfig extends GetxController {
   bool get hasEmiratesIDOverride =>
       _emiratesIDOverride != null && _emiratesIDOverride!.isNotEmpty;
 
-  /// Trim, and drop a single trailing slash (D3). Empty clears the override
-  /// so the build default applies again. A partial save (URL only, or holder
-  /// only) leaves the other field untouched.
+  /// Trim, and drop a single trailing slash (D3). Empty or value equal to
+  /// [kApiBaseUrl] clears the override (build default). Partial save is valid:
+  /// URL-only or holder-only leaves the other field untouched.
   void setApiBaseUrl(String raw) {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) {
       _apiBaseUrlOverride = null;
     } else {
-      _apiBaseUrlOverride = trimmed.endsWith('/')
+      final cleaned = trimmed.endsWith('/')
           ? trimmed.substring(0, trimmed.length - 1)
           : trimmed;
+      _apiBaseUrlOverride = cleaned == kApiBaseUrl ? null : cleaned;
     }
     update();
   }
 
   void setEmiratesID(String raw) {
     final trimmed = raw.trim();
-    _emiratesIDOverride = trimmed.isEmpty ? null : trimmed;
+    if (trimmed.isEmpty || trimmed == userEmiratesID) {
+      _emiratesIDOverride = null;
+    } else {
+      _emiratesIDOverride = trimmed;
+    }
     update();
   }
 

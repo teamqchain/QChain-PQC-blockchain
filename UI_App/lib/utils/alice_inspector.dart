@@ -1,10 +1,14 @@
 import 'package:alice/alice.dart';
 import 'package:alice_http/alice_http_adapter.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
-/// Only active in debug so release builds stay clean.
-bool get aliceEnabled => kDebugMode;
+/// Always on (debug + release) for free-tier release IPA testing (D5).
+///
+/// STORE GATE — before any App Store / production build, restore:
+///   import 'package:flutter/foundation.dart';
+///   bool get aliceEnabled => kDebugMode;
+/// Leave `true` only while shipping free-Apple-ID internal IPAs.
+bool get aliceEnabled => true;
 
 /// Alice HTTP adapter — records request/response pairs into the inspector.
 final AliceHttpAdapter aliceHttpAdapter = AliceHttpAdapter();
@@ -20,9 +24,9 @@ final Alice alice = Alice(
   ),
 )..addAdapter(aliceHttpAdapter);
 
-/// HTTP client that auto-logs every call through Alice in debug mode.
+/// HTTP client that auto-logs every call through Alice when [aliceEnabled].
 ///
-/// In release builds this is a plain [http.Client] (no overhead).
+/// When Alice is gated off, this is a plain [http.Client] (no overhead).
 http.Client createAliceHttpClient() {
   if (!aliceEnabled) return http.Client();
   return _AliceLoggingClient(http.Client(), aliceHttpAdapter);
