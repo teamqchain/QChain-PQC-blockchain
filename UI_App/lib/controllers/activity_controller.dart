@@ -1,6 +1,6 @@
 import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/model/activity_model.dart';
-import 'package:qwallet_mobileapp/utils/app_config.dart';
+import 'package:qwallet_mobileapp/utils/runtime_config.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
 
@@ -26,13 +26,15 @@ class ActivityController extends GetxController {
     try {
       isLoading(true);
       errorMessage('');
-      final data = await ApiService.getHolderActivity(userEmiratesID);
+      final data = await ApiService.getHolderActivity(RuntimeConfig.to.emiratesID);
 
       // Ensure they are sorted newest first
       data.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       activities.value = data;
 
-      final subs = await ApiService.getMobileSubscriptions(userEmiratesID);
+      final subs = await ApiService.getMobileSubscriptions(
+        RuntimeConfig.to.emiratesID,
+      );
       pendingSubscriptionsCount.value = subs
           .where((s) => s.status == 'pending')
           .length;
