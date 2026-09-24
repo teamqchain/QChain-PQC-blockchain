@@ -165,6 +165,66 @@ class _DevRuntimeConfigScreenState extends State<DevRuntimeConfigScreen> {
     });
   }
 
+  /// Open register-holder form. On success: select new EID, refresh list.
+  Future<void> _openRegisterHolder() async {
+    if (_pendingBase.isEmpty) {
+      Get.snackbar(
+        'Backend URL required',
+        'Paste a backend URL and test it before creating a holder.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+    final result = await Get.toNamed(
+      Routes.REGISTER_HOLDER,
+      arguments: {'baseUrl': _pendingBase},
+    );
+    if (!mounted || result is! Map) return;
+
+    final eid = (result['emiratesID'] ?? '').toString().trim();
+    final holderID = (result['holderID'] ?? '').toString().trim();
+    final fullName = (result['fullName'] ?? '').toString().trim();
+    if (eid.isEmpty) return;
+
+    setState(() {
+      _selectedEid = eid;
+      _manualEidCtrl.text = eid;
+      // Optimistic insert so the row is selected even before list refresh.
+      final already = _holders.any(
+        (h) => (h['emiratesID'] ?? '').toString() == eid,
+      );
+      if (!already) {
+        _holders = [
+          {
+            'holderID': holderID,
+            'fullName': fullName,
+            'emiratesID': eid,
+            'isWalletActivated': false,
+          },
+          ..._holders,
+        ];
+      }
+    });
+
+    // Refresh from backend so we match server truth (activation, etc.).
+    try {
+      final rows = await ApiService.getHolders(
+        search: _searchCtrl.text,
+        baseUrlOverride: _pendingBase,
+      );
+      if (!mounted) return;
+      setState(() {
+        _holders = rows;
+        _holdersError = null;
+        // Keep selection even if search filter hid the new row.
+        _selectedEid = eid;
+        _manualEidCtrl.text = eid;
+      });
+    } catch (_) {
+      // Keep optimistic row + selection.
+    }
+  }
+
   void _onSave() {
     final cfg = RuntimeConfig.to;
     // Partial override is valid (plan §2.2): URL and/or holder.
@@ -399,33 +459,57 @@ class _DevRuntimeConfigScreenState extends State<DevRuntimeConfigScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TextField(
-            controller: _searchCtrl,
-            onSubmitted: (v) => _searchHolders(v),
-            style: const TextStyle(color: qPrimary, fontSize: 13),
-            decoration: InputDecoration(
-              hintText: 'Search holders…',
-              hintStyle: const TextStyle(color: qSub, fontSize: 13),
-              prefixIcon: const Icon(Icons.search, size: 18, color: qSub),
-              filled: true,
-              fillColor: const Color(0xFFF7F7F7),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 12,
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchCtrl,
+                  onSubmitted: (v) => _searchHolders(v),
+                  style: const TextStyle(color: qPrimary, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Search holders…',
+                    hintStyle: const TextStyle(color: qSub, fontSize: 13),
+                    prefixIcon:
+                        const Icon(Icons.search, size: 18, color: qSub),
+                    filled: true,
+                    fillColor: const Color(0xFFF7F7F7),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: qBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: qBorder),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: qPrimary),
+                    ),
+                  ),
+                ),
               ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: qBorder),
+              const SizedBox(width: 10),
+              SizedBox(
+                height: 46,
+                child: OutlinedButton.icon(
+                  onPressed: _openRegisterHolder,
+                  icon: const Icon(Icons.person_add_alt_1, size: 16),
+                  label: const Text('Create'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: qPrimary,
+                    side: const BorderSide(color: qBorder),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                ),
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: qBorder),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: qPrimary),
-              ),
-            ),
+            ],
           ),
           const SizedBox(height: 12),
           if (_loadingHolders)

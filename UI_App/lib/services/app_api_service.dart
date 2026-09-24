@@ -566,6 +566,16 @@ class ApiService {
     }
   }
 
+  /// Resolve pending paste or RuntimeConfig base (D3: trim + one trailing slash).
+  static String _resolveBase(String? baseUrlOverride) {
+    var base = baseUrlOverride?.trim() ?? '';
+    if (base.endsWith('/')) {
+      base = base.substring(0, base.length - 1);
+    }
+    if (base.isEmpty) base = _base;
+    return base;
+  }
+
   /// GET {base}/getHolders — holder directory for Dev Config (PR3).
   /// [search] is appended only when non-empty. [timeout] lets the connection
   /// test use a short deadline. [baseUrlOverride] uses a pending paste before
@@ -578,11 +588,7 @@ class ApiService {
     final query = search.trim().isEmpty
         ? ''
         : '?search=${Uri.encodeQueryComponent(search.trim())}';
-    var base = baseUrlOverride?.trim() ?? '';
-    if (base.endsWith('/')) {
-      base = base.substring(0, base.length - 1);
-    }
-    if (base.isEmpty) base = _base;
+    final base = _resolveBase(baseUrlOverride);
     logDebug('[ApiService] getHolders called search="$search" base=$base');
     try {
       final res = await _client
@@ -606,6 +612,64 @@ class ApiService {
       if (e is ConnectionException) rethrow;
       logDebug('[ApiService] getHolders exception: $e');
       throw ConnectionException('Failed to load holders.');
+    }
+  }
+
+  /// POST {base}/registerHolder — Dev Config helper to mint a holder without
+  /// asking backend. Body: holderID, emiratesID, firstName, lastName.
+  /// [holderID] must already include the `H-` prefix. Returns the response map
+  /// (at least holderID). Throws [ConnectionException] on failure.
+  static Future<Map<String, dynamic>> registerHolder({
+    required String holderID,
+    required String emiratesID,
+    required String firstName,
+    required String lastName,
+    String? baseUrlOverride,
+  }) async {
+    final base = _resolveBase(baseUrlOverride);
+    logDebug(
+      '[ApiService] registerHolder holderID=$holderID emiratesID=$emiratesID base=$base',
+    );
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$base/registerHolder'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'holderID': holderID,
+              'emiratesID': emiratesID,
+              'firstName': firstName,
+              'lastName': lastName,
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        if (body is Map) {
+          final map = Map<String, dynamic>.from(body);
+          logDebug(
+            '[ApiService] registerHolder success holderID=${map['holderID']}',
+          );
+          return map;
+        }
+      }
+      // Surface backend error body when present (duplicate ID, chaincode, etc.).
+      String detail = 'HTTP ${res.statusCode}';
+      try {
+        final errBody = jsonDecode(res.body);
+        if (errBody is Map && errBody['error'] != null) {
+          detail = errBody['error'].toString();
+        } else if (errBody is Map && errBody['message'] != null) {
+          detail = errBody['message'].toString();
+        }
+      } catch (_) {}
+      logDebug('[ApiService] registerHolder failed: $detail');
+      throw ConnectionException('Failed to register holder: $detail');
+    } catch (e) {
+      if (e is ConnectionException) rethrow;
+      logDebug('[ApiService] registerHolder exception: $e');
+      throw ConnectionException('Failed to register holder.');
     }
   }
 }
