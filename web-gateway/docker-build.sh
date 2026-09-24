@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build the QChain web-gateway image (both Flutter web apps + Nginx gateway).
+# Build the QChain web-gateway image (QPortal web app + Nginx gateway).
+# QWallet is mobile-only now and is never built here.
 #
 # Usage:
 #   export API_BASE_URL="https://<vm>.<tailnet>.ts.net/api"
@@ -8,10 +9,10 @@
 # API_BASE_URL is baked into the Flutter apps at build time (they are
 # client-side, so they must know the PUBLIC backend address). If you don't set
 # it, the script tries to derive it from this node's Tailscale name. Rebuild
-# only when the frontend code changes or the public URL changes (it won't, with
+# only when QPortal's code changes or the public URL changes (it won't, with
 # a Tailscale Funnel address — that's the whole point).
 #
-# First build is slow (two Flutter web compilations); later builds are cached.
+# First build is slow (a Flutter web compilation); later builds are cached.
 
 set -euo pipefail
 
@@ -45,7 +46,7 @@ fi
 echo "=== Building $IMAGE ==="
 echo "    Context      : $REPO_ROOT"
 echo "    API_BASE_URL : $API_BASE_URL"
-echo "    Note: first build compiles BOTH Flutter web apps — this takes a while."
+echo "    Note: first build compiles the Flutter web app — this takes a while."
 echo ""
 
 docker build \

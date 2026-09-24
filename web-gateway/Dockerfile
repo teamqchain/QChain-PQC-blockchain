@@ -2,12 +2,20 @@
 # QCHAIN WEB GATEWAY — DOCKERFILE
 # =============================================================================
 #
-# Builds ONE image that contains BOTH Flutter web apps plus the Nginx gateway
-# that serves them and proxies the API. It is the single public-facing piece
-# of the QChain demo (Tailscale Funnel points at it).
+# Builds ONE image containing the QPortal web app plus the Nginx gateway that
+# serves it and proxies the API. It is the single public-facing piece of the
+# QChain demo (Tailscale Funnel points at it).
+#
+# QWallet is NOT built here — it ships as a mobile install only (built and
+# distributed by Haris with his own tooling), never as a web app. QWallet
+# generates its ML-KEM-768/ML-DSA-44 key pair on-device and keeps the private
+# key there; a browser build would mean a different key pair per browser/
+# device, which breaks the one-key-pair-per-holder model entirely. It's also
+# not just a design choice: QWallet's liboqs dependency uses dart:ffi (native
+# C bindings), which cannot compile for a web/JS target at all.
 #
 # IMPORTANT: build this with the build context set to the REPO ROOT, because we
-# need to copy from both UI_WebApp/ and UI_App/:
+# need to copy from both UI_WebApp/ and shared/:
 #
 #   docker build --build-arg API_BASE_URL="https://<vm>.<tailnet>.ts.net/api" \
 #       -f web-gateway/Dockerfile -t qchain-web-gateway:latest .
@@ -16,12 +24,11 @@
 #
 # How it works:
 #   Stage 1 "portal-build" → compiles UI_WebApp to static web files (root "/").
-#   Stage 2 "wallet-build" → compiles UI_App   to static web files ("/wallet/").
-#   Stage 3 "gateway"      → tiny Nginx image that serves both + proxies /api.
+#   Stage 2 "gateway"      → tiny Nginx image that serves it + proxies /api.
 # =============================================================================
 
-# The backend URL is baked into the Flutter JS at build time (the apps are
-# client-side, so they must know the public API address when compiled). It is
+# The backend URL is baked into the Flutter JS at build time (the app is
+# client-side, so it must know the public API address when compiled). It is
 # passed in from docker-build.sh and defaults to localhost for a plain build.
 ARG API_BASE_URL=http://localhost:3000
 
@@ -49,36 +56,14 @@ RUN flutter build web --release \
         --dart-define=API_BASE_URL="$API_BASE_URL"
 
 # -----------------------------------------------------------------------------
-# STAGE 2 — Build the QWallet web app (served at "/wallet/")
-# -----------------------------------------------------------------------------
-# Same steps, but base-href is "/wallet/" so all of the wallet's asset URLs
-# resolve under the /wallet/ sub-path behind the gateway.
-FROM ghcr.io/cirruslabs/flutter:3.44.0 AS wallet-build
-ARG API_BASE_URL
-WORKDIR /app
-
-# Same qchain_shared path-dependency requirement as the portal build above.
-COPY UI_App/pubspec.yaml ./
-COPY shared/pubspec.yaml shared/pubspec.lock /shared/
-RUN flutter pub get
-
-COPY UI_App/ ./
-COPY shared/ /shared/
-RUN flutter build web --release \
-        --base-href="/wallet/" \
-        --dart-define=API_BASE_URL="$API_BASE_URL"
-
-# -----------------------------------------------------------------------------
-# STAGE 3 — Assemble the Nginx gateway
+# STAGE 2 — Assemble the Nginx gateway
 # -----------------------------------------------------------------------------
 FROM nginx:alpine AS gateway
 
 # Clear the default Nginx welcome page.
 RUN rm -rf /usr/share/nginx/html/*
 
-# Portal goes at the web root; wallet goes in the /wallet sub-directory.
 COPY --from=portal-build /app/build/web        /usr/share/nginx/html
-COPY --from=wallet-build /app/build/web         /usr/share/nginx/html/wallet
 
 # Our routing config (replaces Nginx's default server block).
 COPY web-gateway/nginx.conf /etc/nginx/conf.d/default.conf
