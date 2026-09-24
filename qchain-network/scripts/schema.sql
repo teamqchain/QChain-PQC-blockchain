@@ -395,11 +395,10 @@ VALUES ('ISS-UOS-0001', 'ORG-UOS-001', 'issuer1', 'Mohammed Al Issuer', 'issuer@
 INSERT IGNORE INTO verifiers (verifier_id, org_id, full_name, email, password_hash, role, status)
 VALUES ('VER-UOS-0001', 'ORG-UOS-001', 'Verifier Portal', 'verifier@uos.ac.ae', '$2b$10$PLACEHOLDER_HASH', 'admin', 'active');
 
--- Demo holders (pre-registered by "government"; wallet not yet activated)
-INSERT IGNORE INTO holders (holder_id, emirates_id, first_name, last_name, fabric_holder_id, is_wallet_activated)
-VALUES
-    ('H-0001', '784-1990-1234567-1', 'Ahmed', 'Al Mansouri', 'H-0001', FALSE),
-    ('H-0002', '784-1995-7654321-2', 'Sara',  'Al Hashimi',  'H-0002', FALSE);
+-- No demo holder seed rows: holder_id is now always server-generated
+-- (offchain/db.go nextHolderID), so a demo holder can't be pre-seeded by a
+-- fixed id — create one via POST /registerHolder instead (see
+-- qchain-network/scripts/setup-demo.sh).
 
 -- Demo staff (mirrors the seed issuer/verifier for the Manage-Staff UI)
 INSERT IGNORE INTO staff (id, name, email, portal, role, status, added_date) VALUES
