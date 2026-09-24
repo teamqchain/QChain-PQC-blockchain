@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 // ignore: depend_on_referenced_packages
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
+import 'package:qwallet_mobileapp/utils/app_config.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -175,7 +176,18 @@ class _SplashScreenState extends State<SplashScreen>
                           ),
                         )
                       ]
-                    ), 
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  // Manual IPA/build label — bump kAppBuildNumber in app_config.dart
+                  Text(
+                    'Build $kAppBuildNumber',
+                    style: const TextStyle(
+                      color: qDimmed,
+                      fontSize: 10,
+                      fontFamily: 'SFPro',
+                      letterSpacing: 0.3,
+                    ),
                   ),
                   const SizedBox(height: 40),
                 ],
