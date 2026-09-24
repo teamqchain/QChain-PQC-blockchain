@@ -2,9 +2,10 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # QChain — End-to-End Test Suite (curl + docker), source-of-truth backend
 #
-# Plays both the issuer (portal API calls) and the holder (keygen tool in the
-# qchain-api image: key generation, envelope decryption, presentation signing)
-# against a running stack, without any frontend:
+# Plays both the issuer/verifier/admin (portal API calls) and the holder (the
+# keygen tool in the qchain-api image: key generation, envelope decryption,
+# presentation signing) against a running stack, without any frontend. Exercises
+# every registered API endpoint at least once:
 #   1. Health check
 #   2. Holder registration on-chain + MySQL
 #   3. Keys before activation (/mobile/checkKeys, /getHolders, profile)
@@ -19,7 +20,19 @@
 #  12. Lifecycle via fresh presentations: suspend, restore, expiry re-sign
 #      (EXPIRED), revoke — each confirmed by /resolveSession and the chain-backed
 #      /getCredentialDetail
-#  13. Audit and dashboard endpoints
+#  13. Audit trail on a single verification (/getVerificationHistory,
+#      /getVerificationDetail) and dashboard stats
+#  14. Wallet list, catalog and fetch-document flow (/mobile/getCatalog,
+#      /mobile/fetchDocument, /mobile/getCredentialsByHolder,
+#      /mobile/toggleFavorite, /mobile/getActivity) — second credential
+#  15. Subscription lifecycle: request, approve/reject, alerts, unsubscribe,
+#      delete (/requestSubscription, /getSubscriptions, /mobile/getSubscriptions,
+#      /mobile/approveSubscription, /mobile/rejectSubscription,
+#      /getSubscriptionAlerts, /acknowledgeAlert, /unsubscribe,
+#      /deleteSubscription)
+#  16. Staff management (/getStaff, /getDirectory, /inviteStaff,
+#      /updateStaffRole, /deleteStaff)
+#  17. Audit logs (/getAuditLogs)
 #
 # Requires: curl, python3, docker, and the qchain-api:latest image (for keygen).
 #
@@ -398,9 +411,9 @@ assert_error "$(curl -s -X POST "$API_URL/restoreCredential" -H "Content-Type: a
 assert_error "$(curl -s -X POST "$API_URL/updateCredential" -H "Content-Type: application/json" \
     -d "{\"credentialID\": \"$CRED_ID\", \"expiryDate\": \"2031-01-01\"}")" "cannot update a revoked credential" "Revoked credential cannot be edited"
 
-# ─── 13. Audit & Dashboard Queries ───────────────────────────────────────────
+# ─── 13. Verification History Detail & Dashboard Queries ────────────────────
 echo ""
-echo "13. Testing Audit & Dashboard Queries..."
+echo "13. Testing Verification History Detail & Dashboard Queries..."
 ALL_RESP=$(curl -s "$API_URL/getAllCredentials?status=revoked&limit=100")
 assert_json "$ALL_RESP" "any(c.get('credentialID') == '$CRED_ID' for c in data.get('credentials', []))" "True" "getAllCredentials?status=revoked lists the credential"
 
@@ -408,8 +421,188 @@ HISTORY_RESP=$(curl -s "$API_URL/getVerificationHistory?page=1&limit=5")
 assert_json "$HISTORY_RESP" "'records' in data" "True" "Verification history returns records list"
 assert_json "$HISTORY_RESP" "data['records'][0].get('credentialType')" "BSc Computer Science" "History labels come from the chain"
 
+LOG_ID=$(printf '%s' "$HISTORY_RESP" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['records'][0].get('id',''))")
+DETAIL_LOG=$(curl -s "$API_URL/getVerificationDetail?id=$LOG_ID")
+assert_json "$DETAIL_LOG" "data.get('id')" "$LOG_ID" "getVerificationDetail returns the requested log"
+assert_json "$DETAIL_LOG" "data.get('credentialType')" "BSc Computer Science" "Verification detail labels come from the chain"
+assert_json "$DETAIL_LOG" "'checks' in data" "True" "Verification detail includes the checks object"
+assert_error "$(curl -s "$API_URL/getVerificationDetail?id=VL-does-not-exist")" "not found" "getVerificationDetail 404s for an unknown log id"
+
 STATS_RESP=$(curl -s "$API_URL/getDashboardStats")
 assert_json "$STATS_RESP" "data.get('totalIssued', 0) >= 1" "True" "Dashboard stats computed from the chain"
+
+# ─── 14. Wallet List, Catalog & Fetch-Document Flow ──────────────────────────
+echo ""
+echo "14. Testing Wallet Endpoints (getCatalog, fetchDocument, getCredentialsByHolder, toggleFavorite, getActivity)..."
+
+# A second credential whose type matches the seeded "Bachelor Degree" catalog
+# service (%Bachelor%), issued by ORG-UOS-001 (the hardcoded demo issuer org)
+# — the primary $CRED_ID is already revoked by this point in the script.
+BACH_INFO='{"degreeTitle":"Bachelor of Science in Computer Science","college":"CCI","gpa":"3.9","expiryDate":"30 Jun 2030"}'
+BACH_ISSUE=$(curl -s -X POST "$API_URL/issueCredential" \
+    -H "Content-Type: application/json" \
+    -d "{\"holderEmiratesID\": \"$EID\", \"credentialType\": \"Bachelor of Science in Computer Science\", \"info\": $(json_str "$BACH_INFO")}")
+BACH_CRED_ID=$(json_get "$BACH_ISSUE" credentialID)
+if [ -n "$BACH_CRED_ID" ]; then
+    pass "Second credential issued for wallet tests: $BACH_CRED_ID"
+else
+    fail "Second credential issuance" "empty credentialID in response: $BACH_ISSUE"
+fi
+
+CATALOG_RESP=$(curl -s "$API_URL/mobile/getCatalog")
+assert_json "$CATALOG_RESP" "any('University of Sharjah' in i.get('name','') for c in data.get('categories', []) for i in c.get('issuers', []))" "True" "Catalog lists University of Sharjah"
+assert_json "$CATALOG_RESP" "any(s.get('name') == 'Bachelor Degree' for c in data.get('categories', []) for i in c.get('issuers', []) for s in i.get('services', []))" "True" "Catalog lists the Bachelor Degree service"
+
+FETCH_RESP=$(curl -s -X POST "$API_URL/mobile/fetchDocument" -H "Content-Type: application/json" \
+    -d "{\"holderEID\": \"$EID\", \"issuerID\": \"ORG-UOS-001\", \"serviceName\": \"Bachelor Degree\"}")
+assert_json "$FETCH_RESP" "data.get('success')" "True" "fetchDocument pulls the matching credential into the wallet"
+assert_json "$FETCH_RESP" "data.get('alreadyInWallet')" "False" "fetchDocument: first pull is not 'already in wallet'"
+
+FETCH_AGAIN=$(curl -s -X POST "$API_URL/mobile/fetchDocument" -H "Content-Type: application/json" \
+    -d "{\"holderEID\": \"$EID\", \"issuerID\": \"ORG-UOS-001\", \"serviceName\": \"Bachelor Degree\"}")
+assert_json "$FETCH_AGAIN" "data.get('alreadyInWallet')" "True" "fetchDocument is idempotent (already in wallet)"
+
+WALLET_LIST=$(curl -s "$API_URL/mobile/getCredentialsByHolder?emiratesID=$EID")
+assert_json "$WALLET_LIST" "any(c.get('credentialID') == '$BACH_CRED_ID' for c in data)" "True" "getCredentialsByHolder lists the fetched credential"
+assert_json "$WALLET_LIST" "[c for c in data if c.get('credentialID') == '$BACH_CRED_ID'][0].get('isFavorite')" "False" "Not yet marked favorite"
+assert_json "$WALLET_LIST" "[c for c in data if c.get('credentialID') == '$BACH_CRED_ID'][0].get('status')" "active" "Wallet list status comes from the chain"
+
+FAV_RESP=$(curl -s -X POST "$API_URL/mobile/toggleFavorite" -H "Content-Type: application/json" \
+    -d "{\"holderEID\": \"$EID\", \"credentialID\": \"$BACH_CRED_ID\"}")
+assert_json "$FAV_RESP" "data.get('success')" "True" "toggleFavorite succeeds"
+
+WALLET_LIST_2=$(curl -s "$API_URL/mobile/getCredentialsByHolder?emiratesID=$EID")
+assert_json "$WALLET_LIST_2" "[c for c in data if c.get('credentialID') == '$BACH_CRED_ID'][0].get('isFavorite')" "True" "Credential is now marked favorite"
+
+ACTIVITY_RESP=$(curl -s "$API_URL/mobile/getActivity?emiratesID=$EID")
+assert_json "$ACTIVITY_RESP" "any('Bachelor' in a.get('credentialName','') and a.get('type')=='issued' for a in data.get('activity', []))" "True" "Activity feed shows the issuance, labelled from the chain"
+
+# ─── 15. Subscription Lifecycle (portal + wallet) ────────────────────────────
+echo ""
+echo "15. Testing Subscription Lifecycle (request → approve/reject → alerts → unsubscribe/delete)..."
+
+SUB1_RESP=$(curl -s -X POST "$API_URL/requestSubscription" -H "Content-Type: application/json" \
+    -d "{\"credentialID\": \"$BACH_CRED_ID\"}")
+SUB1_ID=$(json_get "$SUB1_RESP" subscriptionID)
+if [ -n "$SUB1_ID" ]; then
+    pass "Subscription requested: $SUB1_ID"
+else
+    fail "requestSubscription" "empty subscriptionID in response: $SUB1_RESP"
+fi
+
+DUP_SUB=$(curl -s -X POST "$API_URL/requestSubscription" -H "Content-Type: application/json" \
+    -d "{\"credentialID\": \"$BACH_CRED_ID\"}")
+assert_error "$DUP_SUB" "already exists" "A second subscription on the same credential is rejected"
+
+PORTAL_SUBS=$(curl -s "$API_URL/getSubscriptions?page=1&limit=100")
+assert_json "$PORTAL_SUBS" "any(s.get('id') == '$SUB1_ID' and s.get('status') == 'pending' for s in data.get('subscriptions', []))" "True" "Portal getSubscriptions lists the pending subscription (chain-labelled)"
+
+MOBILE_SUBS=$(curl -s "$API_URL/mobile/getSubscriptions?emiratesID=$EID")
+assert_json "$MOBILE_SUBS" "any(s.get('subscriptionID') == '$SUB1_ID' and s.get('status') == 'pending' for s in data.get('subscriptions', []))" "True" "Wallet getSubscriptions shows the request as pending"
+
+APPROVE_RESP=$(curl -s -X POST "$API_URL/mobile/approveSubscription" -H "Content-Type: application/json" \
+    -d "{\"subscriptionID\": \"$SUB1_ID\", \"emiratesID\": \"$EID\"}")
+assert_json "$APPROVE_RESP" "data.get('success')" "True" "Holder approves the subscription"
+
+MOBILE_SUBS_2=$(curl -s "$API_URL/mobile/getSubscriptions?emiratesID=$EID")
+assert_json "$MOBILE_SUBS_2" "any(s.get('subscriptionID') == '$SUB1_ID' and s.get('status') == 'approved' for s in data.get('subscriptions', []))" "True" "Wallet shows 'approved' (mapped from the stored 'active')"
+
+PORTAL_SUBS_2=$(curl -s "$API_URL/getSubscriptions?page=1&limit=100")
+assert_json "$PORTAL_SUBS_2" "any(s.get('id') == '$SUB1_ID' and s.get('status') == 'active' for s in data.get('subscriptions', []))" "True" "Portal shows the raw 'active' status"
+
+# Suspending a subscribed credential must raise an alert.
+curl -s -X POST "$API_URL/suspendCredential" -H "Content-Type: application/json" \
+    -d "{\"credentialID\": \"$BACH_CRED_ID\", \"reason\": \"Subscription alert test\"}" > /dev/null
+ALERTS_RESP=$(curl -s "$API_URL/getSubscriptionAlerts")
+ALERT_ID=$(printf '%s' "$ALERTS_RESP" | python3 -c "
+import json, sys
+data = json.loads(sys.stdin.read())
+for a in data.get('alerts', []):
+    if a.get('credentialID') == '$BACH_CRED_ID':
+        print(a.get('id')); break
+")
+if [ -n "$ALERT_ID" ]; then
+    pass "Suspending a subscribed credential raised an alert: $ALERT_ID"
+else
+    fail "getSubscriptionAlerts" "no alert found for $BACH_CRED_ID in: $ALERTS_RESP"
+fi
+assert_json "$ALERTS_RESP" "[a for a in data.get('alerts', []) if a.get('id') == '$ALERT_ID'][0].get('severity')" "suspended" "Alert severity is 'suspended'"
+assert_json "$ALERTS_RESP" "[a for a in data.get('alerts', []) if a.get('id') == '$ALERT_ID'][0].get('acknowledged')" "False" "Alert starts unacknowledged"
+
+ACK_RESP=$(curl -s -X POST "$API_URL/acknowledgeAlert" -H "Content-Type: application/json" \
+    -d "{\"alertID\": \"$ALERT_ID\"}")
+assert_json "$ACK_RESP" "data.get('success')" "True" "acknowledgeAlert succeeds"
+ALERTS_RESP_2=$(curl -s "$API_URL/getSubscriptionAlerts")
+assert_json "$ALERTS_RESP_2" "[a for a in data.get('alerts', []) if a.get('id') == '$ALERT_ID'][0].get('acknowledged')" "True" "Alert is now acknowledged"
+
+# Restore the credential so it's left active, then close out the subscription.
+curl -s -X POST "$API_URL/restoreCredential" -H "Content-Type: application/json" \
+    -d "{\"credentialID\": \"$BACH_CRED_ID\"}" > /dev/null
+
+UNSUB_RESP=$(curl -s -X POST "$API_URL/unsubscribe" -H "Content-Type: application/json" \
+    -d "{\"subscriptionID\": \"$SUB1_ID\"}")
+assert_json "$UNSUB_RESP" "data.get('success')" "True" "unsubscribe ends the active subscription"
+
+# A second request is allowed now (the first is neither pending nor active),
+# then deleted while still pending.
+SUB2_RESP=$(curl -s -X POST "$API_URL/requestSubscription" -H "Content-Type: application/json" \
+    -d "{\"credentialID\": \"$BACH_CRED_ID\"}")
+SUB2_ID=$(json_get "$SUB2_RESP" subscriptionID)
+DEL_RESP=$(curl -s -X POST "$API_URL/deleteSubscription" -H "Content-Type: application/json" \
+    -d "{\"subscriptionID\": \"$SUB2_ID\"}")
+assert_json "$DEL_RESP" "data.get('success')" "True" "deleteSubscription removes a still-pending subscription"
+
+# A third request, rejected by the holder.
+SUB3_RESP=$(curl -s -X POST "$API_URL/requestSubscription" -H "Content-Type: application/json" \
+    -d "{\"credentialID\": \"$BACH_CRED_ID\"}")
+SUB3_ID=$(json_get "$SUB3_RESP" subscriptionID)
+REJECT_RESP=$(curl -s -X POST "$API_URL/mobile/rejectSubscription" -H "Content-Type: application/json" \
+    -d "{\"subscriptionID\": \"$SUB3_ID\", \"emiratesID\": \"$EID\"}")
+assert_json "$REJECT_RESP" "data.get('success')" "True" "Holder rejects the subscription"
+MOBILE_SUBS_3=$(curl -s "$API_URL/mobile/getSubscriptions?emiratesID=$EID")
+assert_json "$MOBILE_SUBS_3" "any(s.get('subscriptionID') == '$SUB3_ID' and s.get('status') == 'rejected' for s in data.get('subscriptions', []))" "True" "Wallet shows the rejected subscription"
+
+# ─── 16. Staff Management ────────────────────────────────────────────────────
+echo ""
+echo "16. Testing Staff Management (invite → update role → remove)..."
+
+STAFF_LIST=$(curl -s "$API_URL/getStaff")
+assert_json "$STAFF_LIST" "'staff' in data" "True" "getStaff returns a staff list"
+
+DIRECTORY_RESP=$(curl -s "$API_URL/getDirectory")
+assert_json "$DIRECTORY_RESP" "'directory' in data" "True" "getDirectory returns the org directory"
+
+STAFF_EMAIL="e2e-staff-${RAND_SUFFIX}@example.com"
+INVITE_RESP=$(curl -s -X POST "$API_URL/inviteStaff" -H "Content-Type: application/json" \
+    -d "{\"email\": \"$STAFF_EMAIL\", \"portal\": \"issuer\", \"role\": \"staff\"}")
+STAFF_ID=$(json_get "$INVITE_RESP" staffID)
+if [ -n "$STAFF_ID" ]; then
+    pass "Staff member invited: $STAFF_ID"
+else
+    fail "inviteStaff" "empty staffID in response: $INVITE_RESP"
+fi
+
+STAFF_LIST_2=$(curl -s "$API_URL/getStaff")
+assert_json "$STAFF_LIST_2" "any(s.get('id') == '$STAFF_ID' for s in data.get('staff', []))" "True" "New staff member appears in getStaff"
+
+DUP_INVITE=$(curl -s -X POST "$API_URL/inviteStaff" -H "Content-Type: application/json" \
+    -d "{\"email\": \"$STAFF_EMAIL\", \"portal\": \"issuer\", \"role\": \"staff\"}")
+assert_error "$DUP_INVITE" "already invited or active" "Re-inviting the same email is rejected"
+
+ROLE_RESP=$(curl -s -X POST "$API_URL/updateStaffRole" -H "Content-Type: application/json" \
+    -d "{\"id\": \"$STAFF_ID\", \"portal\": \"issuer\", \"role\": \"schemaManager\"}")
+assert_json "$ROLE_RESP" "data.get('success')" "True" "updateStaffRole succeeds"
+
+DEL_STAFF_RESP=$(curl -s -X POST "$API_URL/deleteStaff" -H "Content-Type: application/json" \
+    -d "{\"id\": \"$STAFF_ID\", \"portal\": \"issuer\"}")
+assert_json "$DEL_STAFF_RESP" "data.get('success')" "True" "deleteStaff (soft-delete) succeeds"
+
+# ─── 17. Audit Logs ───────────────────────────────────────────────────────────
+echo ""
+echo "17. Testing Audit Logs..."
+AUDIT_RESP=$(curl -s "$API_URL/getAuditLogs?page=1&limit=50")
+assert_json "$AUDIT_RESP" "len(data.get('records', [])) >= 1" "True" "getAuditLogs returns records"
+assert_json "$AUDIT_RESP" "any('$STAFF_EMAIL' in r.get('details','') for r in data.get('records', []))" "True" "Audit log records the staff invite/removal actions from this run"
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════════"
