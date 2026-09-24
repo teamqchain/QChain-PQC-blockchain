@@ -113,6 +113,9 @@ COPY cmd/ ./cmd/
 # tidy adds any missing go.sum entries, then compile.
 # CGO_ENABLED=1 is required for liboqs-go (C bindings).
 RUN go mod tidy
+# vet type-checks the _test.go files too, so a broken test file fails the image
+# build instead of only surfacing when someone runs `go test`.
+RUN CGO_ENABLED=1 go vet ./...
 RUN CGO_ENABLED=1 go build -o /qchain-server .
 RUN CGO_ENABLED=1 go build -o /app/keygen ./cmd/keygen
 

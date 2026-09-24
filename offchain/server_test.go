@@ -95,14 +95,6 @@ func TestPathHelpers(t *testing.T) {
 	if got := walletDir("general"); got != "/tmp/qchain-network/wallet/general" {
 		t.Fatalf("walletDir returned unexpected path. likely wrong networkRoot usage. got=%q", got)
 	}
-
-	if got := connectionProfilePath("government"); got != "/tmp/qchain-network/connection/connection-gov.json" {
-		t.Fatalf("connectionProfilePath returned unexpected gov profile path. got=%q", got)
-	}
-
-	if got := connectionProfilePath("general"); got != "/tmp/qchain-network/connection/connection-gen.json" {
-		t.Fatalf("connectionProfilePath returned unexpected general profile path. got=%q", got)
-	}
 }
 
 // TestLoadWalletIdentity covers parsing of wallet/<org>/<identity>.id files.
@@ -202,10 +194,7 @@ func TestLoadWalletIdentity(t *testing.T) {
 // TestPQCSignVerifyRoundTrip checks the cryptographic flow used by credentials:
 // generate key pair -> sign -> verify, plus a tamper check.
 func TestPQCSignVerifyRoundTrip(t *testing.T) {
-	pub, priv, err := pqcGenKeyPair()
-	if err != nil {
-		t.Fatalf("PQC key generation failed; likely liboqs runtime or binding issue: %v", err)
-	}
+	pub, priv := testDSAKeyPair(t)
 
 	message := "credential-payload"
 	sig, err := pqcSign(message, priv)
@@ -326,7 +315,7 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			target:          "/registerHolder",
 			body:            `{"org":"government"}`,
 			wantStatus:      http.StatusBadRequest,
-			wantErrorSubstr: "missing parameters",
+			wantErrorSubstr: "missing required fields",
 		},
 		{
 			name:            "issueCredential missing params",
@@ -335,7 +324,7 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			target:          "/issueCredential",
 			body:            `{"org":"government","identity":"admin"}`,
 			wantStatus:      http.StatusBadRequest,
-			wantErrorSubstr: "missing parameters",
+			wantErrorSubstr: "missing required fields",
 		},
 		{
 			name:            "verifyCredential missing params",
@@ -344,7 +333,7 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			target:          "/verifyCredential",
 			body:            `{"org":"government","identity":"admin"}`,
 			wantStatus:      http.StatusBadRequest,
-			wantErrorSubstr: "missing parameters",
+			wantErrorSubstr: "missing credentialID",
 		},
 		{
 			name:            "revokeCredential missing params",
@@ -353,7 +342,7 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			target:          "/revokeCredential",
 			body:            `{"org":"government"}`,
 			wantStatus:      http.StatusBadRequest,
-			wantErrorSubstr: "missing parameters",
+			wantErrorSubstr: "missing credentialID",
 		},
 		{
 			name:            "setCID missing params",
@@ -362,7 +351,7 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			target:          "/setCID",
 			body:            `{"org":"government"}`,
 			wantStatus:      http.StatusBadRequest,
-			wantErrorSubstr: "missing parameters",
+			wantErrorSubstr: "missing required fields",
 		},
 		{
 			name:            "getCredentialsByHolder missing query",
@@ -371,7 +360,7 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			target:          "/getCredentialsByHolder?org=government",
 			body:            "",
 			wantStatus:      http.StatusBadRequest,
-			wantErrorSubstr: "missing query params",
+			wantErrorSubstr: "missing query param",
 		},
 		{
 			name:            "checkKeys missing emiratesID",
@@ -868,10 +857,7 @@ func TestPresentationPayloadBindingParsing(t *testing.T) {
 // and verifying with public key + detecting tampered payloads or key substitutions.
 func TestMLDSAPresentationSigning(t *testing.T) {
 	// 1. Generate holder's ML-DSA-44 key pair
-	holderPub, holderPriv, err := pqcGenKeyPair()
-	if err != nil {
-		t.Fatalf("pqcGenKeyPair failed: %v", err)
-	}
+	holderPub, holderPriv := testDSAKeyPair(t)
 
 	// 2. Build canonical presentation payload
 	disclosedPayload := `{"credentialID":"CRED-2026-001","disclosedFields":{"college":"CCI","degreeTitle":"BSc Computer Science","gpa":"3.8"},"timestamp":"2026-09-22T13:00:00"}`
@@ -901,10 +887,7 @@ func TestMLDSAPresentationSigning(t *testing.T) {
 	}
 
 	// 6. Presentation verified with different holder's public key must fail
-	otherPub, _, err := pqcGenKeyPair()
-	if err != nil {
-		t.Fatalf("pqcGenKeyPair for second keypair failed: %v", err)
-	}
+	otherPub, _ := testDSAKeyPair(t)
 	otherKeyValid, _ := pqcVerify(payloadHash, sig, otherPub)
 	if otherKeyValid {
 		t.Fatalf("expected signature verification to fail with wrong holder public key")
