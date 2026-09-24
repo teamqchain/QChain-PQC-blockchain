@@ -188,18 +188,30 @@ assert_json "$HEALTH_RESP" "data.get('status')" "ok" "Server reports healthy"
 # ─── 2. Register Holder on Fabric & DB ───────────────────────────────────────
 echo ""
 RAND_SUFFIX=$((RANDOM % 9000 + 1000))
-HOLDER_ID="H-${RAND_SUFFIX}"
 EID="784-1990-888${RAND_SUFFIX}-1"
-echo "2. Registering Holder ($HOLDER_ID / $EID)..."
+echo "2. Registering Holder ($EID)..."
 HOLDER_RESP=$(curl -s -X POST "$API_URL/registerHolder" \
     -H "Content-Type: application/json" \
-    -d "{\"holderID\": \"$HOLDER_ID\", \"emiratesID\": \"$EID\", \"firstName\": \"Tariq\", \"lastName\": \"Al Nuaimi\"}")
-assert_json "$HOLDER_RESP" "data.get('holderID')" "$HOLDER_ID" "Holder $HOLDER_ID registered"
+    -d "{\"emiratesID\": \"$EID\", \"firstName\": \"Tariq\", \"lastName\": \"Al Nuaimi\"}")
+HOLDER_ID=$(json_get "$HOLDER_RESP" holderID)
+if [[ "$HOLDER_ID" =~ ^H-[0-9]+$ ]]; then
+    pass "Holder registered with a server-generated ID: $HOLDER_ID"
+else
+    fail "registerHolder" "expected a server-generated holderID (H-NNNN), got: $HOLDER_RESP"
+fi
 
-DUP_RESP=$(curl -s -X POST "$API_URL/registerHolder" \
+# holderID is no longer a request field. Regression test for the original bug:
+# a caller supplying an existing holderID used to silently overwrite that
+# holder's identity (MySQL ON DUPLICATE KEY UPDATE). Now the field is simply
+# ignored — a fresh id is minted, and the original holder is left untouched.
+OVERWRITE_EID="784-1990-887${RAND_SUFFIX}-1"
+OVERWRITE_RESP=$(curl -s -X POST "$API_URL/registerHolder" \
     -H "Content-Type: application/json" \
-    -d "{\"holderID\": \"$HOLDER_ID\", \"firstName\": \"Other\", \"lastName\": \"Name\"}")
-assert_error "$DUP_RESP" "already registered" "Re-registering the same holder ID is refused by the chaincode"
+    -d "{\"holderID\": \"$HOLDER_ID\", \"emiratesID\": \"$OVERWRITE_EID\", \"firstName\": \"Overwrite\", \"lastName\": \"Attempt\"}")
+assert_json "$OVERWRITE_RESP" "data.get('holderID') != '$HOLDER_ID' and bool(data.get('holderID'))" "True" "A supplied holderID is ignored — a fresh id is minted instead of colliding"
+
+HOLDERS_CHECK=$(curl -s "$API_URL/getHolders?search=$EID")
+assert_json "$HOLDERS_CHECK" "data.get('holders', [{}])[0].get('fullName')" "Tariq Al Nuaimi" "Original holder's identity was not overwritten by the collision attempt"
 
 # ─── 3. Check Keys Before Activation ─────────────────────────────────────────
 echo ""

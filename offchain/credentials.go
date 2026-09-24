@@ -34,8 +34,9 @@ const maxCredentialTypeLength = 100
 // ─────────────────────────────────────────────
 
 // RegisterHolderRequest — setup script only; not called from any frontend.
+// holderID is always server-generated (see nextHolderID) and is not a
+// request field — a caller can never choose or collide with an existing one.
 type RegisterHolderRequest struct {
-	HolderID   string `json:"holderID"`   // e.g. "H-0001"; server generates if empty
 	EmiratesID string `json:"emiratesID"` // stored in MySQL holders table
 	FirstName  string `json:"firstName"`
 	LastName   string `json:"lastName"`
@@ -80,15 +81,10 @@ func handleRegisterHolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	holderID := req.HolderID
-	if holderID == "" {
-		// Auto-generate next ID from DB counter if not provided
-		var err error
-		holderID, err = nextHolderID()
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "could not generate holder ID: "+err.Error())
-			return
-		}
+	holderID, err := nextHolderID()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not generate holder ID: "+err.Error())
+		return
 	}
 
 	result, err := chainSubmit("registerHolder", holderID, req.FirstName, req.LastName)

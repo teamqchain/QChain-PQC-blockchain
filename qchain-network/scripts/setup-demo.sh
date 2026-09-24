@@ -23,39 +23,50 @@ curl -sf "$SERVER/health" | grep -q '"ok"' || { echo "  ERROR: server not reacha
 echo "  Server is healthy."
 
 # ─── Register demo holders on Fabric ────────────────────────────────────────
-# These holders are already in MySQL (inserted by schema.sql seed data).
-# This call registers them on the blockchain so credentials can be issued.
-# The chaincode refuses to re-register an existing holder (HTTP 409), so
-# re-running this script is harmless.
+# holder_id is always server-generated (offchain/db.go nextHolderID) — this
+# call creates the holder (MySQL row + on-chain registration) in one step.
+# There's no pre-seeded row to target by id, so re-running this script mints
+# NEW duplicate demo holders rather than being a no-op — matches the
+# "Run ONCE" instruction at the top of this file.
 
 echo ""
-echo "  Registering H-0001 (Ahmed Al Mansouri) on Fabric..."
-curl -sf -X POST "$SERVER/registerHolder" \
+echo "  Registering demo holder Ahmed Al Mansouri on Fabric..."
+RESP1=$(curl -sf -X POST "$SERVER/registerHolder" \
   -H "Content-Type: application/json" \
   -d '{
-    "holderID":   "H-0001",
     "emiratesID": "784-1990-1234567-1",
     "firstName":  "Ahmed",
     "lastName":   "Al Mansouri"
-  }' | python3 -m json.tool || true
+  }') || RESP1=""
+echo "$RESP1" | python3 -m json.tool 2>/dev/null || true
+HOLDER1_ID=$(printf '%s' "$RESP1" | python3 -c "import sys, json
+try:
+    print(json.load(sys.stdin).get('holderID', ''))
+except Exception:
+    pass" 2>/dev/null)
 
 echo ""
-echo "  Registering H-0002 (Sara Al Hashimi) on Fabric..."
-curl -sf -X POST "$SERVER/registerHolder" \
+echo "  Registering demo holder Sara Al Hashimi on Fabric..."
+RESP2=$(curl -sf -X POST "$SERVER/registerHolder" \
   -H "Content-Type: application/json" \
   -d '{
-    "holderID":   "H-0002",
     "emiratesID": "784-1995-7654321-2",
     "firstName":  "Sara",
     "lastName":   "Al Hashimi"
-  }' | python3 -m json.tool || true
+  }') || RESP2=""
+echo "$RESP2" | python3 -m json.tool 2>/dev/null || true
+HOLDER2_ID=$(printf '%s' "$RESP2" | python3 -c "import sys, json
+try:
+    print(json.load(sys.stdin).get('holderID', ''))
+except Exception:
+    pass" 2>/dev/null)
 
 echo ""
 echo "✓  Demo setup complete."
 echo ""
 echo "  Demo holder Emirates IDs:"
-echo "    H-0001 → 784-1990-1234567-1  (Ahmed Al Mansouri)"
-echo "    H-0002 → 784-1995-7654321-2  (Sara Al Hashimi)"
+echo "    ${HOLDER1_ID:-<unknown>} → 784-1990-1234567-1  (Ahmed Al Mansouri)"
+echo "    ${HOLDER2_ID:-<unknown>} → 784-1995-7654321-2  (Sara Al Hashimi)"
 echo ""
 echo "  Next: each holder activates QWallet (binds their ML-KEM / ML-DSA keys on-chain)."
 echo "  Then, to issue a test credential:"

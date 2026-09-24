@@ -112,15 +112,17 @@ func holderContactByFabricID(fabricHolderID string) (email, emiratesID string, e
 }
 
 // insertHolder saves a new holder row into MySQL.
-// Called by handleRegisterHolder (setup script path).
+// Called by handleRegisterHolder (setup script path). holderID is always
+// server-generated, so a plain INSERT is correct — a collision here would be
+// a real bug (not a legitimate re-registration) and should fail loudly rather
+// than silently overwrite an existing holder's identity.
 func insertHolder(holderID, emiratesID, firstName, lastName string) error {
 	if db == nil {
 		return fmt.Errorf("database not configured")
 	}
 	_, err := db.Exec(
 		`INSERT INTO holders (holder_id, emirates_id, first_name, last_name, fabric_holder_id, is_wallet_activated)
-		 VALUES (?, ?, ?, ?, ?, FALSE)
-		 ON DUPLICATE KEY UPDATE first_name = VALUES(first_name), last_name = VALUES(last_name), emirates_id = VALUES(emirates_id)`,
+		 VALUES (?, ?, ?, ?, ?, FALSE)`,
 		holderID, emiratesID, firstName, lastName, holderID,
 	)
 	return err
