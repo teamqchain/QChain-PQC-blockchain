@@ -25,6 +25,8 @@ echo "  Server is healthy."
 # ─── Register demo holders on Fabric ────────────────────────────────────────
 # These holders are already in MySQL (inserted by schema.sql seed data).
 # This call registers them on the blockchain so credentials can be issued.
+# The chaincode refuses to re-register an existing holder (HTTP 409), so
+# re-running this script is harmless.
 
 echo ""
 echo "  Registering H-0001 (Ahmed Al Mansouri) on Fabric..."
@@ -55,12 +57,11 @@ echo "  Demo holder Emirates IDs:"
 echo "    H-0001 → 784-1990-1234567-1  (Ahmed Al Mansouri)"
 echo "    H-0002 → 784-1995-7654321-2  (Sara Al Hashimi)"
 echo ""
-echo "  To issue a test credential:"
+echo "  Next: each holder activates QWallet (binds their ML-KEM / ML-DSA keys on-chain)."
+echo "  Then, to issue a test credential:"
 echo "    curl -X POST $SERVER/issueCredential \\"
 echo "      -H 'Content-Type: application/json' \\"
-echo "      -d '{\"holderEmiratesID\":\"784-1990-1234567-1\",\"credentialType\":\"BSc Computer Science\",\"info\":\"{\\\"degreeTitle\\\":\\\"BSc Computer Science\\\",\\\"college\\\":\\\"CCI\\\",\\\"grade\\\":\\\"Distinction\\\",\\\"graduationYear\\\":\\\"2025\\\"}\" }'"
+echo "      -d '{\"holderEmiratesID\":\"784-1990-1234567-1\",\"credentialType\":\"BSc Computer Science\",\"info\":\"{\\\"Degree Title\\\":\\\"BSc Computer Science\\\",\\\"College\\\":\\\"CCI\\\",\\\"Grade\\\":\\\"Distinction\\\",\\\"expiryDate\\\":\\\"30 Jun 2030\\\"}\" }'"
 echo ""
-echo "  To verify a credential (replace CRED-0001 with the returned credentialID):"
-echo "    curl -X POST $SERVER/verifyCredential \\"
-echo "      -H 'Content-Type: application/json' \\"
-echo "      -d '{\"credentialID\":\"CRED-0001\"}'"
+echo "  To verify: present the credential from QWallet (QR or OTP) and scan it in"
+echo "  QPortal, or run the scripted holder: bash tests/e2e_api_test.sh $SERVER"

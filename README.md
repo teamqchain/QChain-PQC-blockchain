@@ -45,9 +45,10 @@ hardware arrives.
 
 **QChain** replaces the classical signature on each credential with **ML-DSA-44 (CRYSTALS-Dilithium)**,
 a NIST-standardised, lattice-based post-quantum signature, and anchors it on a permissioned Hyperledger
-Fabric ledger. It uses a **hash-on-chain, data-off-chain** model: the full credential JSON lives on
-**IPFS** (addressed by its content hash / CID), while only the SHA3-256 hash + PQC signature go on-chain
-— keeping the ledger small while remaining tamper-evident.
+Fabric ledger. It uses a **hash-on-chain, data-off-chain** model: the credential's attributes live only
+on **IPFS**, encrypted to the holder's ML-KEM-768 key (addressed by CID), while the ledger holds a small
+signed record — metadata, the CID, and a salted SHA3-256 fingerprint of every field — keeping the ledger
+small and free of plaintext while remaining tamper-evident.
 
 The system has three faces:
 
@@ -56,7 +57,8 @@ The system has three faces:
 - **QWallet** — a Flutter app for credential **Holders** to store credentials and present them via
   QR/OTP with selective disclosure.
 - **Off-chain backend** — a Go REST API that ties together Fabric, IPFS, the post-quantum crypto, and a
-  MySQL database used for fast lookups, dashboards and history.
+  MySQL database for the data that exists nowhere else (Emirates ID mapping, contact details, sessions,
+  subscriptions, history). Every field the ledger holds is read from the ledger.
 
 ---
 
@@ -77,14 +79,18 @@ The system has three faces:
                 ▼                    ▼                   ▼                    ▼
         Hyperledger Fabric      IPFS (Kubo)           MySQL            ML-DSA-44 (PQC)
      peers + orderer (etcdraft)  :5001 / :8080        :3306          via liboqs-go (CGo)
-     + JavaScript chaincode      credential JSON   lookups/history    sign & verify
-     CouchDB state DB            (CID on-chain)
+     + JavaScript chaincode      encrypted         IDs/contacts/      sign & verify
+     CouchDB state DB            envelopes         sessions/history   (+ ML-KEM-768)
+                                 (CID on-chain)
 ```
 
-- **Authenticity** comes from the ML-DSA-44 signature over the credential hash.
-- **Integrity** comes from re-hashing the on-chain credential payload at verify time.
-- **Verification is entirely on-chain** — the backend re-hashes the stored Fabric payload and checks the
-  signature; it never trusts the database for the cryptographic decision.
+- **Source of truth** — the chain for every field it holds (status, type, dates, holder name and keys,
+  CID, hashes), IPFS for the credential body, MySQL only for data that exists nowhere else.
+- **Authenticity** comes from the issuer's ML-DSA-44 signature over a commitment to the credential
+  (holder, type, issue/expiry dates, CID and every salted field hash).
+- **Integrity** — the verifier rebuilds that commitment from the ledger (never trusting a stored hash),
+  checks the signature against the trusted issuer key, and checks each disclosed value + salt against
+  its on-chain fingerprint; the holder's ML-DSA-44 signature binds the presentation to the credential.
 
 ---
 
@@ -95,9 +101,9 @@ The system has three faces:
 | Blockchain | Hyperledger Fabric 2.x · two orgs (GovernmentMSP, GeneralMSP) + etcdraft orderer · CouchDB state DB |
 | Chaincode | JavaScript (Fabric Contract API 2.5) — `qchain-network/chaincode/` |
 | Post-quantum crypto | ML-DSA-44 (CRYSTALS-Dilithium, NIST FIPS 204) via **liboqs-go** (C bindings) |
-| Off-chain storage | IPFS / Kubo (credential JSON, referenced on-chain by CID) |
+| Off-chain storage | IPFS / Kubo (credential envelope encrypted to the holder, referenced on-chain by CID) |
 | Backend | Go 1.24 REST API (`offchain/`) · `fabric-gateway`, `go-ipfs-api`, `go-sql-driver/mysql` |
-| Database | MySQL (`qchain_db`) for holders, credentials, verification logs, subscriptions, alerts, audit |
+| Database | MySQL (`qchain_db`) for ID mappings, contact details, sessions, verification logs, subscriptions, alerts, audit |
 | Frontend | Flutter 3.35.x (Dart ≥ 3.9.2) — QPortal (web) + QWallet (mobile + web) |
 | Public gateway | Nginx reverse proxy (`web-gateway/`) serving both apps + proxying the API on one origin |
 | Public access | Tailscale Funnel (permanent `*.ts.net` HTTPS URL, runs as a system service) |
@@ -324,16 +330,15 @@ responses include a `credentialID`, and **all timestamps are returned in UAE loc
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/registerHolder` | Register a credential holder on-chain |
-| POST | `/issueCredential` | Issue a PQC-signed credential (on-chain hash + IPFS CID) |
-| POST | `/updateCredential` | Update editable credential fields |
-| POST | `/revokeCredential` · `/suspendCredential` · `/restoreCredential` | Lifecycle changes |
-| POST | `/setCID` | Attach an IPFS CID to a credential |
-| GET | `/getAllCredentials` · `/getCredentialsByHolder` · `/getCredentialDetail` | Read credentials |
+| POST | `/issueCredential` | Issue a credential: salted field hashes + expiry on-chain, envelope encrypted to the holder on IPFS, issuer ML-DSA-44 signature over the commitment |
+| POST | `/updateCredential` | Update the holder email (MySQL) and/or expiry (re-signed on-chain) |
+| POST | `/revokeCredential` · `/suspendCredential` · `/restoreCredential` | Lifecycle changes (on-chain) |
+| GET | `/getAllCredentials` · `/getCredentialDetail` | Read credentials (on-chain fields from the ledger) |
 
 **Verification**
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/verifyCredential` | On-chain verify (existence, status, signature, hash) |
+| POST | `/resolveSession` | Verify a holder's QR/OTP presentation (5 checks against the chain) |
 | GET | `/getVerificationHistory` · `/getVerificationDetail` | Verification logs |
 
 **Holders / Dashboard / Audit**
@@ -360,17 +365,23 @@ responses include a `credentialID`, and **all timestamps are returned in UAE loc
 **QWallet (mobile)** — under `/mobile/*`
 | Method | Path | Purpose |
 |--------|------|---------|
+| GET | `/mobile/checkKeys` · `/mobile/getHolderProfile` | Holder keys / profile (keys and name from the chain) |
+| POST | `/mobile/registerHolderKeys` | Bind the wallet's ML-KEM-768 + ML-DSA-44 public keys on-chain |
+| GET | `/mobile/getEnvelope` | Encrypted credential envelope, fetched from IPFS by the on-chain CID |
 | GET | `/mobile/getCredentialsByHolder` · `/mobile/getActivity` · `/mobile/getCatalog` · `/mobile/getSubscriptions` | Wallet reads |
 | POST | `/mobile/toggleFavorite` · `/mobile/fetchDocument` | Wallet actions |
 | POST | `/mobile/generateOTP` · `/mobile/generatePresentation` | Create a share session (OTP / QR) |
 | POST | `/mobile/approveSubscription` · `/mobile/rejectSubscription` | Respond to verifier requests |
-| POST | `/resolveSession` | Verifier redeems a holder's OTP/QR token |
 | GET | `/health` | Liveness probe |
 
 ---
 
 ## Recent updates
 
+- **Chain & IPFS as the source of truth** — the ledger no longer stores the plaintext credential; it
+  stores a signed commitment (metadata, CID, salted field hashes). The credential body lives only on IPFS,
+  encrypted to the holder. Every read comes from the ledger/IPFS, expiry is signed on-chain (editing it
+  re-signs), and presentations carry per-field salts. Chaincode v2.0 (full ledger reset).
 - **Full backend integration** — issuance, verification, revocation and lifecycle wired end-to-end
   across Fabric, IPFS, the PQC signer and MySQL.
 - **Subscriptions & alerts** — verifiers can monitor a credential; suspending/revoking a subscribed
