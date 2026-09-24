@@ -3,7 +3,8 @@
 # =============================================================================
 # This file is read by Docker for any build whose CONTEXT is the repo root.
 # The only such build is the web-gateway image (web-gateway/Dockerfile), which
-# needs just UI_WebApp/, UI_App/ and web-gateway/. Everything listed here is
+# needs just UI_WebApp/, UI_App/, shared/ (a path dependency of both apps) and
+# web-gateway/. Everything listed here is
 # kept OUT of the build context so the upload to the Docker daemon stays small
 # and so VM-only runtime/secret material (crypto, wallets, .env) is never sent.
 #
