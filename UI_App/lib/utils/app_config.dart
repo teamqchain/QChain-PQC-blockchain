@@ -10,4 +10,11 @@ const String kApiBaseUrl = String.fromEnvironment(
   defaultValue: 'http://localhost:3000',
 );
 
+// Build-time default holder. Callers must use RuntimeConfig.to.emiratesID.
 const String userEmiratesID = '784-2004-7654321-1';
+// const String userEmiratesID = '784-2004-7654321-1';
+
+/// App build / IPA label shown on Splash.
+/// Bump this by hand before each install you want to tell apart
+/// (e.g. 1 → 2 → 3). Not wired to pubspec or Xcode CFBundleVersion.
+const String kAppBuildNumber = "4.0.0";
