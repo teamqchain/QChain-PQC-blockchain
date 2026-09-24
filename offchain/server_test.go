@@ -13,26 +13,25 @@ QCHAIN OFFCHAIN BACKEND TEST RUN GUIDE
 
    Run specific test suites:
      $ go test -v -run TestHandlersValidationAndHealth
-     $ go test -v -run TestApplySelectiveDisclosure
-     $ go test -v -run TestFieldHashesVerificationLogic
-     $ go test -v -run TestPresentationPayloadBindingParsing
+     $ go test -v -run TestVerifyPresentation     (verification_test.go)
+     $ go test -v -run TestCommitment             (commitment_test.go)
+     $ go test -v -run TestEnvelope               (envelope_test.go)
      $ go test -v -run TestMLDSAPresentationSigning
      $ go test -v -run TestDubaiTimezoneFormat
-     $ go test -v -run TestEnvelopeRoundTrip
 
    Run with clean cache and coverage:
      $ go test -count=1 -cover ./...
 
 2. Running Unit Tests via Docker (liboqs Containerized):
    -----------------------------------------------------
-   Since ML-KEM-768 and ML-DSA-44 require liboqs C library bindings, tests can be
-   executed inside the pre-built Docker image:
+   ML-KEM-768 and ML-DSA-44 need the liboqs C library, which only the image's
+   BUILDER stage has (the runtime image has no Go toolchain):
      $ cd offchain
-     $ docker build -t qchain-api:latest .
-     $ docker run --rm qchain-api:latest go test -v ./...
+     $ docker build --target builder -t qchain-api:test .
+     $ docker run --rm qchain-api:test go test -count=1 -v ./...
 
-   Mounting local directory into container for instant test iterations:
-     $ docker run --rm -v "$PWD:/app" -w /app qchain-api:latest go test -v ./...
+   Mounting local directory into the builder for instant test iterations:
+     $ docker run --rm -v "$PWD:/app" -w /app qchain-api:test go test -v ./...
 
 3. Running End-to-End (E2E) API Tests:
    -----------------------------------
@@ -44,7 +43,6 @@ QCHAIN OFFCHAIN BACKEND TEST RUN GUIDE
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -327,13 +325,49 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			wantErrorSubstr: "missing required fields",
 		},
 		{
-			name:            "verifyCredential missing params",
-			handler:         handleVerifyCredential,
+			name:            "issueCredential non-string attribute",
+			handler:         handleIssueCredential,
 			method:          http.MethodPost,
-			target:          "/verifyCredential",
-			body:            `{"org":"government","identity":"admin"}`,
+			target:          "/issueCredential",
+			body:            `{"holderEmiratesID":"784-1234","credentialType":"BSc","info":"{\"GPA\":3.8}"}`,
 			wantStatus:      http.StatusBadRequest,
-			wantErrorSubstr: "missing credentialID",
+			wantErrorSubstr: `field "GPA" must be a string`,
+		},
+		{
+			name:            "issueCredential reserved attribute name",
+			handler:         handleIssueCredential,
+			method:          http.MethodPost,
+			target:          "/issueCredential",
+			body:            `{"holderEmiratesID":"784-1234","credentialType":"BSc","info":"{\"_salts\":\"x\"}"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "reserved",
+		},
+		{
+			name:            "issueCredential invalid expiry",
+			handler:         handleIssueCredential,
+			method:          http.MethodPost,
+			target:          "/issueCredential",
+			body:            `{"holderEmiratesID":"784-1234","credentialType":"BSc","info":"{\"College\":\"CCI\",\"expiryDate\":\"soon\"}"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "invalid expiryDate",
+		},
+		{
+			name:            "issueCredential credentialType too long",
+			handler:         handleIssueCredential,
+			method:          http.MethodPost,
+			target:          "/issueCredential",
+			body:            `{"holderEmiratesID":"784-1234","credentialType":"` + strings.Repeat("x", 101) + `","info":"{\"College\":\"CCI\"}"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "at most 100 characters",
+		},
+		{
+			name:            "updateCredential invalid expiry",
+			handler:         handleUpdateCredential,
+			method:          http.MethodPost,
+			target:          "/updateCredential",
+			body:            `{"credentialID":"CRED-0001","expiryDate":"soon"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "invalid expiryDate format",
 		},
 		{
 			name:            "revokeCredential missing params",
@@ -343,24 +377,6 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			body:            `{"org":"government"}`,
 			wantStatus:      http.StatusBadRequest,
 			wantErrorSubstr: "missing credentialID",
-		},
-		{
-			name:            "setCID missing params",
-			handler:         handleSetCID,
-			method:          http.MethodPost,
-			target:          "/setCID",
-			body:            `{"org":"government"}`,
-			wantStatus:      http.StatusBadRequest,
-			wantErrorSubstr: "missing required fields",
-		},
-		{
-			name:            "getCredentialsByHolder missing query",
-			handler:         handleGetCredentialsByHolder,
-			method:          http.MethodGet,
-			target:          "/getCredentialsByHolder?org=government",
-			body:            "",
-			wantStatus:      http.StatusBadRequest,
-			wantErrorSubstr: "missing query param",
 		},
 		{
 			name:            "checkKeys missing emiratesID",
@@ -525,6 +541,60 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 			wantErrorSubstr: "invalid JSON in disclosedPayload",
 		},
 		{
+			name:            "registerHolderKeys wrong kem key length",
+			handler:         handleRegisterHolderKeys,
+			method:          http.MethodPost,
+			target:          "/mobile/registerHolderKeys",
+			body:            `{"emiratesID":"784-1234","kemPublicKey":"aabb","dsaPublicKey":"ccdd"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "kemPublicKey must be 2368 hex characters",
+		},
+		{
+			name:            "generateOTP missing salts",
+			handler:         handleGenerateOTP,
+			method:          http.MethodPost,
+			target:          "/mobile/generateOTP",
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"credentialID\":\"CRED-001\",\"disclosedFields\":{\"GPA\":\"3.8\"}}","holderSignature":"sig123"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: `salts missing for field "GPA"`,
+		},
+		{
+			name:            "generatePresentation salt for undisclosed field",
+			handler:         handleGeneratePresentation,
+			method:          http.MethodPost,
+			target:          "/mobile/generatePresentation",
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"credentialID\":\"CRED-001\",\"disclosedFields\":{\"GPA\":\"3.8\"},\"salts\":{\"GPA\":\"0123456789abcdef0123456789abcdef\",\"College\":\"0123456789abcdef0123456789abcdef\"}}","holderSignature":"sig123"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: `salt provided for undisclosed field "College"`,
+		},
+		{
+			name:            "generateOTP malformed salt",
+			handler:         handleGenerateOTP,
+			method:          http.MethodPost,
+			target:          "/mobile/generateOTP",
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"credentialID\":\"CRED-001\",\"disclosedFields\":{\"GPA\":\"3.8\"},\"salts\":{\"GPA\":\"XYZ\"}}","holderSignature":"sig123"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: `invalid salt for field "GPA"`,
+		},
+		{
+			name:            "generatePresentation non-string disclosed value",
+			handler:         handleGeneratePresentation,
+			method:          http.MethodPost,
+			target:          "/mobile/generatePresentation",
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"credentialID\":\"CRED-001\",\"disclosedFields\":{\"GPA\":3.8}}","holderSignature":"sig123"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: `disclosedFields["GPA"] must be a string`,
+		},
+		{
+			name:            "generateOTP nothing disclosed",
+			handler:         handleGenerateOTP,
+			method:          http.MethodPost,
+			target:          "/mobile/generateOTP",
+			body:            `{"credentialID":"CRED-001","disclosedPayload":"{\"credentialID\":\"CRED-001\",\"disclosedFields\":{}}","holderSignature":"sig123"}`,
+			wantStatus:      http.StatusBadRequest,
+			wantErrorSubstr: "disclosedFields must contain at least one field",
+		},
+		{
 			name:            "resolveSession missing sessionToken",
 			handler:         handleResolveSession,
 			method:          http.MethodPost,
@@ -672,17 +742,6 @@ func TestHandlersValidationAndHealth(t *testing.T) {
 	})
 }
 
-// TestFieldHashesComputation verifies per-field SHA3-256 computation matches Track H format.
-func TestFieldHashesComputation(t *testing.T) {
-	field := "gpa"
-	value := "3.8"
-	expected := sha3Hex("gpa:3.8")
-	got := sha3Hex(field + ":" + value)
-	if got != expected {
-		t.Fatalf("per-field hash mismatch: got=%s want=%s", got, expected)
-	}
-}
-
 // TestDubaiTimezoneFormat verifies expiry time format in Asia/Dubai has no Z suffix.
 func TestDubaiTimezoneFormat(t *testing.T) {
 	loc := mustLoadLocation("Asia/Dubai")
@@ -693,162 +752,6 @@ func TestDubaiTimezoneFormat(t *testing.T) {
 	}
 	if len(formatted) != 19 || formatted[10] != 'T' {
 		t.Fatalf("unexpected format for Dubai time: %s", formatted)
-	}
-}
-
-// TestApplySelectiveDisclosure validates the selective disclosure redaction helper.
-func TestApplySelectiveDisclosure(t *testing.T) {
-	// Nil handling: must not panic
-	applySelectiveDisclosure(nil, []string{"gpa"})
-
-	// Empty hiddenFields: leaves map untouched
-	data := map[string]any{
-		"holderName": "Fatima Al Mansoori",
-		"gpa":        "3.9",
-		"college":    "Engineering",
-	}
-	applySelectiveDisclosure(data, []string{})
-	if data["holderName"] != "Fatima Al Mansoori" || data["gpa"] != "3.9" || data["college"] != "Engineering" {
-		t.Fatalf("expected data to remain untouched with empty hidden fields")
-	}
-
-	// Single top-level field blanking
-	applySelectiveDisclosure(data, []string{"gpa"})
-	if data["gpa"] != nil {
-		t.Fatalf("expected gpa to be nil after disclosure redaction, got %v", data["gpa"])
-	}
-	if data["college"] != "Engineering" {
-		t.Fatalf("expected college to remain untouched, got %v", data["college"])
-	}
-
-	// Nested dotted path blanking (e.g. details.score)
-	nested := map[string]any{
-		"student": "Rashid",
-		"details": map[string]any{
-			"major": "Computer Science",
-			"score": "A+",
-		},
-	}
-	applySelectiveDisclosure(nested, []string{"details.score"})
-	detailsMap, ok := nested["details"].(map[string]any)
-	if !ok || detailsMap["score"] != nil {
-		t.Fatalf("expected details.score to be nil, got %v", detailsMap["score"])
-	}
-	if detailsMap["major"] != "Computer Science" {
-		t.Fatalf("expected details.major to remain untouched, got %v", detailsMap["major"])
-	}
-
-	// Non-existent hidden fields: safe and produces no side-effects
-	applySelectiveDisclosure(data, []string{"nonExistentField", "unknown.subfield"})
-	if data["college"] != "Engineering" {
-		t.Fatalf("expected college to remain intact")
-	}
-}
-
-// TestFieldHashesVerificationLogic verifies that the attribute-integrity loop correctly
-// validates disclosed attributes against on-chain fieldHashes and detects tampering.
-func TestFieldHashesVerificationLogic(t *testing.T) {
-	// Simulated on-chain FieldHashes map computed at issuance
-	onChainFieldHashes := map[string]string{
-		"college":     sha3Hex("college:CCI"),
-		"degreeTitle": sha3Hex("degreeTitle:BSc Computer Science"),
-		"gpa":         sha3Hex("gpa:3.8"),
-	}
-
-	// Case 1: Valid disclosed fields matching on-chain hashes
-	validFields := map[string]any{
-		"college":     "CCI",
-		"degreeTitle": "BSc Computer Science",
-		"gpa":         "3.8",
-	}
-	valid := true
-	for k, v := range validFields {
-		expectedHash, exists := onChainFieldHashes[k]
-		if !exists || !strings.EqualFold(sha3Hex(k+":"+fmt.Sprintf("%v", v)), expectedHash) {
-			valid = false
-			break
-		}
-	}
-	if !valid {
-		t.Fatalf("valid disclosed fields failed fieldHashes verification")
-	}
-
-	// Case 2: Tampered field value (holder attempts GPA elevation 3.8 -> 4.0)
-	tamperedFields := map[string]any{
-		"college":     "CCI",
-		"degreeTitle": "BSc Computer Science",
-		"gpa":         "4.0",
-	}
-	tamperedValid := true
-	for k, v := range tamperedFields {
-		expectedHash, exists := onChainFieldHashes[k]
-		if !exists || !strings.EqualFold(sha3Hex(k+":"+fmt.Sprintf("%v", v)), expectedHash) {
-			tamperedValid = false
-			break
-		}
-	}
-	if tamperedValid {
-		t.Fatalf("tampered field value (3.8 -> 4.0) unexpectedly passed fieldHashes verification")
-	}
-
-	// Case 3: Injected attribute not present in on-chain FieldHashes
-	injectedFields := map[string]any{
-		"college":     "CCI",
-		"distinction": "Dean's List",
-	}
-	injectedValid := true
-	for k, v := range injectedFields {
-		expectedHash, exists := onChainFieldHashes[k]
-		if !exists || !strings.EqualFold(sha3Hex(k+":"+fmt.Sprintf("%v", v)), expectedHash) {
-			injectedValid = false
-			break
-		}
-	}
-	if injectedValid {
-		t.Fatalf("injected attribute not on ledger unexpectedly passed fieldHashes verification")
-	}
-}
-
-// TestPresentationPayloadBindingParsing tests canonical JSON presentation payload
-// unmarshaling, whitespace trimming, and credentialID binding validation.
-func TestPresentationPayloadBindingParsing(t *testing.T) {
-	// Case 1: Valid canonical JSON payload
-	rawJSON := `{"credentialID":"CRED-2026-001","disclosedFields":{"college":"CCI","gpa":"3.8"},"timestamp":"2026-09-22T12:00:00"}`
-	var payload struct {
-		CredentialID    string         `json:"credentialID"`
-		DisclosedFields map[string]any `json:"disclosedFields"`
-		Timestamp       string         `json:"timestamp"`
-	}
-	if err := json.Unmarshal([]byte(rawJSON), &payload); err != nil {
-		t.Fatalf("unmarshal canonical payload failed: %v", err)
-	}
-	if strings.TrimSpace(payload.CredentialID) != "CRED-2026-001" {
-		t.Fatalf("credentialID mismatch. got=%q, want=%q", payload.CredentialID, "CRED-2026-001")
-	}
-	if payload.DisclosedFields["gpa"] != "3.8" {
-		t.Fatalf("disclosed attribute mismatch. got=%v, want=3.8", payload.DisclosedFields["gpa"])
-	}
-
-	// Case 2: Whitespace padding in credentialID is trimmed cleanly
-	paddedJSON := `{"credentialID":"  CRED-2026-001  "}`
-	var paddedPayload struct {
-		CredentialID string `json:"credentialID"`
-	}
-	if err := json.Unmarshal([]byte(paddedJSON), &paddedPayload); err != nil {
-		t.Fatalf("unmarshal padded payload failed: %v", err)
-	}
-	if strings.TrimSpace(paddedPayload.CredentialID) != "CRED-2026-001" {
-		t.Fatalf("expected trimmed credentialID, got=%q", strings.TrimSpace(paddedPayload.CredentialID))
-	}
-
-	// Case 3: Missing credentialID results in empty string
-	missingIDJSON := `{"disclosedFields":{"gpa":"3.8"}}`
-	var missingPayload struct {
-		CredentialID string `json:"credentialID"`
-	}
-	_ = json.Unmarshal([]byte(missingIDJSON), &missingPayload)
-	if strings.TrimSpace(missingPayload.CredentialID) != "" {
-		t.Fatalf("expected empty credentialID for missing field")
 	}
 }
 

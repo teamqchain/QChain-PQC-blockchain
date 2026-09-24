@@ -15,13 +15,13 @@ import (
 
 // ─── SUBSCRIPTION TYPES ──────────────────────────────────────────────────────
 
-// SubscriptionRow is the portal projection used by /getSubscriptions.
+// SubscriptionRow is the portal projection used by /getSubscriptions. The
+// credential type and holder name come from the chain via FabricCredID.
 type SubscriptionRow struct {
 	SubscriptionID string
 	CredentialID   string
-	HolderName     string
+	FabricCredID   string
 	HolderID       string
-	CredentialType string
 	Issuer         string
 	SubscribedAt   sql.NullTime
 	ExpiryDate     sql.NullTime
@@ -30,10 +30,11 @@ type SubscriptionRow struct {
 
 // MobileSubscriptionRow holds one subscription request for the QWallet
 // ManageSubscriptions screen. (Distinct from the portal SubscriptionRow above.)
+// The credential type comes from the chain via FabricCredID.
 type MobileSubscriptionRow struct {
 	SubscriptionID string
 	CredentialID   string
-	CredentialType string
+	FabricCredID   string
 	VerifierName   string
 	Status         string
 	CreatedAt      string
@@ -87,8 +88,8 @@ func activeSubscriptionExists(credentialID string) (bool, error) {
 	return count > 0, err
 }
 
-// getSubscriptions lists subscriptions for the portal table (credential_type and
-// issuer are derived via JOIN to the credential).
+// getSubscriptions lists subscriptions for the portal table (the issuing staff
+// member is derived via JOIN to the credential).
 func getSubscriptions(page, limit int) ([]SubscriptionRow, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database not configured")
@@ -97,9 +98,8 @@ func getSubscriptions(page, limit int) ([]SubscriptionRow, error) {
 	rows, err := db.Query(`
 		SELECT s.subscription_id,
 		       COALESCE(s.credential_id, '') AS credential_id,
-		       CONCAT_WS(' ', h.first_name, h.last_name) AS holder_name,
+		       c.fabric_cred_id,
 		       h.holder_id,
-		       COALESCE(c.credential_type, '') AS credential_type,
 		       COALESCE(i.full_name, '') AS issuer,
 		       s.subscribed_at,
 		       s.expiry_date,
@@ -117,8 +117,8 @@ func getSubscriptions(page, limit int) ([]SubscriptionRow, error) {
 	out := []SubscriptionRow{}
 	for rows.Next() {
 		var r SubscriptionRow
-		if err := rows.Scan(&r.SubscriptionID, &r.CredentialID, &r.HolderName, &r.HolderID,
-			&r.CredentialType, &r.Issuer, &r.SubscribedAt, &r.ExpiryDate, &r.Status); err != nil {
+		if err := rows.Scan(&r.SubscriptionID, &r.CredentialID, &r.FabricCredID, &r.HolderID,
+			&r.Issuer, &r.SubscribedAt, &r.ExpiryDate, &r.Status); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -167,13 +167,10 @@ func getMobileSubscriptions(emiratesID string) ([]MobileSubscriptionRow, error) 
 	if db == nil {
 		return nil, fmt.Errorf("database not configured")
 	}
-	// credential_type is not stored on the subscription row (insertSubscription
-	// leaves it NULL), so derive it from the linked credential — same as the
-	// portal getSubscriptions query. Fall back to the column, then "".
 	rows, err := db.Query(`
 		SELECT s.subscription_id,
 		       COALESCE(s.credential_id, '') AS credential_id,
-		       COALESCE(c.credential_type, s.credential_type, '') AS credential_type,
+		       COALESCE(c.fabric_cred_id, '') AS fabric_cred_id,
 		       COALESCE(v.full_name, 'Unknown Verifier') AS verifier_name,
 		       s.status,
 		       s.created_at
@@ -191,7 +188,7 @@ func getMobileSubscriptions(emiratesID string) ([]MobileSubscriptionRow, error) 
 	out := []MobileSubscriptionRow{}
 	for rows.Next() {
 		var r MobileSubscriptionRow
-		if err := rows.Scan(&r.SubscriptionID, &r.CredentialID, &r.CredentialType, &r.VerifierName, &r.Status, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.SubscriptionID, &r.CredentialID, &r.FabricCredID, &r.VerifierName, &r.Status, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		if r.Status == "active" {
