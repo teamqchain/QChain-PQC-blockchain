@@ -141,7 +141,10 @@ class ApiService {
       throw StateError('ML-KEM private key not found on this device');
     }
     try {
-      final attrs = CryptoService.decryptEnvelope(envelope, kemPrivHex);
+      final attrs = CryptoService.takeFieldSalts(
+        credentialID,
+        CryptoService.decryptEnvelope(envelope, kemPrivHex),
+      );
       logDebug(
         '[ApiService] fetchAndDecryptAttributes success: ${attrs.length} fields',
       );
