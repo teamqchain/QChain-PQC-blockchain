@@ -33,7 +33,7 @@ const DSA_PUBLIC_KEY_HEX_LENGTH = 2624; // ML-DSA-44 public key, 1312 bytes
 const HEX = /^[0-9a-fA-F]+$/;
 const HASH_HEX = /^[0-9a-f]{64}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const ISSUED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const ISSUED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$/;
 const CID = /^[A-Za-z0-9]{10,128}$/;
 
 class QChaincode extends Contract {
@@ -253,7 +253,8 @@ class QChaincode extends Contract {
         }
     }
 
-    // Transaction time (identical on every endorser), second precision, UTC.
+    // Transaction time (identical on every endorser), second precision. Always UTC:
+    // Fabric's deterministic tx timestamp is UTC on every endorsing peer.
     _txISO(ctx) {
         return ctx.stub.getDateTimestamp().toISOString().replace(/\.\d{3}Z$/, 'Z');
     }
@@ -377,7 +378,7 @@ class QChaincode extends Contract {
     // would differ between the two endorsing peers.
     _requireIssuedAt(ctx, issuedAt) {
         if (typeof issuedAt !== 'string' || !ISSUED_AT.test(issuedAt)) {
-            throw new Error('issuedAt must be RFC3339 UTC with second precision (YYYY-MM-DDTHH:MM:SSZ)');
+            throw new Error('issuedAt must be RFC3339 with second precision (e.g. 2026-09-24T10:15:30+04:00 or …Z)');
         }
         const issuedMs = Date.parse(issuedAt);
         if (Number.isNaN(issuedMs)) {

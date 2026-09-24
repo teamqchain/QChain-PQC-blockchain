@@ -104,6 +104,16 @@ test('bindHolderKeys validates key lengths', async () => {
     await assert.rejects(cc.bindHolderKeys(ctx, 'H-0404', KEM, DSA), /Holder not found/);
 });
 
+test('issueCredential accepts a local-offset issuedAt (not just Z)', async () => {
+    const { cc, ctx } = await setup();
+    // 10:00:00+04:00 is the same instant as NOW (2026-09-24T06:00:00.456Z),
+    // well inside the 300s skew window — Dubai local time must be accepted.
+    const res = await issue(cc, ctx, { issuedAt: '2026-09-24T10:00:00+04:00' });
+    assert.equal(res.success, true);
+    const rec = JSON.parse(await cc.getCredential(ctx, res.credentialID));
+    assert.equal(rec.IssuedAt, '2026-09-24T10:00:00+04:00');
+});
+
 test('issueCredential stores a v2 record with no credential body', async () => {
     const { cc, ctx } = await setup();
     const res = await issue(cc, ctx);
@@ -126,8 +136,9 @@ test('issueCredential rejects bad input', async () => {
     const cases = [
         [{ holderID: 'H-0404' }, /Holder not found/],
         [{ credentialType: ' ' }, /credentialType/],
-        [{ issuedAt: '2026-09-24T10:00:00+04:00' }, /issuedAt must be RFC3339 UTC/],
+        [{ issuedAt: '2026-09-24 06:00:00Z' }, /issuedAt must be RFC3339/],
         [{ issuedAt: '2026-09-24T05:50:00Z' }, /away from the transaction time/],
+        [{ issuedAt: '2026-09-24T09:50:00+04:00' }, /away from the transaction time/], // same instant as 05:50Z, still >300s away
         [{ expiryDate: '30 Jun 2030' }, /expiryDate must be/],
         [{ expiryDate: '2030-02-30' }, /not a valid date/],
         [{ issuerOrgID: 'GovernmentMSP' }, /does not match/],

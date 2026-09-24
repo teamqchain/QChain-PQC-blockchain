@@ -186,8 +186,10 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Sign the commitment and write it to the chain.
-	issuedAtTime := time.Now().UTC().Truncate(time.Second)
+	// 4. Sign the commitment and write it to the chain. Dubai local time, like
+	// every other timestamp this API returns — the chaincode's skew check
+	// compares absolute instants, so any timezone offset works correctly.
+	issuedAtTime := time.Now().In(mustLoadLocation("Asia/Dubai")).Truncate(time.Second)
 	commitment := CredentialCommitment{
 		HolderID:       fabricHolderID,
 		CredentialType: credentialType,
@@ -266,7 +268,7 @@ func handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		"holderID":       holderID,
 		"credentialHash": credentialHash,
 		"ipfsCID":        cid,
-		"issuedAt":       FormatISO(issuedAtTime.In(mustLoadLocation("Asia/Dubai"))),
+		"issuedAt":       FormatISO(issuedAtTime),
 		"expiryDate":     expiryOut,
 	})
 }
