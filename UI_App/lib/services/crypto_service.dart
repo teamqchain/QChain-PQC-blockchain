@@ -345,7 +345,7 @@ class CryptoService {
   };
 
   /// Body attributes only — keys that can match on-chain FieldHashes.
-  /// Drops UI metadata and normalizes values for Go `fmt.Sprintf("%v", …)`.
+  /// Drops UI metadata, reserved `_`-prefixed keys, and normalizes values.
   static Map<String, dynamic> bodyDisclosedFields(
     Map<String, dynamic> attributes, {
     Set<String> hiddenKeys = const {},
@@ -353,12 +353,76 @@ class CryptoService {
     final out = <String, dynamic>{};
     attributes.forEach((k, v) {
       if (k.isEmpty) return;
+      if (k.startsWith('_')) return;
       if (presentationMetadataKeys.contains(k)) return;
       if (hiddenKeys.contains(k)) return;
       out[k] = _normalizeFieldValue(v);
     });
     return out;
   }
+
+  // ── Field salts (source-of-truth backend) ──────────────────────────────────
+  // Every credential envelope carries one reserved encrypted field, `_salts`,
+  // whose plaintext is {"<field key>": "<32 lowercase hex salt>"}. On-chain
+  // FieldHashes are SHA3-256(salt + ":" + key + ":" + value), so a verifier can
+  // only check a disclosed value if the holder also sends that field's salt.
+  // Salts live in memory only (like the decrypted plaintext) and are never shown.
+
+  /// Reserved envelope field that carries the per-field salts.
+  static const saltsFieldKey = '_salts';
+
+  /// credentialID (trimmed) -> {field key -> salt}. Filled on decrypt.
+  static final Map<String, Map<String, String>> _fieldSalts = {};
+
+  /// Removes `_salts` (and any other `_`-prefixed key) from freshly decrypted
+  /// attributes, caches the salts for [credentialID], and returns the same map
+  /// so every display path only ever sees real credential fields.
+  static Map<String, dynamic> takeFieldSalts(
+    String credentialID,
+    Map<String, dynamic> decrypted,
+  ) {
+    final raw = decrypted.remove(saltsFieldKey);
+    decrypted.removeWhere((k, _) => k.startsWith('_'));
+    final salts = <String, String>{};
+    if (raw is Map) {
+      raw.forEach((k, v) {
+        if (k != null && v != null) salts[k.toString()] = v.toString();
+      });
+    }
+    final id = credentialID.trim();
+    if (id.isNotEmpty) {
+      if (salts.isEmpty) {
+        _fieldSalts.remove(id);
+      } else {
+        _fieldSalts[id] = salts;
+      }
+    }
+    return decrypted;
+  }
+
+  /// Salts for exactly the disclosed [bodyKeys] of [credentialID].
+  /// Throws if the credential has not been decrypted in this app session, or if
+  /// any disclosed key has no salt (the backend would reject the presentation).
+  static Map<String, String> saltsForDisclosure(
+    String credentialID,
+    Iterable<String> bodyKeys,
+  ) {
+    final cached = _fieldSalts[credentialID.trim()];
+    final out = <String, String>{};
+    for (final k in bodyKeys) {
+      final salt = cached?[k];
+      if (salt == null || salt.isEmpty) {
+        throw StateError(
+          'Field salts unavailable — reopen the credential to decrypt it',
+        );
+      }
+      out[k] = salt;
+    }
+    return out;
+  }
+
+  /// Forgets all cached salts. Used by unit tests.
+  static void clearFieldSalts() => _fieldSalts.clear();
 
   /// Match Go `fmt.Sprintf("%v", v)` for common JSON scalars so
   /// SHA3-256(field + ":" + value) equals issuance FieldHashes.
@@ -399,18 +463,20 @@ class CryptoService {
 
   /// Build disclosed payload, hash, and sign for Track H presentation.
   ///
-  /// Wire shape matches resolveSession:
+  /// Wire shape matches resolveSession (keys sorted by canonicalJsonEncode):
   /// ```json
-  /// { "credentialID", "disclosedFields": { body… }, "timestamp" }
+  /// { "credentialID", "disclosedFields": { body… }, "salts": { key: salt },
+  ///   "timestamp" }
   /// ```
   /// `credentialID` is plain text inside the signed JSON (not per-field hashed).
   /// That binds the presentation to one credential so a signature over shared
   /// field values cannot be applied to a different credentialID.
+  /// `salts` carries the salt of every disclosed field (and only those).
   ///
   /// Backend verifies:
   /// - payload.credentialID is present and matches the session target
   /// - holderSig = ML-DSA over SHA3-256(this JSON string) as hex UTF-8
-  /// - each disclosedFields[k] vs on-chain FieldHashes[k]
+  /// - each SHA3-256(salt + ":" + key + ":" + value) vs on-chain FieldHashes[key]
   static Future<({String disclosedPayloadJson, String holderSignatureHex})>
       buildSignedDisclosedPayload({
     required String credentialID,
@@ -429,9 +495,10 @@ class CryptoService {
       throw StateError('ML-DSA private key not found on this device');
     }
 
-    // Strip metadata if a caller still passed mixed maps.
+    // Strip metadata and reserved `_` keys if a caller still passed mixed maps.
     final bodyOnly = <String, dynamic>{};
     disclosedFields.forEach((k, v) {
+      if (k.startsWith('_')) return;
       if (presentationMetadataKeys.contains(k)) return;
       bodyOnly[k] = _normalizeFieldValue(v);
     });
@@ -442,11 +509,15 @@ class CryptoService {
       );
     }
 
+    // One salt per disclosed field — never the salts of hidden fields.
+    final salts = saltsForDisclosure(trimmedCredID, bodyOnly.keys);
+
     // Plain credentialID is intentional: public lookup id, cryptographically
     // bound because the holder signs SHA3-256(canonical JSON of this object).
     final disclosedPayload = <String, dynamic>{
       'credentialID': trimmedCredID,
       'disclosedFields': bodyOnly,
+      'salts': salts,
       'timestamp': DateTime.now().toIso8601String(),
     };
     final payloadJson = canonicalJsonEncode(disclosedPayload);
