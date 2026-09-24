@@ -178,7 +178,7 @@ class _SplashScreenState extends State<SplashScreen>
                       ]
                     ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 8),
                   // Manual IPA/build label — bump kAppBuildNumber in app_config.dart
                   Text(
                     'Build $kAppBuildNumber',
@@ -189,7 +189,6 @@ class _SplashScreenState extends State<SplashScreen>
                       letterSpacing: 0.3,
                     ),
                   ),
-                  const SizedBox(height: 40),
                 ],
               ),
             ),
