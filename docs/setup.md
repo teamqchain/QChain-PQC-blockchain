@@ -333,13 +333,18 @@ This will print an instant, free public URL in your terminal:
 
 Give `https://random-words-here.trycloudflare.com` to your frontend developer to use as the `API_BASE_URL`.
 
-## 9. Frontend Setup (Flutter Web Apps)
+## 9. Frontend Setup
 
-The repository includes two Flutter web applications:
-- **QPortal (`UI_WebApp`)**: Web portal for Issuers, Verifiers, and IT Administrators.
-- **QWallet (`UI_App`)**: Web & Mobile wallet for credential holders to view, store, and present credentials.
+The repository includes:
+- **QPortal (`UI_WebApp`)**: a Flutter **web** app for Issuers, Verifiers, and IT Administrators.
+- **QWallet (`UI_App`)**: a Flutter **mobile-only** app for credential holders to view, store, and
+  present credentials. It cannot run in a browser — its ML-KEM-768/ML-DSA-44 key pair is generated and
+  held only on-device (a browser build would mean a different key pair per browser/device, breaking the
+  one-key-pair-per-holder model), and its PQC library (`liboqs`) uses `dart:ffi`, which doesn't exist in
+  a browser at all. Run it on a device/emulator with `flutter run`, or build an install
+  (`flutter build apk` / `flutter build ios`).
 
-You can run them either locally on your development machine using Flutter or directly via Docker.
+You can run QPortal either locally on your development machine using Flutter or directly via Docker.
 
 ---
 
@@ -357,10 +362,12 @@ cd UI_WebApp
 flutter pub get
 flutter run -d chrome
 
-# In a separate terminal, run QWallet (Holder App)
+# In a separate terminal, run QWallet (Holder App) on a connected device/emulator —
+# QWallet cannot target chrome/web, see the note above.
 cd UI_App
 flutter pub get
-flutter run -d chrome
+flutter devices        # pick a device id
+flutter run -d <device-id>
 ```
 
 #### 2. Connected to Remote Backend (via Cloudflare Tunnel URL)
@@ -373,15 +380,16 @@ cd UI_WebApp
 flutter pub get
 flutter run -d chrome --dart-define=API_BASE_URL=https://<your-tunnel-name>.trycloudflare.com
 
-# Run QWallet
+# Run QWallet (device/emulator)
 cd UI_App
 flutter pub get
-flutter run -d chrome --dart-define=API_BASE_URL=https://<your-tunnel-name>.trycloudflare.com
+flutter run -d <device-id> --dart-define=API_BASE_URL=https://<your-tunnel-name>.trycloudflare.com
 ```
 
 #### 3. VS Code One-Click Launch Configuration (`launch.json`)
 
-To run and debug directly in VS Code, create or edit `.vscode/launch.json`:
+To run and debug directly in VS Code, create or edit `.vscode/launch.json`. QWallet's `deviceId` is
+machine-specific (run `flutter devices` and use the id it prints) since it can't target `chrome`/web:
 
 ```json
 {
@@ -409,14 +417,14 @@ To run and debug directly in VS Code, create or edit `.vscode/launch.json`:
       "cwd": "UI_App",
       "request": "launch",
       "type": "dart",
-      "deviceId": "chrome"
+      "deviceId": "<your-device-id>"
     },
     {
       "name": "QWallet (Cloudflare)",
       "cwd": "UI_App",
       "request": "launch",
       "type": "dart",
-      "deviceId": "chrome",
+      "deviceId": "<your-device-id>",
       "toolArgs": [
         "--dart-define=API_BASE_URL=https://<your-tunnel-name>.trycloudflare.com"
       ]
@@ -427,14 +435,16 @@ To run and debug directly in VS Code, create or edit `.vscode/launch.json`:
 
 ---
 
-### Method B: Running via Docker Web Gateway (Zero-Install)
+### Method B: Running QPortal via Docker Web Gateway (Zero-Install)
 
-If you don't have Flutter installed locally, you can compile and serve both web apps using the `web-gateway` Docker container on the host/VM:
+If you don't have Flutter installed locally, you can compile and serve QPortal using the `web-gateway`
+Docker container on the host/VM (QWallet isn't part of this image — see the note at the top of this
+section; run it with Flutter directly, per Method A):
 
 ```bash
 cd $REPO_ROOT
 
-# 1. Build gateway container (builds both Flutter apps in Docker)
+# 1. Build gateway container (builds QPortal in Docker)
 # For Cloudflare Tunnel, set the public URL:
 export API_BASE_URL="https://<your-tunnel-name>.trycloudflare.com/api"
 bash web-gateway/docker-build.sh
@@ -444,4 +454,3 @@ bash web-gateway/docker-run.sh
 ```
 
 - **QPortal URL:** `http://localhost:8090/` (or `https://<your-tunnel>.trycloudflare.com/`)
-- **QWallet URL:** `http://localhost:8090/wallet/` (or `https://<your-tunnel>.trycloudflare.com/wallet/`)

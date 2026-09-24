@@ -42,7 +42,7 @@ sleep 2
 STATUS=$(docker inspect --format '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "unknown")
 echo ""
 echo "Container : $CONTAINER_NAME  ($STATUS)"
-echo "Listens   : http://localhost:8090   (portal /, wallet /wallet/, api /api/)"
+echo "Listens   : http://localhost:8090   (portal /, api /api/)"
 echo "Health    : curl -s http://localhost:8090/gw-health   # → ok"
 echo "Logs      : docker logs -f $CONTAINER_NAME"
 echo ""

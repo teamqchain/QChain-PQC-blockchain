@@ -211,7 +211,8 @@ The record must have `CommitmentVersion: 2`, `CID`, `FieldHashes` and `ExpiryDat
 
 ## 15. Frontend
 
-Rebuild the web-gateway so both web apps include the merged QWallet change:
+Rebuild the web-gateway (QPortal only — QWallet is mobile-only and ships separately, not part of this
+image):
 
 ```bash
 export API_BASE_URL="https://qchain.tail4fff4b.ts.net/api"
@@ -219,7 +220,7 @@ bash web-gateway/docker-build.sh && bash web-gateway/docker-run.sh
 ```
 
 Holders must restart QWallet (credential IDs restart at `CRED-0001`, and a restart clears the in-memory
-salt cache). Natively installed wallet builds must be rebuilt and reinstalled.
+salt cache). Installed wallet builds must be rebuilt and reinstalled by whoever owns that build.
 
 ## 16. Demo data and manual check
 

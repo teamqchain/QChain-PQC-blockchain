@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run ONCE on the VM to expose the QChain web-gateway publicly via Tailscale
-# Funnel. After this, https://<vm>.<tailnet>.ts.net serves the portal (/), the
-# wallet (/wallet/) and the API (/api/).
+# Funnel. After this, https://<vm>.<tailnet>.ts.net serves QPortal (/) and the
+# API (/api/). QWallet is mobile-only and isn't part of this gateway.
 #
 # Why this is "set and forget": the tailscaled system service keeps the tunnel
 # alive across crashes and reboots and re-applies this Funnel config on its own.
@@ -73,13 +73,12 @@ fi
 
 # ── 5. Print the permanent public address ────────────────────────────────────
 echo ""
-echo "── Public address (share these two links) ──"
+echo "── Public address (share this link) ──"
 SELF_HOST="$(tailscale status --json 2>/dev/null \
     | python3 -c 'import sys,json; print(json.load(sys.stdin).get("Self",{}).get("DNSName","").rstrip("."))' 2>/dev/null || true)"
 if [[ -n "$SELF_HOST" ]]; then
     ok "Portal : https://${SELF_HOST}/"
-    ok "Wallet : https://${SELF_HOST}/wallet/"
-    echo "       (the apps call the API at https://${SELF_HOST}/api — already baked in)"
+    echo "       (the app calls the API at https://${SELF_HOST}/api — already baked in)"
     echo ""
     echo "  Verify:  curl -s https://${SELF_HOST}/gw-health      # → ok"
     echo "           curl -s https://${SELF_HOST}/api/health     # → {\"status\":\"ok\"}"

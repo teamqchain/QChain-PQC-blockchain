@@ -28,11 +28,14 @@ links in any browser — nothing to install:
 | App | What it is | Link |
 |-----|-----------|------|
 | **QPortal** | Issuer / Verifier / IT-Admin web portal | **https://qchain.tail4fff4b.ts.net/** |
-| **QWallet** | Credential holder app (web build) | **https://qchain.tail4fff4b.ts.net/wallet/** |
 
 > ⚠️ **It's a live demo, not production.** It runs on a single shared VM, so it may be offline at times,
 > the demo database is shared by everyone, and access is open to anyone with the link. The very first
 > page load can take a few seconds while the browser downloads the app's rendering engine.
+
+> **QWallet is a mobile install, not a web app.** Its ML-KEM-768/ML-DSA-44 key pair is generated and
+> held only on-device, so a browser build (a different key pair per browser/device) would break the
+> one-key-pair-per-holder model — and its PQC library can't compile for web at all regardless.
 
 ---
 
@@ -71,7 +74,7 @@ The system has three faces:
                                         │
                                         ▼
                           web-gateway  (Nginx container, :8090)
-              /  → QPortal (web)      /wallet/ → QWallet (web)      /api/ → backend
+                       /  → QPortal (web)      /api/ → backend
                                         │  (same origin — no CORS, no mixed content)
                                         ▼
                             Go REST API   ·   offchain/   ·   :3000
@@ -104,7 +107,7 @@ The system has three faces:
 | Off-chain storage | IPFS / Kubo (credential envelope encrypted to the holder, referenced on-chain by CID) |
 | Backend | Go 1.24 REST API (`offchain/`) · `fabric-gateway`, `go-ipfs-api`, `go-sql-driver/mysql` |
 | Database | MySQL (`qchain_db`) for ID mappings, contact details, sessions, verification logs, subscriptions, alerts, audit |
-| Frontend | Flutter 3.44.x (Dart ≥ 3.10) — QPortal (web) + QWallet (mobile + web) |
+| Frontend | Flutter 3.44.x (Dart ≥ 3.10) — QPortal (web) + QWallet (mobile only) |
 | Public gateway | Nginx reverse proxy (`web-gateway/`) serving both apps + proxying the API on one origin |
 | Public access | Tailscale Funnel (permanent `*.ts.net` HTTPS URL, runs as a system service) |
 
@@ -150,7 +153,7 @@ QChain-PQC-blockchain/
 ├── UI_App/                     # QWallet — Flutter app (holder); builds to mobile + web
 ├── shared/                     # Flutter package shared by both apps (certificate template/viewer, fonts)
 │
-├── web-gateway/                # One Nginx container: builds both web apps + proxies /api
+├── web-gateway/                # One Nginx container: builds QPortal + proxies /api
 │   ├── Dockerfile  nginx.conf  docker-build.sh  docker-run.sh  README.md
 │
 ├── tests/
@@ -286,24 +289,30 @@ bash qchain-network/scripts/setup-demo.sh http://localhost:3000
 
 ### 7. Frontends
 
-**Recommended — the web gateway** builds both apps and serves them on one origin (port 8090):
+**QPortal — recommended: the web gateway**, served on port 8090:
 
 ```bash
 export API_BASE_URL="http://localhost:3000"      # or your public Funnel URL + /api
 bash web-gateway/docker-build.sh && bash web-gateway/docker-run.sh
-# → portal http://localhost:8090/   ·   wallet http://localhost:8090/wallet/
+# → portal http://localhost:8090/
 ```
 
-The backend URL is **baked in at build time** via `--dart-define=API_BASE_URL=…` (both apps read
-`kApiBaseUrl = String.fromEnvironment('API_BASE_URL')`), so rebuild the gateway if that URL changes.
-
-**Or run the apps directly with Flutter** (development):
+**Or run QPortal directly with Flutter** (development):
 
 ```bash
 cd UI_WebApp && flutter pub get && flutter run -d chrome \
-  --dart-define=API_BASE_URL=http://localhost:3000          # QPortal
-cd ../UI_App && flutter pub get && flutter run \
-  --dart-define=API_BASE_URL=http://localhost:3000          # QWallet (device/emulator)
+  --dart-define=API_BASE_URL=http://localhost:3000
+```
+
+The backend URL is **baked in at build time** via `--dart-define=API_BASE_URL=…` (the app reads
+`kApiBaseUrl = String.fromEnvironment('API_BASE_URL')`), so rebuild if that URL changes.
+
+**QWallet is mobile-only** — it isn't served by the web gateway (see the note under Live Demo above).
+Run it on a device/emulator or build an install:
+
+```bash
+cd UI_App && flutter pub get && flutter run \
+  --dart-define=API_BASE_URL=http://localhost:3000          # device/emulator
 # Build a QWallet Android APK:  flutter build apk --release --dart-define=API_BASE_URL=...
 ```
 
@@ -315,7 +324,7 @@ curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up --operator=$USER --hostname=qchain
 # in the Tailscale admin console: enable HTTPS certificates + Funnel for this node, then:
 bash qchain-network/scripts/setup-tailscale-funnel.sh        # maps public 443 → :8090
-# share https://<machine>.<tailnet>.ts.net/  and  /wallet/   ·   take offline: tailscale funnel --https=443 off
+# share https://<machine>.<tailnet>.ts.net/   ·   take offline: tailscale funnel --https=443 off
 ```
 
 > Because the apps bake in the API URL, build the gateway with `API_BASE_URL=https://<machine>.<tailnet>.ts.net/api`

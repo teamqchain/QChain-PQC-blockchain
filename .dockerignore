@@ -3,10 +3,12 @@
 # =============================================================================
 # This file is read by Docker for any build whose CONTEXT is the repo root.
 # The only such build is the web-gateway image (web-gateway/Dockerfile), which
-# needs just UI_WebApp/, UI_App/, shared/ (a path dependency of both apps) and
-# web-gateway/. Everything listed here is
-# kept OUT of the build context so the upload to the Docker daemon stays small
-# and so VM-only runtime/secret material (crypto, wallets, .env) is never sent.
+# needs just UI_WebApp/, shared/ (a path dependency of UI_WebApp) and
+# web-gateway/. UI_App (QWallet) is excluded below — it ships as a mobile
+# install only, never a web build (see web-gateway/Dockerfile for why).
+# Everything listed here is kept OUT of the build context so the upload to
+# the Docker daemon stays small and so VM-only runtime/secret material
+# (crypto, wallets, .env) is never sent.
 #
 # NOTE: the per-component builds (offchain/, UI_App/, UI_WebApp/) use their own
 # context directories and their own .dockerignore files — this root file does
@@ -24,13 +26,14 @@ algo-benchmarking
 assets
 docs
 
+# QWallet — mobile-only now, never built here.
+UI_App
+
 # Top-level docs / license (not copied into the image).
 *.md
 LICENSE
 
 # Local Flutter build artifacts and caches — we build fresh inside the image.
-UI_App/build
-UI_App/.dart_tool
 UI_WebApp/build
 UI_WebApp/.dart_tool
 
