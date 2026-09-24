@@ -5,10 +5,10 @@ package main
 // Two independent guarantees are built here:
 //   • Authenticity — every credential hash is SIGNED with the org's ML-DSA-44
 //     (post-quantum) private key, so a verifier can prove the org issued it.
-//   • Integrity   — a SHA3-256 hash of the canonical credential JSON detects any
-//     later tampering.
-// The IPFS upload helper also lives here because storing the canonical JSON off
-// -chain (addressed by its content hash / CID) is part of the same issuance step.
+//   • Integrity   — SHA3-256 hashes (see commitment.go for what is hashed) detect
+//     any later tampering.
+// The IPFS helpers also live here: the encrypted credential envelope is stored
+// on IPFS and addressed by its CID, which the chain records and the issuer signs.
 //
 // ML-DSA-44 comes from liboqs via CGo (Go calling a C library). That C dependency
 // is why the Docker image takes longer to build the first time.
@@ -16,8 +16,10 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"io"
+	"regexp"
+	"time"
 
 	shell "github.com/ipfs/go-ipfs-api"
 	"github.com/open-quantum-safe/liboqs-go/oqs"
@@ -77,33 +79,47 @@ func sha3Hex(data string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-// credentialCanonicalJSON builds a deterministic JSON string from the credential
-// payload fields. Go marshals map[string]string keys in sorted order, giving
-// canonical output (the same inputs always produce byte-identical JSON, which is
-// essential for the hash to be reproducible at verification time).
-func credentialCanonicalJSON(holderID, credentialType, info, issuedAt, issuerOrgIDVal string) (string, error) {
-	payload := map[string]string{
-		"credentialType": credentialType,
-		"holderID":       holderID,
-		"info":           info,
-		"issuedAt":       issuedAt,
-		"issuerOrgID":    issuerOrgIDVal,
-	}
-	b, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
+// ipfsTimeout bounds every IPFS call so a stalled daemon fails the request
+// instead of hanging it.
+const ipfsTimeout = 15 * time.Second
+
+// maxEnvelopeBytes caps what catFromIPFS will read (a 64-field envelope is well
+// under 100 KB).
+const maxEnvelopeBytes = 1 << 20
+
+// cidPattern accepts CIDv0 ("Qm…", base58) and base32 CIDv1 ("b…") strings, and
+// nothing that could be read as an IPFS path or option.
+var cidPattern = regexp.MustCompile(`^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{20,100})$`)
 
 // uploadJSONToIPFS uploads raw JSON bytes to IPFS and returns the CID.
-// Returns ("", nil) if IPFS upload is skipped (host not reachable) so that
-// issuance can still proceed.
 func uploadJSONToIPFS(jsonBytes []byte) (string, error) {
 	sh := shell.NewShell(ipfsHost)
+	sh.SetTimeout(ipfsTimeout)
 	cid, err := sh.Add(bytes.NewReader(jsonBytes))
 	if err != nil {
 		return "", fmt.Errorf("IPFS upload: %w", err)
 	}
 	return cid, nil
+}
+
+// catFromIPFS reads the content stored under cid (at most maxEnvelopeBytes).
+func catFromIPFS(cid string) ([]byte, error) {
+	if !cidPattern.MatchString(cid) {
+		return nil, fmt.Errorf("invalid IPFS CID %q", cid)
+	}
+	sh := shell.NewShell(ipfsHost)
+	sh.SetTimeout(ipfsTimeout)
+	rc, err := sh.Cat(cid)
+	if err != nil {
+		return nil, fmt.Errorf("IPFS cat %s: %w", cid, err)
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(io.LimitReader(rc, maxEnvelopeBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("IPFS read %s: %w", cid, err)
+	}
+	if len(data) > maxEnvelopeBytes {
+		return nil, fmt.Errorf("IPFS content %s exceeds %d bytes", cid, maxEnvelopeBytes)
+	}
+	return data, nil
 }

@@ -9,10 +9,12 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 )
 
 // POST /requestSubscription — verifier asks to monitor a credential (status: pending).
+// The revoked check uses the on-chain status.
 func handleRequestSubscription(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		CredentialID string `json:"credentialID"`
@@ -25,7 +27,7 @@ func handleRequestSubscription(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing credentialID")
 		return
 	}
-	cred, err := getCredentialDetail(req.CredentialID)
+	ref, err := credentialRefByID(req.CredentialID)
 	if err == sql.ErrNoRows {
 		writeError(w, http.StatusNotFound, "credential not found")
 		return
@@ -34,11 +36,20 @@ func handleRequestSubscription(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
 	}
+	cred, _, err := chainReadCredential(ref.FabricCredID, viewSummary)
+	if errors.Is(err, errChainNotFound) {
+		writeError(w, http.StatusNotFound, "credential not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "blockchain read failed: "+err.Error())
+		return
+	}
 	if cred.Status == "revoked" {
 		writeError(w, http.StatusBadRequest, "cannot subscribe to a revoked credential")
 		return
 	}
-	exists, err := activeSubscriptionExists(req.CredentialID)
+	exists, err := activeSubscriptionExists(ref.CredentialID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
@@ -48,7 +59,7 @@ func handleRequestSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	subID := generateSubscriptionID()
-	if err := insertSubscription(subID, req.CredentialID, cred.HolderID); err != nil {
+	if err := insertSubscription(subID, ref.CredentialID, ref.HolderID); err != nil {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
 	}
@@ -56,6 +67,7 @@ func handleRequestSubscription(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /getSubscriptions?page=1&limit=100 — list subscriptions for the portal table.
+// Credential type and holder name are read from the chain.
 func handleGetSubscriptions(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	page := parsePositiveInt(q.Get("page"), 1)
@@ -65,14 +77,24 @@ func handleGetSubscriptions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
 	}
+	fabricIDs := make([]string, 0, len(rows))
+	for _, s := range rows {
+		fabricIDs = append(fabricIDs, s.FabricCredID)
+	}
+	snap, err := chainReadCredentials(fabricIDs, viewSummary)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "blockchain read failed: "+err.Error())
+		return
+	}
 	out := make([]map[string]any, 0, len(rows))
 	for _, s := range rows {
+		credentialType, holderName := credentialLabel(snap, s.FabricCredID)
 		out = append(out, map[string]any{
 			"id":             s.SubscriptionID,
 			"credentialID":   s.CredentialID,
-			"holderName":     s.HolderName,
+			"holderName":     holderName,
 			"holderID":       s.HolderID,
-			"credentialType": s.CredentialType,
+			"credentialType": credentialType,
 			"issuer":         s.Issuer,
 			"subscribedDate": NullDateDisplay(s.SubscribedAt, "—"),
 			"expiryDate":     NullDateDisplay(s.ExpiryDate, "—"),
