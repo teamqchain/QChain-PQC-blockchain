@@ -1,9 +1,9 @@
 package main
 
 // db_mobile.go — MySQL access for the QWallet features: OTP/QR `mobile_sessions`,
-// the issuer/service `catalog_*` tables, the holder's in-wallet credential list
-// and activity feed, the favourite toggle, and fetchDocument (which pulls
-// matching credentials into the wallet).
+// the issuer/service `catalog_*` tables, the holder's in-wallet credential refs
+// and activity feed, the favourite toggle, and the fetchDocument helpers (the
+// credential-type match itself runs in Go on the on-chain type).
 
 import (
 	"database/sql"
@@ -152,62 +152,41 @@ func getCatalogRows() ([]CatalogIssuerRow, error) {
 
 // ─── MOBILE CREDENTIAL QUERIES ───────────────────────────────────────────────
 
-// MobileCredentialRow is the wallet projection. issuedBy is the organisation name
-// (catalog_issuers), not the staff member who issued it.
-type MobileCredentialRow struct {
-	CredentialID   string
-	CredentialType string
-	IssuedAt       time.Time
-	ExpiryDate     sql.NullTime
-	Status         string
-	IsFavorite     bool
-	Category       string
-	CredentialData string
-	Signature      string
-	FabricCredID   string
-	IPFSCID        string
-	PublicKey      string
-	IssuerName     string
-	HolderName     string
-	HolderEID      string
+// MobileCredentialRef is the MySQL-only side of a wallet credential. Type,
+// status, dates, holder name and CID come from the chain (see mobile.go).
+// IssuerName is the organisation name (catalog_issuers), not a staff member.
+type MobileCredentialRef struct {
+	CredentialID string
+	FabricCredID string
+	IsFavorite   bool
+	Category     string
+	IssuerName   string
+	HolderEID    string
 }
 
-// getMobileCredentials returns the in-wallet credentials for a holder (newest first).
-func getMobileCredentials(emiratesID string) ([]MobileCredentialRow, error) {
+// getMobileCredentialRefs returns the holder's in-wallet credentials.
+func getMobileCredentialRefs(emiratesID string) ([]MobileCredentialRef, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database not configured")
 	}
 	rows, err := db.Query(`
-		SELECT c.credential_id, c.credential_type, c.issued_at, c.expiry_date,
-		       c.status, c.is_favorite, c.category,
-		       COALESCE(c.credential_data, '{}') AS credential_data,
-		       COALESCE(c.issuer_signature, '') AS signature,
-		       COALESCE(c.fabric_cred_id, '') AS fabric_cred_id,
-		       COALESCE(c.ipfs_cid, '') AS ipfs_cid,
-		       COALESCE(c.issuer_public_key, '') AS public_key,
+		SELECT c.credential_id, c.fabric_cred_id, c.is_favorite, c.category,
 		       COALESCE(org.name, 'Unknown Organization') AS issuer_name,
-		       CONCAT_WS(' ', h.first_name, h.last_name) AS holder_name,
 		       h.emirates_id
 		  FROM credentials c
 		  JOIN holders h ON c.holder_id = h.holder_id
 		  LEFT JOIN catalog_issuers org ON c.org_id = org.id
 		 WHERE h.emirates_id = ?
-		   AND c.in_wallet = 1
-		 ORDER BY c.issued_at DESC`, emiratesID)
+		   AND c.in_wallet = 1`, emiratesID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []MobileCredentialRow{}
+	out := []MobileCredentialRef{}
 	for rows.Next() {
-		var r MobileCredentialRow
+		var r MobileCredentialRef
 		var isFav int
-		if err := rows.Scan(
-			&r.CredentialID, &r.CredentialType, &r.IssuedAt, &r.ExpiryDate,
-			&r.Status, &isFav, &r.Category, &r.CredentialData,
-			&r.Signature, &r.FabricCredID, &r.IPFSCID, &r.PublicKey,
-			&r.IssuerName, &r.HolderName, &r.HolderEID,
-		); err != nil {
+		if err := rows.Scan(&r.CredentialID, &r.FabricCredID, &isFav, &r.Category, &r.IssuerName, &r.HolderEID); err != nil {
 			return nil, err
 		}
 		r.IsFavorite = isFav == 1
@@ -239,14 +218,15 @@ func toggleFavorite(credentialID, holderEID string) error {
 	return nil
 }
 
-// MobileActivityRow is one entry in the wallet activity feed.
+// MobileActivityRow is one entry in the wallet activity feed. The credential
+// name comes from the chain via FabricCredID.
 type MobileActivityRow struct {
-	EventID        int64
-	EventType      string
-	CredentialID   string
-	CredentialType string
-	ActorName      string
-	CreatedAt      time.Time
+	EventID      int64
+	EventType    string
+	CredentialID string
+	FabricCredID string
+	ActorName    string
+	CreatedAt    time.Time
 }
 
 // getMobileActivity returns up to 100 recent credential events for a holder.
@@ -256,7 +236,7 @@ func getMobileActivity(emiratesID string) ([]MobileActivityRow, error) {
 	}
 	rows, err := db.Query(`
 		SELECT ce.event_id, ce.event_type, ce.credential_id,
-		       COALESCE(c.credential_type, '') AS credential_type,
+		       c.fabric_cred_id,
 		       COALESCE(ce.actor_name, '') AS actor_name,
 		       ce.created_at
 		  FROM credential_events ce
@@ -272,7 +252,7 @@ func getMobileActivity(emiratesID string) ([]MobileActivityRow, error) {
 	out := []MobileActivityRow{}
 	for rows.Next() {
 		var r MobileActivityRow
-		if err := rows.Scan(&r.EventID, &r.EventType, &r.CredentialID, &r.CredentialType, &r.ActorName, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.EventID, &r.EventType, &r.CredentialID, &r.FabricCredID, &r.ActorName, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -280,60 +260,70 @@ func getMobileActivity(emiratesID string) ([]MobileActivityRow, error) {
 	return out, rows.Err()
 }
 
-// fetchDocumentInDB checks if a credential from a given org/service exists for the holder,
-// and sets in_wallet=1 if found. Returns (found, alreadyInWallet, err).
-func fetchDocumentInDB(holderEID, issuerID, serviceName string) (found bool, alreadyInWallet bool, err error) {
-	if db == nil {
-		return false, false, fmt.Errorf("database not configured")
+// serviceMatchPattern returns the catalog service's match_pattern: a SQL LIKE
+// pattern matched against the credential type. The service name is a friendly
+// label ("Bachelor Degree") that won't substring-match a specific credential
+// type ("Bachelor of Science in Computer Science"), so the pattern is used;
+// without one, the service name itself is matched as a substring.
+func serviceMatchPattern(issuerID, serviceName string) string {
+	var pattern string
+	if db != nil {
+		_ = db.QueryRow(`SELECT match_pattern FROM catalog_services WHERE issuer_id = ? AND name = ? LIMIT 1`,
+			issuerID, serviceName).Scan(&pattern)
 	}
-	// Resolve the catalog service's match_pattern (a SQL LIKE pattern against
-	// credential_type). The catalog service name is a friendly label
-	// ("Bachelor Degree") that won't substring-match a specific credential_type
-	// ("Bachelor of Science in Computer Science"), so we match on the pattern.
-	// Fall back to a substring of the service name if no pattern is configured.
-	var matchPattern string
-	_ = db.QueryRow(`SELECT match_pattern FROM catalog_services WHERE issuer_id = ? AND name = ? LIMIT 1`,
-		issuerID, serviceName).Scan(&matchPattern)
-	if matchPattern == "" {
-		matchPattern = "%" + serviceName + "%"
+	if pattern == "" {
+		pattern = "%" + serviceName + "%"
 	}
+	return pattern
+}
 
-	// Count ALL credentials matching this holder + org + category. A holder may
-	// hold several credentials of the same category (e.g. two Bachelor degrees);
-	// every one of them should land in the wallet, not just the first.
-	var totalMatching int
-	err = db.QueryRow(`
-		SELECT COUNT(*)
+// WalletCandidateRef is one of a holder's credentials from a given organisation.
+type WalletCandidateRef struct {
+	CredentialID string
+	FabricCredID string
+	InWallet     bool
+}
+
+// holderCredentialRefsForOrg lists a holder's credentials issued by staff of
+// the given catalog organisation.
+func holderCredentialRefsForOrg(holderEID, issuerID string) ([]WalletCandidateRef, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not configured")
+	}
+	rows, err := db.Query(`
+		SELECT c.credential_id, c.fabric_cred_id, c.in_wallet
 		  FROM credentials c
 		  JOIN holders h ON c.holder_id = h.holder_id
 		  JOIN issuers iss ON c.issuer_id = iss.issuer_id
 		 WHERE h.emirates_id = ?
-		   AND iss.org_id = ?
-		   AND c.credential_type LIKE ?`,
-		holderEID, issuerID, matchPattern).Scan(&totalMatching)
-	if err != nil || totalMatching == 0 {
-		return false, false, err
-	}
-
-	// Batch-update every matching credential not already in the wallet.
-	result, err := db.Exec(`
-		UPDATE credentials c
-		  JOIN holders h ON c.holder_id = h.holder_id
-		  JOIN issuers iss ON c.issuer_id = iss.issuer_id
-		   SET c.in_wallet = 1
-		 WHERE h.emirates_id = ?
-		   AND iss.org_id = ?
-		   AND c.credential_type LIKE ?
-		   AND c.in_wallet = 0`,
-		holderEID, issuerID, matchPattern)
+		   AND iss.org_id = ?`,
+		holderEID, issuerID)
 	if err != nil {
-		return true, false, err
+		return nil, err
 	}
+	defer rows.Close()
+	out := []WalletCandidateRef{}
+	for rows.Next() {
+		var r WalletCandidateRef
+		var inWallet int
+		if err := rows.Scan(&r.CredentialID, &r.FabricCredID, &inWallet); err != nil {
+			return nil, err
+		}
+		r.InWallet = inWallet == 1
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
 
-	rowsAffected, _ := result.RowsAffected()
-	// 0 rows updated means every matching credential was already in the wallet.
-	if rowsAffected == 0 {
-		return true, true, nil
+// markInWallet sets in_wallet=1 for the given display credential IDs.
+func markInWallet(credentialIDs []string) error {
+	if db == nil {
+		return fmt.Errorf("database not configured")
 	}
-	return true, false, nil
+	for _, id := range credentialIDs {
+		if _, err := db.Exec(`UPDATE credentials SET in_wallet = 1 WHERE credential_id = ?`, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }

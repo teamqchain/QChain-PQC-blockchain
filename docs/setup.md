@@ -208,103 +208,51 @@ peer channel join -b $REPO_ROOT/qchain-network/channel-artifacts/mychannel.block
 ### Deploy Chaincode
 
 > [!NOTE]
-> **Fresh Network vs Upgrading**:
-> - **If setting up from scratch:** Run ONLY this "Deploy Chaincode" section below. The current `qchain-network/chaincode` repository already includes all Track H features, per-field hashes, and deterministic timestamps. It will be packaged and deployed as **sequence 1, version 1.0**. You do **NOT** need to run any of the upgrade sections!
-> - **If upgrading an already-running network:** Skip this section and follow the **Upgrading Chaincode** sections below based on your current sequence number.
+> **Chaincode v2.0 needs an empty ledger.** v2.0 stores a signed commitment per credential (no plaintext
+> `Info`), takes new `issueCredential` arguments and removes `verifyCredential` / `setCID` /
+> `getCredentialsByHolder`, so it is **not** an in-place upgrade of a v1.x network.
+> - **Fresh network:** follow this section (version 2.0, sequence 1).
+> - **Existing v1.x network:** do a full ledger reset first — [`docs/ledger-reset-v2.md`](ledger-reset-v2.md) —
+>   which ends by running this section.
 
 ```bash
-# 1. Install dependencies and package
+# 1. Install dependencies, run the chaincode unit tests, and package
 export REPO_ROOT=$(pwd)
 export ORDERER_CA=$REPO_ROOT/qchain-network/crypto-material/ordererOrganizations/orderer.example.com/orderers/orderer0.orderer.example.com/tls/ca.crt
 
 cd $REPO_ROOT/qchain-network/chaincode
 npm install
+npm test            # node:test suite against an in-memory ledger (Node 18+) — all tests must pass
 cd ../..
 
 source $REPO_ROOT/qchain-network/scripts/env-gov.sh
-peer lifecycle chaincode package qchaincode.tar.gz --path $REPO_ROOT/qchain-network/chaincode --lang node --label qchaincode_1.0
+peer lifecycle chaincode package qchaincode_2.0.tar.gz --path $REPO_ROOT/qchain-network/chaincode --lang node --label qchaincode_2.0
 
 # 2. Install on Government peer
-peer lifecycle chaincode install qchaincode.tar.gz
+peer lifecycle chaincode install qchaincode_2.0.tar.gz
 
 # Find package ID
-export CC_PACKAGE_ID=$(peer lifecycle chaincode queryinstalled | grep qchaincode_1.0 | awk '{print $3}' | sed 's/,//')
+export CC_PACKAGE_ID=$(peer lifecycle chaincode queryinstalled | grep qchaincode_2.0 | awk '{print $3}' | sed 's/,//')
 
 # Approve for Government
-peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.0 --package-id $CC_PACKAGE_ID --sequence 1 --tls --cafile $ORDERER_CA
+peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 2.0 --package-id $CC_PACKAGE_ID --sequence 1 --tls --cafile $ORDERER_CA
 
 # 3. Install and Approve on General peer
 source $REPO_ROOT/qchain-network/scripts/env-gen.sh
-peer lifecycle chaincode install qchaincode.tar.gz
-peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.0 --package-id $CC_PACKAGE_ID --sequence 1 --tls --cafile $ORDERER_CA
+peer lifecycle chaincode install qchaincode_2.0.tar.gz
+peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 2.0 --package-id $CC_PACKAGE_ID --sequence 1 --tls --cafile $ORDERER_CA
 
 # 4. Commit chaincode (sequence 1)
-peer lifecycle chaincode commit -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.0 --sequence 1 --tls --cafile $ORDERER_CA \
+peer lifecycle chaincode commit -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 2.0 --sequence 1 --tls --cafile $ORDERER_CA \
   --peerAddresses localhost:7051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/government.uae.com/peers/peer0.government.uae.com/tls/ca.crt \
   --peerAddresses localhost:9051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/general.uae.com/peers/peer0.general.uae.com/tls/ca.crt
+
+# 5. Smoke test — an empty batch read must answer {"holders":{}}
+peer chaincode query -C mychannel -n qchaincode -c '{"Args":["getHolders","[]","summary"]}'
 ```
 
-### Upgrading Chaincode (Existing Networks Only)
-
-If your Fabric network is already running and committed at an earlier sequence, upgrade it incrementally without destroying channel state:
-
-#### Upgrade to Sequence 2 (Track H Holder Keys & FieldHashes)
-*Use this only if your network is currently on sequence 1:*
-
-```bash
-# 1. Set environment and re-package chaincode as version 1.1
-export REPO_ROOT=$(pwd)
-export ORDERER_CA=$REPO_ROOT/qchain-network/crypto-material/ordererOrganizations/orderer.example.com/orderers/orderer0.orderer.example.com/tls/ca.crt
-
-source $REPO_ROOT/qchain-network/scripts/env-gov.sh
-peer lifecycle chaincode package qchaincode_1.1.tar.gz --path $REPO_ROOT/qchain-network/chaincode --lang node --label qchaincode_1.1
-
-# 2. Install on Government peer
-peer lifecycle chaincode install qchaincode_1.1.tar.gz
-export CC_PACKAGE_ID=$(peer lifecycle chaincode queryinstalled | grep qchaincode_1.1 | awk '{print $3}' | sed 's/,//')
-
-# Approve for Government with --sequence 2
-peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.1 --package-id $CC_PACKAGE_ID --sequence 2 --tls --cafile $ORDERER_CA
-
-# 3. Install and Approve on General peer with --sequence 2
-source $REPO_ROOT/qchain-network/scripts/env-gen.sh
-peer lifecycle chaincode install qchaincode_1.1.tar.gz
-peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.1 --package-id $CC_PACKAGE_ID --sequence 2 --tls --cafile $ORDERER_CA
-
-# 4. Commit upgraded chaincode (sequence 2)
-peer lifecycle chaincode commit -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.1 --sequence 2 --tls --cafile $ORDERER_CA \
-  --peerAddresses localhost:7051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/government.uae.com/peers/peer0.government.uae.com/tls/ca.crt \
-  --peerAddresses localhost:9051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/general.uae.com/peers/peer0.general.uae.com/tls/ca.crt
-```
-
-#### Upgrade to Sequence 3 (Deterministic Timestamps for Multi-Peer Endorsement)
-*Use this if your network is currently on sequence 2 to resolve endorsement mismatches during suspendCredential / revokeCredential:*
-
-```bash
-# 1. Set environment and re-package chaincode as version 1.2
-export REPO_ROOT=$(pwd)
-export ORDERER_CA=$REPO_ROOT/qchain-network/crypto-material/ordererOrganizations/orderer.example.com/orderers/orderer0.orderer.example.com/tls/ca.crt
-
-source $REPO_ROOT/qchain-network/scripts/env-gov.sh
-peer lifecycle chaincode package qchaincode_1.2.tar.gz --path $REPO_ROOT/qchain-network/chaincode --lang node --label qchaincode_1.2
-
-# 2. Install on Government peer
-peer lifecycle chaincode install qchaincode_1.2.tar.gz
-export CC_PACKAGE_ID=$(peer lifecycle chaincode queryinstalled | grep qchaincode_1.2 | awk '{print $3}' | sed 's/,//')
-
-# Approve for Government with --sequence 3
-peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.2 --package-id $CC_PACKAGE_ID --sequence 3 --tls --cafile $ORDERER_CA
-
-# 3. Install and Approve on General peer with --sequence 3
-source $REPO_ROOT/qchain-network/scripts/env-gen.sh
-peer lifecycle chaincode install qchaincode_1.2.tar.gz
-peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.2 --package-id $CC_PACKAGE_ID --sequence 3 --tls --cafile $ORDERER_CA
-
-# 4. Commit upgraded chaincode (sequence 3)
-peer lifecycle chaincode commit -o localhost:7050 --ordererTLSHostnameOverride orderer0.orderer.example.com --channelID mychannel --name qchaincode --version 1.2 --sequence 3 --tls --cafile $ORDERER_CA \
-  --peerAddresses localhost:7051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/government.uae.com/peers/peer0.government.uae.com/tls/ca.crt \
-  --peerAddresses localhost:9051 --tlsRootCertFiles $REPO_ROOT/qchain-network/crypto-material/peerOrganizations/general.uae.com/peers/peer0.general.uae.com/tls/ca.crt
-```
+Future chaincode changes on this network are upgrades: re-package with a new label/version and approve +
+commit with `--sequence 2`, `3`, … on both peers, exactly like steps 1–4.
 
 ## 7. Backend (off-chain Go API) Setup
 
@@ -313,7 +261,10 @@ Because `liboqs-go` requires compiling the C library `liboqs` with CGo, we build
 ```bash
 cd $REPO_ROOT
 
-# 1. Build the Docker image (first build takes ~15-20 mins to compile liboqs)
+# 1. Run the Go unit tests in the image's builder stage, then build the image
+#    (first build takes ~15-20 mins to compile liboqs; go vet also runs during the build)
+docker build --target builder -t qchain-api:test offchain
+docker run --rm qchain-api:test go test -count=1 ./...
 bash offchain/docker-build.sh
 
 # 2. Generate organisation ML-DSA-44 keys via Docker
@@ -345,10 +296,20 @@ bash offchain/docker-run.sh
 bash qchain-network/scripts/setup-demo.sh http://localhost:3000
 
 # 7. (Track H) Register holder public keys (wallet activation)
-# The QWallet mobile app generates keys locally on-device and registers public keys via /mobile/registerHolderKeys.
-# You can check if a holder has keys registered:
+# The QWallet mobile app generates keys locally on-device and binds the public keys on-chain via
+# /mobile/registerHolderKeys. A credential can only be issued to a holder whose keys are bound.
+# You can check if a holder has keys registered (read from the chain):
 curl -s "http://localhost:3000/mobile/checkKeys?emiratesID=784-1990-1234567-1"
+
+# 8. End-to-end check (plays issuer + holder with the keygen tool; needs IPFS, Fabric and MySQL up)
+bash tests/e2e_api_test.sh http://localhost:3000
 ```
+
+> **Where data lives.** The ledger is the source of truth for every field it holds (holder names and
+> public keys, credential type/status/dates, CID, field hashes, issuer signature); IPFS holds the only
+> copy of each credential's body, encrypted to the holder; MySQL holds only what exists nowhere else
+> (Emirates ID → holder mapping, email, display IDs, sessions, subscriptions, logs). IPFS must be running
+> for issuance, and Fabric for every read — there is no database fallback.
 
 ## 8. Cloudflare Tunnel Setup (Free Random URL)
 
