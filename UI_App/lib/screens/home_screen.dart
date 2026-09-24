@@ -21,9 +21,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Reuse controllers pre-warmed from the splash screen if available,
-  // otherwise create them on demand. This prevents re-fetching data that
-  // was already loaded in the background during onboarding.
+  // Reuse controllers started after Onboard 3 key check if available,
+  // otherwise create them on demand (onInit fetches). Avoids duplicate
+  // network work when opening Home after keys are ready.
   final WalletController controller = Get.isRegistered<WalletController>()
       ? Get.find<WalletController>()
       : Get.put(WalletController());

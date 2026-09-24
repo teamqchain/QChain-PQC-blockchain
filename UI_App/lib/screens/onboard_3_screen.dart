@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:qwallet_mobileapp/controllers/activity_controller.dart';
+import 'package:qwallet_mobileapp/controllers/add_document_controller.dart';
+import 'package:qwallet_mobileapp/controllers/manage_subscriptions_controller.dart';
+import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
 import 'package:qwallet_mobileapp/services/crypto_service.dart';
@@ -206,12 +210,50 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
 
   void _markReady() {
     if (!mounted) return;
+    // Keys verified/registered — only now start wallet data API traffic.
+    // Controllers' onInit fires profile/credentials/activity/catalog/subs.
+    _startPostKeyFetches();
     _latticeCtrl.stop();
     _doneCtrl.forward();
     setState(() {
       _done = true;
       _failed = false;
     });
+  }
+
+  /// Start non-key wallet APIs only after keys are verified/registered.
+  ///
+  /// First success in this process: put permanent controllers (onInit fetches).
+  /// Later success (e.g. Dev Config → re-onboard same process): controllers
+  /// already exist so onInit will not run again — refresh explicitly.
+  void _startPostKeyFetches() {
+    logDebug('[Onboard3] starting post-key wallet API fetches');
+
+    if (!Get.isRegistered<WalletController>()) {
+      Get.put(WalletController(), permanent: true);
+    } else {
+      final wallet = Get.find<WalletController>();
+      wallet.fetchHolderProfile();
+      wallet.fetchMyCredentials();
+    }
+
+    if (!Get.isRegistered<ActivityController>()) {
+      Get.put(ActivityController(), permanent: true);
+    } else {
+      Get.find<ActivityController>().fetchActivity();
+    }
+
+    if (!Get.isRegistered<AddDocumentController>()) {
+      Get.put(AddDocumentController(), permanent: true);
+    } else {
+      Get.find<AddDocumentController>().loadCatalog();
+    }
+
+    if (!Get.isRegistered<ManageSubscriptionsController>()) {
+      Get.put(ManageSubscriptionsController(), permanent: true);
+    } else {
+      Get.find<ManageSubscriptionsController>().fetchSubscriptions();
+    }
   }
 
   String get _ctaLabel {
