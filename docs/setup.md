@@ -129,15 +129,8 @@ sudo mysql -e "CREATE USER 'qchain_user'@'%' IDENTIFIED BY 'password';"
 sudo mysql -e "GRANT ALL PRIVILEGES ON qchain_db.* TO 'qchain_user'@'%';"
 sudo mysql -e "FLUSH PRIVILEGES;"
 
-# Seed the schema and apply migrations
+# Seed the schema (includes every column the backend needs — no separate migrations to run)
 sudo mysql qchain_db < qchain-network/scripts/schema.sql
-for m in qchain-network/scripts/migrations/*.sql; do
-    echo "Applying migration $m..."
-    sudo mysql qchain_db < "$m"
-done
-
-# Note: If upgrading an existing database that already has previous schemas/migrations, apply only the new Track H migration:
-# sudo mysql qchain_db < qchain-network/scripts/migrations/2026-09_trackH_holder_signing.sql
 ```
 
 ## 5. IPFS Setup

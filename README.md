@@ -121,7 +121,8 @@ QChain-PQC-blockchain/
 ├── LICENSE                      # Proprietary — all rights reserved
 │
 ├── qchain-network/             # Hyperledger Fabric network
-│   ├── chaincode/              # JavaScript chaincode (QChaincode.js, index.js, package.json)
+│   ├── chaincode/              # JavaScript chaincode v2.0 (QChaincode.js, index.js, package.json)
+│   │   └── test/               # node:test suite (npm test) — no Fabric needed, in-memory ledger
 │   ├── config/                 # Fabric config: configtx.yaml, core.yaml, crypto-config.yaml, orderer.yaml
 │   ├── docker/                 # docker-compose.yaml (peers/orderer/couchdb/ipfs) + docker-compose-ca.yaml
 │   ├── scripts/                # registerEnroll.sh, env-gov.sh, env-gen.sh, schema.sql,
@@ -135,23 +136,32 @@ QChain-PQC-blockchain/
 │
 ├── offchain/                   # Go backend (REST API on :3000)
 │   ├── server.go               # entry point: main() + routes + CORS
-│   ├── config.go  crypto.go  fabric.go  httputil.go   # config, PQC, Fabric client, helpers
-│   ├── credentials.go  verification.go  holders.go    # domain handlers
+│   ├── config.go  crypto.go  fabric.go  httputil.go    # config, PQC, Fabric client, helpers
+│   ├── chain.go  commitment.go  envelope.go  kem.go     # on-chain reads, signed commitments, encryption
+│   ├── credentials.go  verification.go  holders.go      # domain handlers
 │   ├── dashboard.go  staff.go  subscriptions.go  mobile.go
 │   ├── db.go  db_*.go          # MySQL access, split per domain
-│   ├── cmd/keygen/main.go      # generates the ML-DSA-44 org key pair
+│   ├── bootstrap.go            # RUN_CHAIN_BOOTSTRAP=1 one-shot: re-registers holders after a ledger reset
+│   ├── cmd/keygen/main.go      # org ML-DSA-44 key pair; holder key/sign/decrypt helpers for e2e testing
 │   ├── Dockerfile  docker-build.sh  docker-run.sh
-│   └── server_test.go
+│   └── *_test.go               # go test ./... — chain, commitment, envelope, verification, etc.
 │
 ├── UI_WebApp/                  # QPortal — Flutter web (issuer / verifier / IT-admin)
 ├── UI_App/                     # QWallet — Flutter app (holder); builds to mobile + web
+├── shared/                     # Flutter package shared by both apps (certificate template/viewer, fonts)
 │
 ├── web-gateway/                # One Nginx container: builds both web apps + proxies /api
 │   ├── Dockerfile  nginx.conf  docker-build.sh  docker-run.sh  README.md
 │
+├── tests/
+│   └── e2e_api_test.sh         # plays issuer + holder against a live stack; every registered endpoint
+│
 ├── algo-benchmarking/          # ML-DSA performance benchmarks (liboqs-go vs CIRCL) + graphs
 ├── assets/                     # Logo and performance graphs
-└── docs/                       # Reports: progress-report-1/2, final-report, literature-review, team-charter
+└── docs/
+    ├── setup.md                # full manual setup guide
+    ├── ledger-reset-v2.md      # chaincode v2.0 full-ledger-reset runbook
+    └── junior/                 # progress-report-1/2, final-report, literature-review, team-charter
 ```
 
 ---
@@ -396,14 +406,16 @@ responses include a `credentialID`, and **all timestamps are returned in UAE loc
 
 ## Roadmap
 
-**Phase 1 — Authenticity & integrity (current).** A working post-quantum credential system: ML-DSA-44
-signatures with a hash-on-chain / data-off-chain (IPFS) model, full issuance → presentation →
-verification → revocation lifecycle, the QPortal and QWallet apps, and a publicly reachable demo.
+**Phase 1 — Authenticity, integrity & confidentiality (complete).** A working post-quantum credential
+system: ML-DSA-44 signatures over a signed commitment, a commitment-on-chain / data-off-chain (IPFS)
+model with the credential body encrypted end-to-end to the holder's ML-KEM-768 key, salted per-field
+hashes for selective disclosure, full issuance → presentation → verification → revocation lifecycle, the
+QPortal and QWallet apps, and a publicly reachable demo.
 
-**Phase 2 — Confidentiality & post-quantum MSP (next).** Integrate post-quantum cryptography into
-Hyperledger Fabric's **MSP / identity layer** (replacing the classical ECDSA identities), and add
-**confidentiality** — encrypting credential data so the system protects secrecy, not just authenticity
-and integrity.
+**Phase 2 — Post-quantum Fabric identities (next).** Hyperledger Fabric's **MSP / identity layer**
+(peer, orderer and client enrollment certificates) still uses classical ECDSA — credential signatures and
+encryption are already post-quantum, but the network's own identities are not yet. Phase 2 replaces
+those with post-quantum equivalents.
 
 ---
 
@@ -411,12 +423,16 @@ and integrity.
 
 In-depth project documents live in [`docs/`](docs/):
 
-- [Progress Report 1](docs/progress-report-1.md) — research & network setup
-- [Progress Report 2](docs/progress-report-2.md) — implementation
-- [Final Report](docs/final-report.md) — full system, testing & benchmarks
-- [Literature Review](docs/literature-review.md) — PQC & quantum-threat background
-- [Team Charter](docs/team-charter.md) — roles & governance
+- [Setup Guide](docs/setup.md) — full manual setup: Fabric network, chaincode, backend, IPFS, tunnel
 - [web-gateway/README.md](web-gateway/README.md) — public-access gateway & tunnel runbook
+
+Junior-year deliverables live in [`docs/junior/`](docs/junior/):
+
+- [Progress Report 1](docs/junior/progress-report-1.md) — research & network setup
+- [Progress Report 2](docs/junior/progress-report-2.md) — implementation
+- [Final Report](docs/junior/final-report.md) — full system, testing & benchmarks
+- [Literature Review](docs/junior/literature-review.md) — PQC & quantum-threat background
+- [Team Charter](docs/junior/team-charter.md) — roles & governance
 
 ---
 
@@ -444,6 +460,9 @@ See [LICENSE](LICENSE).
 ## Disclaimer
 
 This is an academic research project, not a production system. The public demo uses seed/demo data on a
-shared database. Some properties needed for real deployment — notably secure holder-key handling (private
-keys are not yet transmitted/stored with production-grade protection) and confidentiality — are
-deliberately out of scope for Phase 1 and are the focus of Phase 2.
+shared database, and the OTP/QR presentation flow is not yet gated behind holder authentication (tracked
+for a future session/login system). One property needed for real deployment remains out of scope: the
+Fabric network's own identities (peer/orderer/client enrollment) use classical ECDSA, not post-quantum
+cryptography — that is the focus of Phase 2. Credential confidentiality and holder-key handling are
+implemented today: attributes are encrypted end-to-end to an ML-KEM-768 key pair generated and held only
+on the holder's device, never transmitted to or stored by the backend.
