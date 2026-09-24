@@ -32,12 +32,18 @@ FROM ghcr.io/cirruslabs/flutter:3.35.4 AS portal-build
 ARG API_BASE_URL
 WORKDIR /app
 
-# Copy just the manifest first so `flutter pub get` is cached unless deps change.
+# UI_WebApp depends on qchain_shared via a local path ("../shared" in its
+# pubspec.yaml), so /shared must exist alongside /app before `flutter pub
+# get` resolves it. Only the manifest is needed for resolution, so copy just
+# that here (full source comes later) — same caching intent as the app copy
+# below: this layer stays cached unless a pubspec actually changes.
 COPY UI_WebApp/pubspec.yaml ./
+COPY shared/pubspec.yaml shared/pubspec.lock /shared/
 RUN flutter pub get
 
-# Copy the rest of the portal source and build.
+# Copy the rest of the portal source (and the shared package's source) and build.
 COPY UI_WebApp/ ./
+COPY shared/ /shared/
 RUN flutter build web --release \
         --base-href="/" \
         --dart-define=API_BASE_URL="$API_BASE_URL"
@@ -51,10 +57,13 @@ FROM ghcr.io/cirruslabs/flutter:3.35.4 AS wallet-build
 ARG API_BASE_URL
 WORKDIR /app
 
+# Same qchain_shared path-dependency requirement as the portal build above.
 COPY UI_App/pubspec.yaml ./
+COPY shared/pubspec.yaml shared/pubspec.lock /shared/
 RUN flutter pub get
 
 COPY UI_App/ ./
+COPY shared/ /shared/
 RUN flutter build web --release \
         --base-href="/wallet/" \
         --dart-define=API_BASE_URL="$API_BASE_URL"
