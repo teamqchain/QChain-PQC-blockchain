@@ -133,54 +133,6 @@ class IssuerApi {
     }
   }
 
-  // GET /getCredentialsByHolder
-  static Future<List<Map<String, dynamic>>> getCredentialsByHolder(
-    String emiratesID,
-  ) async {
-    logDebug(
-      '[IssuerApi] getCredentialsByHolder called for emiratesID: $emiratesID',
-    );
-    if (!await ApiCore.ensureConnection()) {
-      logDebug(
-        '[IssuerApi] getCredentialsByHolder blocked: backend disconnected',
-      );
-      throw ConnectionException();
-    }
-    try {
-      final res = await ApiCore.client.get(
-        Uri.parse('$kApiBaseUrl/getCredentialsByHolder?emiratesID=$emiratesID'),
-      );
-      if (res.statusCode != 200) {
-        logDebug(
-          '[IssuerApi] getCredentialsByHolder failed: HTTP ${res.statusCode}',
-        );
-        return [];
-      }
-
-      final body = jsonDecode(res.body);
-      if (body is List) {
-        logDebug(
-          '[IssuerApi] getCredentialsByHolder success: fetched ${body.length} credentials',
-        );
-        return List<Map<String, dynamic>>.from(body);
-      }
-      if (body is Map && body['credentials'] is List) {
-        logDebug(
-          '[IssuerApi] getCredentialsByHolder success: fetched ${(body['credentials'] as List).length} credentials',
-        );
-        return List<Map<String, dynamic>>.from(body['credentials']);
-      }
-
-      logDebug(
-        '[IssuerApi] getCredentialsByHolder failed: unexpected body structure',
-      );
-      return [];
-    } catch (e) {
-      logDebug('[IssuerApi] getCredentialsByHolder exception: $e');
-      throw ConnectionException();
-    }
-  }
-
   // POST /suspendCredential
   static Future<bool> suspendCredential(
     String credentialID, {
