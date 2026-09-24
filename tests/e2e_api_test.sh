@@ -111,12 +111,14 @@ keygen() {
 }
 
 # build_payload CRED_ID FIELDS_JSON SALTS_JSON — the presentation the wallet
-# signs: sorted keys, no whitespace, UTC timestamp.
+# signs: sorted keys, no whitespace. The timestamp is local device time (not
+# UTC) to match QWallet's DateTime.now().toIso8601String() — the backend
+# never reads this field, it only has to be part of the signed bytes.
 build_payload() {
     python3 - "$1" "$2" "$3" <<'PY'
 import datetime, json, sys
 cred, fields, salts = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3])
-ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+ts = datetime.datetime.now().isoformat()
 print(json.dumps({"credentialID": cred, "disclosedFields": fields, "salts": salts, "timestamp": ts},
                  sort_keys=True, separators=(",", ":"), ensure_ascii=False))
 PY

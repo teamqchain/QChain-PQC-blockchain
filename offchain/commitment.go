@@ -68,7 +68,7 @@ var reservedAttributeKeys = map[string]bool{
 type CredentialCommitment struct {
 	HolderID       string
 	CredentialType string
-	IssuedAt       string // RFC3339 UTC, second precision (e.g. 2026-09-24T06:15:30Z)
+	IssuedAt       string // RFC3339, second precision, Asia/Dubai local (e.g. 2026-09-24T10:15:30+04:00)
 	IssuerOrgID    string
 	ExpiryDate     string // "" (no expiry) or YYYY-MM-DD
 	CID            string
