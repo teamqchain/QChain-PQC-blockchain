@@ -8,40 +8,6 @@ import 'package:qportal_webapp/utils/logger.dart';
 
 class VerifierApi {
 
-  // POST /verifyCredential
-  static Future<VerificationResult> verifyCredential(
-    String credentialID,
-  ) async {
-    logDebug(
-      '[VerifierApi] verifyCredential called for credentialID: $credentialID',
-    );
-    if (!await ApiCore.ensureConnection()) {
-      logDebug('[VerifierApi] verifyCredential blocked: backend disconnected');
-      throw ConnectionException();
-    }
-    try {
-      final res = await ApiCore.client.post(
-        Uri.parse('$kApiBaseUrl/verifyCredential'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'credentialID': credentialID}),
-      );
-
-      if (res.statusCode == 200) {
-        logDebug('[VerifierApi] verifyCredential success');
-        final Map<String, dynamic> body = jsonDecode(res.body);
-        return VerificationResult.fromJson(body, credentialID);
-      } else {
-        logDebug(
-          '[VerifierApi] verifyCredential failed: HTTP ${res.statusCode}',
-        );
-        throw ConnectionException('Server error (${res.statusCode})');
-      }
-    } catch (e) {
-      logDebug('[VerifierApi] verifyCredential exception: $e');
-      throw ConnectionException();
-    }
-  }
-
   // POST /resolveSession
   static Future<VerificationResult> resolveSession(String sessionToken) async {
     logDebug(
