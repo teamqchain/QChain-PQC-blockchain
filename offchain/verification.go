@@ -1,184 +1,223 @@
 package main
 
-// verification.go — proving a credential is genuine, plus the verification log.
+// verification.go — proving a presented credential is genuine, plus the
+// verification-log endpoints.
 //
-// handleVerifyCredential is the cryptographic heart of the system. It fetches the
-// credential from the blockchain and runs four checks:
-//   1. existsOnChain  — the ledger has this credential
-//   2. notRevoked     — its on-chain Status is "active"
-//   3. signatureValid — the ML-DSA-44 signature matches the org public key
-//   4. hashMatches    — re-hashing the stored payload reproduces the stored hash
-// All four must pass for verified=true.
-//
-// NOTE: for any non-active credential the handler returns early and reports the
-// crypto checks as false (it never runs them). Callers/UIs should therefore read
-// `status`/`reason` for non-active credentials rather than the per-check booleans.
+// verifyPresentation is the cryptographic heart of the system. Given the
+// on-chain credential and holder records and the holder's signed presentation,
+// it runs the checks the portal shows:
+//   1. existsOnChain        — the ledger has this credential
+//   2. notRevoked           — its stored status is "active" (not revoked/suspended)
+//   3. signatureValid       — the credential's issuer key is the trusted key from
+//                             .env, and its ML-DSA-44 signature verifies over the
+//                             commitment RECOMPUTED from the on-chain fields
+//   4. fieldHashesValid     — every disclosed value, with its salt, hashes to its
+//                             on-chain field hash
+//   5. holderSignatureValid — the presentation names this credential and is
+//                             signed with the holder's on-chain ML-DSA-44 key
+// plus hashMatches (the stored CredentialHash equals the recomputed one) and
+// the expiry date. It does no I/O, so it is unit-tested directly
+// (verification_test.go); handleResolveSession (mobile.go) supplies the inputs.
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
-// VerifyCredentialRequest — called by QPortal verifier screen.
-type VerifyCredentialRequest struct {
-	CredentialID string `json:"credentialID"` // display ID e.g. "CRED-0001"
+// Failure reasons: returned as `reason` by /resolveSession and stored in
+// verification_logs.failure_reason. The portal maps each of them.
+const (
+	reasonNotFound               = "NOT_FOUND"
+	reasonRevoked                = "REVOKED"
+	reasonSuspended              = "SUSPENDED"
+	reasonExpired                = "EXPIRED"
+	reasonSignatureInvalid       = "SIGNATURE_INVALID"
+	reasonHashMismatch           = "HASH_MISMATCH"
+	reasonFieldHashesInvalid     = "FIELD_HASHES_INVALID"
+	reasonHolderSignatureInvalid = "HOLDER_SIGNATURE_INVALID"
+)
+
+// DisclosedPayload is the presentation the holder's wallet signs:
+// {"credentialID","disclosedFields":{key:value},"salts":{key:salt},"timestamp"}.
+type DisclosedPayload struct {
+	CredentialID    string
+	DisclosedFields map[string]string
+	Salts           map[string]string
+	Timestamp       string
 }
 
-// POST /verifyCredential — called by QPortal verifier screen.
-func handleVerifyCredential(w http.ResponseWriter, r *http.Request) {
-	var req VerifyCredentialRequest
-	if err := decodeBody(r, &req); err != nil || req.CredentialID == "" {
-		writeError(w, http.StatusBadRequest, "missing credentialID")
-		return
+// stringMap decodes a JSON object whose values must all be strings.
+func stringMap(name string, raw map[string]json.RawMessage) (map[string]string, error) {
+	out := make(map[string]string, len(raw))
+	for _, key := range sortedKeys(raw) {
+		var v string
+		if err := json.Unmarshal(raw[key], &v); err != nil || bytes.Equal(bytes.TrimSpace(raw[key]), []byte("null")) {
+			return nil, fmt.Errorf("%s[%q] must be a string", name, key)
+		}
+		out[key] = v
 	}
+	return out, nil
+}
 
-	// 1. Look up fabric cred ID from MySQL
-	fabricCredID, err := fabricCredIDByDisplay(req.CredentialID)
+// parseDisclosedPayload parses a signed presentation. Values in
+// disclosedFields and salts must be strings (every issued value is one).
+func parseDisclosedPayload(raw string) (DisclosedPayload, error) {
+	var loose struct {
+		CredentialID    string                     `json:"credentialID"`
+		DisclosedFields map[string]json.RawMessage `json:"disclosedFields"`
+		Salts           map[string]json.RawMessage `json:"salts"`
+		Timestamp       string                     `json:"timestamp"`
+	}
+	if err := json.Unmarshal([]byte(raw), &loose); err != nil {
+		return DisclosedPayload{}, fmt.Errorf("invalid JSON in disclosedPayload: %v", err)
+	}
+	fields, err := stringMap("disclosedFields", loose.DisclosedFields)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "credential not found: "+err.Error())
-		return
+		return DisclosedPayload{}, err
 	}
-
-	// 2. Fetch full credential from Fabric
-	contract, gw, conn, err := getContract(verifierOrgName, verifierIdentity)
+	salts, err := stringMap("salts", loose.Salts)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return DisclosedPayload{}, err
 	}
-	defer gw.Close()
-	defer conn.Close()
+	return DisclosedPayload{
+		CredentialID:    loose.CredentialID,
+		DisclosedFields: fields,
+		Salts:           salts,
+		Timestamp:       loose.Timestamp,
+	}, nil
+}
 
-	chainResult, err := contract.EvaluateTransaction("getCredential", fabricCredID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "chaincode lookup failed: "+err.Error())
-		return
-	}
-	var cred map[string]any
-	if err := json.Unmarshal(chainResult, &cred); err != nil {
-		writeError(w, http.StatusInternalServerError, "invalid chaincode response")
-		return
-	}
+// VerifyInput is everything verifyPresentation needs, already fetched.
+type VerifyInput struct {
+	DisplayID        string           // credential ID the session was created for (CRED-0001)
+	FabricID         string           // its on-chain key
+	Cred             *ChainCredential // nil when the credential is not on-chain
+	Holder           *ChainHolder     // the credential's on-chain holder (full view)
+	RawPayload       string           // disclosedPayload exactly as the wallet signed it
+	HolderSignature  string           // hex ML-DSA-44 signature over sha3Hex(RawPayload)
+	TrustedIssuerKey string           // ISSUER_PUBLIC_KEY_HEX from .env
+	Now              time.Time
+}
 
-	// 3. Parse Info JSON upfront — needed by both the early-return and success paths.
-	credInfoStr, _ := cred["Info"].(string)
-	var infoPayload map[string]string
-	_ = json.Unmarshal([]byte(credInfoStr), &infoPayload)
-	holderIDFromChain := infoPayload["holderID"]
-	credentialType := infoPayload["credentialType"]
-	issuedAtFromInfo := infoPayload["issuedAt"]
-	innerInfoStr := infoPayload["info"]
+// VerifyOutcome is the result of every check plus the overall verdict.
+type VerifyOutcome struct {
+	Verified             bool
+	Reason               string // "" when verified
+	Status               string // effective status (active/revoked/suspended/expired)
+	ExistsOnChain        bool
+	NotRevoked           bool
+	SignatureValid       bool
+	HashMatches          bool
+	FieldHashesValid     bool
+	HolderSignatureValid bool
+	Disclosed            map[string]string // disclosed fields (no salts); nil if unparseable
+}
 
-	// Parse nested credential attributes for display.
-	var credData map[string]any
-	if innerInfoStr != "" {
-		_ = json.Unmarshal([]byte(innerInfoStr), &credData)
+// verifyPresentation runs every check. All checks run even after one fails,
+// so the portal can show each result; Reason reports the most important
+// failure: NOT_FOUND > REVOKED > SUSPENDED > EXPIRED > SIGNATURE_INVALID >
+// HASH_MISMATCH > FIELD_HASHES_INVALID > HOLDER_SIGNATURE_INVALID.
+func verifyPresentation(in VerifyInput) VerifyOutcome {
+	var out VerifyOutcome
+	payload, payloadErr := parseDisclosedPayload(in.RawPayload)
+	if payloadErr == nil {
+		out.Disclosed = payload.DisclosedFields
 	}
-	// expiryDate lives inside the nested attributes (set at issue time).
-	expiryDate := ""
-	if credData != nil {
-		if v, ok := credData["expiryDate"].(string); ok {
-			expiryDate = v
+	if in.Cred == nil {
+		out.Reason = reasonNotFound
+		return out
+	}
+	cred := in.Cred
+	out.ExistsOnChain = true
+	out.Status = effectiveStatus(cred, in.Now)
+	out.NotRevoked = cred.Status == "active"
+
+	// Issuer signature over the commitment rebuilt from the chain — never the
+	// stored hash — and only from the trusted issuer key.
+	if hash, err := commitmentHash(commitmentFromChain(cred)); err == nil {
+		out.HashMatches = hash == cred.CredentialHash
+		if in.TrustedIssuerKey != "" && strings.EqualFold(cred.PublicKey, in.TrustedIssuerKey) {
+			out.SignatureValid, _ = pqcVerify(hash, cred.Signature, cred.PublicKey)
 		}
 	}
 
-	// Holder display fields (full name, email, Emirates ID) — for the response,
-	// not for the cryptographic check (which is entirely on-chain).
-	holderName, holderEmail, holderEID, _ := holderInfoByID(holderIDFromChain)
-	if holderName == "" {
-		holderName, _ = holderNameByID(holderIDFromChain)
-	}
-	const verifiedBy = "System Verifier"
+	if payloadErr == nil {
+		out.FieldHashesValid = verifyDisclosedFields(payload.DisclosedFields, payload.Salts, cred.FieldHashes) == nil
 
-	// 4. Check status (active / revoked / suspended)
-	status, _ := cred["Status"].(string)
-	notRevoked := strings.EqualFold(status, "active")
-
-	if !notRevoked {
-		logVerificationToDB(req.CredentialID, fabricCredID, "VER-UOS-0001", verifiedBy,
-			"failure", strings.ToUpper(status),
-			true, false, false, false, status)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"verified":       false,
-			"credentialID":   req.CredentialID,
-			"holderID":       holderIDFromChain,
-			"holderName":     holderName,
-			"holderEmail":    holderEmail,
-			"holderEID":      holderEID,
-			"credentialType": credentialType,
-			"issuer":         "University of Sharjah",
-			"verifiedBy":     verifiedBy,
-			"status":         status,
-			"issuedAt":       issuedAtFromInfo,
-			"expiryDate":     expiryDate,
-			"credentialData": credData,
-			"reason":         strings.ToUpper(status),
-			"checks": map[string]bool{
-				"existsOnChain":  true,
-				"notRevoked":     false,
-				"signatureValid": false,
-				"hashMatches":    false,
-			},
-		})
-		return
-	}
-
-	// 5. Extract cryptographic fields from on-chain credential
-	credHash, _ := cred["CredentialHash"].(string)
-	signature, _ := cred["Signature"].(string)
-	publicKey, _ := cred["PublicKey"].(string)
-
-	// 6. PQC signature verification
-	sigValid, sigErr := pqcVerify(credHash, signature, publicKey)
-	if sigErr != nil {
-		writeError(w, http.StatusInternalServerError, "PQC verify error: "+sigErr.Error())
-		return
-	}
-
-	// 7. Tamper detection: recompute SHA3-256 of stored Info and compare to stored hash
-	recomputed := sha3Hex(credInfoStr)
-	hashMatches := strings.EqualFold(recomputed, credHash)
-
-	verified := notRevoked && sigValid && hashMatches
-
-	result := "success"
-	failureReason := ""
-	if !verified {
-		result = "failure"
-		if !sigValid {
-			failureReason = "signature_invalid"
-		} else if !hashMatches {
-			failureReason = "hash_mismatch"
+		payloadID := strings.TrimSpace(payload.CredentialID)
+		boundToCredential := payloadID != "" && (payloadID == in.DisplayID || payloadID == in.FabricID)
+		if boundToCredential && in.Holder != nil && in.Holder.DsaPublicKey != "" && in.HolderSignature != "" {
+			out.HolderSignatureValid, _ = pqcVerify(sha3Hex(in.RawPayload), in.HolderSignature, in.Holder.DsaPublicKey)
 		}
 	}
 
-	logVerificationToDB(req.CredentialID, fabricCredID, "VER-UOS-0001", verifiedBy,
-		result, failureReason,
-		true, hashMatches, sigValid, notRevoked, status)
+	switch {
+	case out.Status == "revoked":
+		out.Reason = reasonRevoked
+	case out.Status == "suspended":
+		out.Reason = reasonSuspended
+	case out.Status == "expired":
+		out.Reason = reasonExpired
+	case !out.SignatureValid:
+		out.Reason = reasonSignatureInvalid
+	case !out.HashMatches:
+		out.Reason = reasonHashMismatch
+	case !out.FieldHashesValid:
+		out.Reason = reasonFieldHashesInvalid
+	case !out.HolderSignatureValid:
+		out.Reason = reasonHolderSignatureInvalid
+	}
+	out.Verified = out.Reason == ""
+	return out
+}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"verified":       verified,
-		"credentialID":   req.CredentialID,
-		"fabricCredID":   fabricCredID,
-		"holderID":       holderIDFromChain,
-		"holderName":     holderName,
-		"holderEmail":    holderEmail,
-		"holderEID":      holderEID,
-		"credentialType": credentialType,
-		"issuer":         "University of Sharjah",
-		"verifiedBy":     verifiedBy,
-		"status":         status,
-		"issuedAt":       issuedAtFromInfo,
-		"expiryDate":     expiryDate,
-		"credentialData": credData,
-		"checks": map[string]bool{
-			"existsOnChain":  true,
-			"notRevoked":     notRevoked,
-			"signatureValid": sigValid,
-			"hashMatches":    hashMatches,
-		},
-	})
+// presentationRequest is the body of /mobile/generateOTP and
+// /mobile/generatePresentation.
+type presentationRequest struct {
+	CredentialID     string   `json:"credentialID"`
+	HiddenFields     []string `json:"hiddenFields"`
+	DisclosedPayload string   `json:"disclosedPayload"`
+	HolderSignature  string   `json:"holderSignature"`
+}
+
+// validatePresentationRequest decodes and checks a presentation request before
+// any database access. The returned error text is sent to the wallet as-is.
+func validatePresentationRequest(r *http.Request) (presentationRequest, error) {
+	var req presentationRequest
+	if err := decodeBody(r, &req); err != nil {
+		return req, errors.New("invalid JSON")
+	}
+	req.CredentialID = strings.TrimSpace(req.CredentialID)
+	if req.CredentialID == "" {
+		return req, errors.New("missing credentialID")
+	}
+	if strings.TrimSpace(req.DisclosedPayload) == "" {
+		return req, errors.New("missing disclosedPayload")
+	}
+	if strings.TrimSpace(req.HolderSignature) == "" {
+		return req, errors.New("missing holderSignature")
+	}
+	payload, err := parseDisclosedPayload(req.DisclosedPayload)
+	if err != nil {
+		return req, err
+	}
+	payloadCredID := strings.TrimSpace(payload.CredentialID)
+	if payloadCredID == "" {
+		return req, errors.New("disclosedPayload missing credentialID")
+	}
+	if payloadCredID != req.CredentialID {
+		return req, fmt.Errorf("disclosedPayload credentialID %q does not match request credentialID %q", payloadCredID, req.CredentialID)
+	}
+	if err := validateDisclosureSalts(payload.DisclosedFields, payload.Salts); err != nil {
+		return req, err
+	}
+	return req, nil
 }
 
 // GET /getVerificationHistory?result=valid&page=1&limit=25
@@ -200,14 +239,27 @@ func handleGetVerificationHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	total, _ := countVerificationLogs(resultDB, reasonFilter)
 
+	// Credential type and holder name come from the chain. A log row for a
+	// credential that is not on-chain (e.g. a NOT_FOUND attempt) keeps empty labels.
+	fabricIDs := make([]string, 0, len(rows))
+	for _, r := range rows {
+		fabricIDs = append(fabricIDs, r.FabricCredID)
+	}
+	snap, err := chainReadCredentials(fabricIDs, viewSummary)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "blockchain read failed: "+err.Error())
+		return
+	}
+
 	out := make([]map[string]any, 0, len(rows))
 	for _, r := range rows {
+		credentialType, holderName := credentialLabel(snap, r.FabricCredID)
 		out = append(out, map[string]any{
 			"id":             r.LogID,
 			"verifiedAt":     r.VerifiedAt.Format("2006-01-02T15:04:05"),
-			"credentialType": r.CredentialType,
+			"credentialType": credentialType,
 			"credentialID":   r.CredentialID,
-			"holderName":     r.HolderName,
+			"holderName":     holderName,
 			"issuerName":     r.IssuerName,
 			"result":         verifyResultDBToAPI(r.Result, r.FailureReason),
 			"method":         verifyMethodDBToAPI(r.Method),
@@ -241,17 +293,34 @@ func handleGetVerificationDetail(w http.ResponseWriter, r *http.Request) {
 
 	mappedResult := verifyResultDBToAPI(vd.Result, vd.FailureReason.String)
 	existsOnChain := nullBoolOrDerive(vd.ChainVerified, mappedResult != "notFound")
-	notRevoked := nullBoolOrDerive(vd.HashVerified, mappedResult == "valid" || mappedResult == "expired")
+	// notRevoked is not stored as its own column; derive it from the status
+	// recorded at verification time ("expired" credentials are not revoked).
+	notRevoked := mappedResult == "valid" || mappedResult == "expired"
+	if vd.StatusAtVerify.Valid && vd.StatusAtVerify.String != "" {
+		st := strings.ToLower(vd.StatusAtVerify.String)
+		notRevoked = st == "active" || st == "expired"
+	}
 	sigValid := nullBoolOrDerive(vd.SigVerified, mappedResult != "tampered")
 	hashMatches := nullBoolOrDerive(vd.HashVerified, mappedResult != "tampered")
 
-	var expiry any
-	if vd.ExpiryDate.Valid {
-		expiry = FormatDateISO(vd.ExpiryDate.Time)
-	}
-	var issuedAt any
-	if vd.IssuedAt.Valid {
-		issuedAt = FormatISO(vd.IssuedAt.Time)
+	// Credential type, holder and dates come from the chain.
+	var credentialType, holderName, holderID string
+	var issuedAt, expiry any
+	if vd.FabricCredID != "" {
+		cred, holder, err := chainReadCredential(vd.FabricCredID, viewSummary)
+		switch {
+		case err == nil:
+			credentialType = cred.CredentialType
+			holderName = holder.FullName()
+			holderID = cred.Holder
+			if t, ok := formatChainTime(cred.IssuedAt); ok {
+				issuedAt = FormatISO(t)
+			}
+			expiry = expiryOrNil(cred.ExpiryDate)
+		case !errors.Is(err, errChainNotFound):
+			writeError(w, http.StatusBadGateway, "blockchain read failed: "+err.Error())
+			return
+		}
 	}
 	var reason any
 	if vd.FailureReason.Valid && vd.FailureReason.String != "" {
@@ -262,9 +331,9 @@ func handleGetVerificationDetail(w http.ResponseWriter, r *http.Request) {
 		"id":             vd.LogID,
 		"verifiedAt":     FormatISO(vd.VerifiedAt),
 		"credentialID":   vd.CredentialID,
-		"credentialType": vd.CredentialType,
-		"holderName":     vd.HolderName,
-		"holderID":       vd.HolderID,
+		"credentialType": credentialType,
+		"holderName":     holderName,
+		"holderID":       holderID,
 		"issuerName":     vd.IssuerName,
 		"issuedAt":       issuedAt,
 		"expiryDate":     expiry,
@@ -320,7 +389,7 @@ func verifyResultDBToAPI(dbResult, failureReason string) string {
 		return "suspended"
 	case "EXPIRED":
 		return "expired"
-	case "SIGNATURE_INVALID", "HASH_MISMATCH", "TAMPERED":
+	case "SIGNATURE_INVALID", "HASH_MISMATCH", "FIELD_HASHES_INVALID", "HOLDER_SIGNATURE_INVALID", "TAMPERED":
 		return "tampered"
 	case "NOT_FOUND":
 		return "notFound"

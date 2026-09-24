@@ -3,6 +3,8 @@ package main
 // db_verification.go — MySQL access for the `verification_logs` table: append a
 // log row after each verify, page through history, count with filters, fetch a
 // single log's detail, and the "recent verifications" widget for the dashboard.
+// Rows carry the credential's Fabric ID; its type, holder name and dates are
+// read from the chain by the handlers.
 
 import (
 	"database/sql"
@@ -13,24 +15,22 @@ import (
 
 // VerificationRow is the projection used by /getVerificationHistory responses.
 type VerificationRow struct {
-	LogID          string
-	CredentialID   string
-	CredentialType string
-	HolderName     string
-	IssuerName     string
-	Result         string // raw DB value (success/failure)
-	FailureReason  string
-	Method         string // raw DB enum (qr_scan/manual/...)
-	VerifiedBy     string
-	VerifiedAt     time.Time
+	LogID         string
+	CredentialID  string
+	FabricCredID  string
+	IssuerName    string
+	Result        string // raw DB value (success/failure)
+	FailureReason string
+	Method        string // raw DB enum (qr_scan/manual/...)
+	VerifiedBy    string
+	VerifiedAt    time.Time
 }
 
 // VerificationDisplayRow drives the verifier dashboard's recentVerifications list.
 type VerificationDisplayRow struct {
-	Credential string
-	HolderName string
-	Status     string // UPPERCASE: VALID / REVOKED / SUSPENDED / EXPIRED
-	VerifiedAt time.Time
+	FabricCredID string
+	Status       string // UPPERCASE: VALID / REVOKED / SUSPENDED / EXPIRED / INVALID
+	VerifiedAt   time.Time
 }
 
 // VerificationDetailRow is the full single-log projection for /getVerificationDetail.
@@ -39,12 +39,8 @@ type VerificationDetailRow struct {
 	LogID          string
 	VerifiedAt     time.Time
 	CredentialID   string
-	CredentialType string
-	HolderName     string
-	HolderID       string
+	FabricCredID   string
 	IssuerName     string
-	IssuedAt       sql.NullTime
-	ExpiryDate     sql.NullTime
 	Result         string
 	FailureReason  sql.NullString
 	Method         string
@@ -62,7 +58,7 @@ type VerificationDetailRow struct {
 func logVerificationToDB(
 	displayCredID, fabricCredID, verifierID, verifiedBy,
 	result, failureReason string,
-	chainOK, hashOK, sigOK, notRevoked bool,
+	chainOK, hashOK, sigOK bool,
 	statusAtVerify string,
 ) {
 	if db == nil {
@@ -87,7 +83,7 @@ func logVerificationToDB(
 	}
 }
 
-// listVerificationHistoryPaginated returns verification log rows joined with credential + holder.
+// listVerificationHistoryPaginated returns one page of verification log rows.
 // resultFilterDB is the raw DB value derived from the camelCase API filter (see verification.go mapping).
 func listVerificationHistoryPaginated(resultFilterDB, failureReasonFilter string, page, limit int) ([]VerificationRow, error) {
 	if db == nil {
@@ -98,9 +94,9 @@ func listVerificationHistoryPaginated(resultFilterDB, failureReasonFilter string
 		offset = 0
 	}
 	query := `
-		SELECT vl.log_id, vl.credential_id,
-		       COALESCE(c.credential_type, '') AS credential_type,
-		       COALESCE(CONCAT_WS(' ', h.first_name, h.last_name), '') AS holder_name,
+		SELECT vl.log_id,
+		       COALESCE(vl.credential_id, '') AS credential_id,
+		       COALESCE(vl.fabric_cred_id, '') AS fabric_cred_id,
 		       COALESCE(i.full_name, 'University of Sharjah') AS issuer_name,
 		       vl.result, COALESCE(vl.failure_reason, '') AS failure_reason,
 		       COALESCE(vl.verify_method, 'manual') AS method,
@@ -108,7 +104,6 @@ func listVerificationHistoryPaginated(resultFilterDB, failureReasonFilter string
 		       vl.verified_at
 		  FROM verification_logs vl
 		  LEFT JOIN credentials c ON vl.credential_id = c.credential_id
-		  LEFT JOIN holders     h ON c.holder_id     = h.holder_id
 		  LEFT JOIN issuers     i ON c.issuer_id     = i.issuer_id`
 	conds := []string{}
 	args := []any{}
@@ -139,7 +134,7 @@ func listVerificationHistoryPaginated(resultFilterDB, failureReasonFilter string
 	for rows.Next() {
 		var r VerificationRow
 		if err := rows.Scan(
-			&r.LogID, &r.CredentialID, &r.CredentialType, &r.HolderName, &r.IssuerName,
+			&r.LogID, &r.CredentialID, &r.FabricCredID, &r.IssuerName,
 			&r.Result, &r.FailureReason, &r.Method, &r.VerifiedBy, &r.VerifiedAt,
 		); err != nil {
 			return nil, err
@@ -182,8 +177,7 @@ func recentVerifications(limit int) ([]VerificationDisplayRow, error) {
 		return nil, fmt.Errorf("database not configured")
 	}
 	rows, err := db.Query(`
-		SELECT COALESCE(c.credential_type, '') AS credential,
-		       COALESCE(CONCAT_WS(' ', h.first_name, h.last_name), '') AS holder_name,
+		SELECT COALESCE(vl.fabric_cred_id, '') AS fabric_cred_id,
 		       CASE
 		         WHEN vl.result = 'success' THEN 'VALID'
 		         WHEN vl.result = 'failure' AND vl.failure_reason = 'REVOKED'   THEN 'REVOKED'
@@ -193,8 +187,6 @@ func recentVerifications(limit int) ([]VerificationDisplayRow, error) {
 		       END AS status,
 		       vl.verified_at
 		  FROM verification_logs vl
-		  LEFT JOIN credentials c ON vl.credential_id = c.credential_id
-		  LEFT JOIN holders     h ON c.holder_id     = h.holder_id
 		 ORDER BY vl.verified_at DESC
 		 LIMIT ?`, limit)
 	if err != nil {
@@ -205,7 +197,7 @@ func recentVerifications(limit int) ([]VerificationDisplayRow, error) {
 	out := []VerificationDisplayRow{}
 	for rows.Next() {
 		var r VerificationDisplayRow
-		if err := rows.Scan(&r.Credential, &r.HolderName, &r.Status, &r.VerifiedAt); err != nil {
+		if err := rows.Scan(&r.FabricCredID, &r.Status, &r.VerifiedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -222,12 +214,8 @@ func getVerificationDetail(logID string) (VerificationDetailRow, error) {
 	err := db.QueryRow(`
 		SELECT vl.log_id, vl.verified_at,
 		       COALESCE(vl.credential_id, '') AS credential_id,
-		       COALESCE(c.credential_type, '') AS credential_type,
-		       COALESCE(CONCAT_WS(' ', h.first_name, h.last_name), '') AS holder_name,
-		       COALESCE(h.holder_id, '') AS holder_id,
+		       COALESCE(vl.fabric_cred_id, '') AS fabric_cred_id,
 		       COALESCE(i.full_name, '') AS issuer_name,
-		       c.issued_at,
-		       c.expiry_date,
 		       vl.result,
 		       vl.failure_reason,
 		       COALESCE(vl.verify_method, 'manual') AS method,
@@ -238,12 +226,10 @@ func getVerificationDetail(logID string) (VerificationDetailRow, error) {
 		       vl.status_at_verify
 		  FROM verification_logs vl
 		  LEFT JOIN credentials c ON vl.credential_id = c.credential_id
-		  LEFT JOIN holders     h ON c.holder_id = h.holder_id
 		  LEFT JOIN issuers     i ON c.issuer_id  = i.issuer_id
 		 WHERE vl.log_id = ?
 		 LIMIT 1`, logID).Scan(
-		&r.LogID, &r.VerifiedAt, &r.CredentialID, &r.CredentialType,
-		&r.HolderName, &r.HolderID, &r.IssuerName, &r.IssuedAt, &r.ExpiryDate,
+		&r.LogID, &r.VerifiedAt, &r.CredentialID, &r.FabricCredID, &r.IssuerName,
 		&r.Result, &r.FailureReason, &r.Method, &r.VerifiedBy,
 		&r.ChainVerified, &r.HashVerified, &r.SigVerified, &r.StatusAtVerify,
 	)

@@ -80,7 +80,12 @@ func getContract(orgName, identityName string) (*client.Contract, *client.Gatewa
 	certPool.AppendCertsFromPEM(tlsCACert)
 	tlsCreds := credentials.NewClientTLSFromCert(certPool, cfg.GatewayPeer)
 
-	conn, err := grpc.Dial(cfg.PeerEndpoint, grpc.WithTransportCredentials(tlsCreds))
+	// Batch reads (getCredentials/getHolders) can return several MB; gRPC's
+	// default 4 MB receive limit would reject them.
+	conn, err := grpc.Dial(cfg.PeerEndpoint,
+		grpc.WithTransportCredentials(tlsCreds),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64<<20)),
+	)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("grpc dial to %s: %w", cfg.PeerEndpoint, err)
 	}
