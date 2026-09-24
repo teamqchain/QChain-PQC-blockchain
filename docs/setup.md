@@ -203,10 +203,9 @@ peer channel join -b $REPO_ROOT/qchain-network/channel-artifacts/mychannel.block
 > [!NOTE]
 > **Chaincode v2.0 needs an empty ledger.** v2.0 stores a signed commitment per credential (no plaintext
 > `Info`), takes new `issueCredential` arguments and removes `verifyCredential` / `setCID` /
-> `getCredentialsByHolder`, so it is **not** an in-place upgrade of a v1.x network.
-> - **Fresh network:** follow this section (version 2.0, sequence 1).
-> - **Existing v1.x network:** do a full ledger reset first — [`docs/ledger-reset-v2.md`](ledger-reset-v2.md) —
->   which ends by running this section.
+> `getCredentialsByHolder`, so a network still running an earlier chaincode version needs a full ledger
+> reset (back up MySQL, tear down and recreate the channel, redeploy chaincode as a fresh sequence 1)
+> before following this section as version 2.0, sequence 1.
 
 ```bash
 # 1. Install dependencies, run the chaincode unit tests, and package

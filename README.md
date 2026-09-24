@@ -163,7 +163,6 @@ QChain-PQC-blockchain/
 ├── assets/                     # Logo and performance graphs
 └── docs/
     ├── setup.md                # full manual setup guide
-    ├── ledger-reset-v2.md      # chaincode v2.0 full-ledger-reset runbook
     └── junior/                 # progress-report-1/2, final-report, literature-review, team-charter
 ```
 
