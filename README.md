@@ -104,7 +104,7 @@ The system has three faces:
 | Off-chain storage | IPFS / Kubo (credential envelope encrypted to the holder, referenced on-chain by CID) |
 | Backend | Go 1.24 REST API (`offchain/`) · `fabric-gateway`, `go-ipfs-api`, `go-sql-driver/mysql` |
 | Database | MySQL (`qchain_db`) for ID mappings, contact details, sessions, verification logs, subscriptions, alerts, audit |
-| Frontend | Flutter 3.35.x (Dart ≥ 3.9.2) — QPortal (web) + QWallet (mobile + web) |
+| Frontend | Flutter 3.44.x (Dart ≥ 3.10) — QPortal (web) + QWallet (mobile + web) |
 | Public gateway | Nginx reverse proxy (`web-gateway/`) serving both apps + proxying the API on one origin |
 | Public access | Tailscale Funnel (permanent `*.ts.net` HTTPS URL, runs as a system service) |
 
