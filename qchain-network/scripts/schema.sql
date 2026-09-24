@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS credentials (
     ipfs_cid            VARCHAR(100),                                               -- [NOW]  nullable if IPFS skipped
     status              ENUM('active','revoked','suspended','expired') NOT NULL DEFAULT 'active',
     credential_data     JSON         NOT NULL,                                      -- [NOW]  parsed attributes for display
+    enc_version         TINYINT      NOT NULL DEFAULT 0,                            -- [NOW]  credential_data envelope format version
     is_favorite         TINYINT(1)   NOT NULL DEFAULT 0,                            -- [NOW]  QWallet favorite flag
     category            VARCHAR(50)  NOT NULL DEFAULT 'General',                    -- [NOW]  QWallet display category
     in_wallet           TINYINT(1)   NOT NULL DEFAULT 0,                            -- [NOW]  1 once pulled in via /mobile/fetchDocument
@@ -341,7 +342,9 @@ CREATE TABLE IF NOT EXISTS mobile_sessions (
     credential_id VARCHAR(20)  NOT NULL,
     holder_id     VARCHAR(10)  NOT NULL,
     hidden_fields     JSON         DEFAULT NULL,
-    disclosed_payload JSON         DEFAULT NULL,                                 -- [Track H] signed canonical disclosed JSON
+    disclosed_payload LONGTEXT     DEFAULT NULL,                                 -- [Track H] signed canonical disclosed JSON, verbatim
+                                                                                   -- (LONGTEXT not JSON: MySQL 8 re-serialises JSON columns,
+                                                                                   -- which would break the holder's ML-DSA signature over these exact bytes)
     holder_signature  TEXT         DEFAULT NULL,                                 -- [Track H] hex ML-DSA-44 signature
     expires_at        DATETIME     NOT NULL,
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
