@@ -57,22 +57,19 @@ func main() {
 	// Connect to MySQL (non-fatal if not configured — warnings logged per request)
 	initDB()
 
-	// One-shot maintenance mode: encrypt any legacy plaintext credential_data rows
-	// in place, then exit. Run with RUN_BACKFILL_ENCRYPT=1. Does not touch the blockchain.
-	if os.Getenv("RUN_BACKFILL_ENCRYPT") == "1" {
-		runBackfillEncrypt()
+	// One-shot migration mode: re-create holders (and their bound wallet keys)
+	// on a freshly reset ledger from MySQL, then exit. Run with RUN_CHAIN_BOOTSTRAP=1.
+	if os.Getenv("RUN_CHAIN_BOOTSTRAP") == "1" {
+		runChainBootstrap()
 		return
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /registerHolder", handleRegisterHolder)
 	mux.HandleFunc("POST /issueCredential", handleIssueCredential)
-	mux.HandleFunc("POST /verifyCredential", handleVerifyCredential)
 	mux.HandleFunc("POST /revokeCredential", handleRevokeCredential)
 	mux.HandleFunc("POST /suspendCredential", handleSuspendCredential)
 	mux.HandleFunc("POST /restoreCredential", handleRestoreCredential)
-	mux.HandleFunc("POST /setCID", handleSetCID)
-	mux.HandleFunc("GET /getCredentialsByHolder", handleGetCredentialsByHolder)
 	mux.HandleFunc("GET /getAllCredentials", handleGetAllCredentials)
 	mux.HandleFunc("GET /getHolders", handleGetHolders)
 	mux.HandleFunc("GET /getVerificationHistory", handleGetVerificationHistory)
@@ -123,7 +120,7 @@ func main() {
 	fmt.Printf("  Chaincode:     %s\n", chaincodeName)
 	fmt.Printf("  IPFS host:     %s\n", ipfsHost)
 	fmt.Printf("  PQC algo:      %s\n", sigName)
-	fmt.Printf("  KEM algo:      %s (off-chain encryption: holder-held keys)\n", kemName)
+	fmt.Printf("  KEM algo:      %s (credential envelopes on IPFS, holder-held keys)\n", kemName)
 	fmt.Printf("  Issuer org:    %s / %s\n", issuerOrgName, issuerIdentity)
 	fmt.Printf("  Verifier org:  %s / %s\n", verifierOrgName, verifierIdentity)
 	fmt.Printf("  Issuer org ID: %s\n", issuerOrgID)
