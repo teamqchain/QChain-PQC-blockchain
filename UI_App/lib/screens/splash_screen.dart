@@ -4,10 +4,6 @@ import 'package:get/get.dart';
 // ignore: depend_on_referenced_packages
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
-import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
-import 'package:qwallet_mobileapp/controllers/activity_controller.dart';
-import 'package:qwallet_mobileapp/controllers/add_document_controller.dart';
-import 'package:qwallet_mobileapp/controllers/manage_subscriptions_controller.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -133,25 +129,8 @@ class _SplashScreenState extends State<SplashScreen>
                         height: 56,
                         child: ElevatedButton(
                           onPressed: () {
-                            if (!Get.isRegistered<WalletController>()) {
-                              Get.put(WalletController(), permanent: true);
-                            }
-                            if (!Get.isRegistered<ActivityController>()) {
-                              Get.put(ActivityController(), permanent: true);
-                            }
-                            if (!Get.isRegistered<AddDocumentController>()) {
-                              Get.put(
-                                AddDocumentController(),
-                                permanent: true,
-                              );
-                            }
-                            if (!Get.isRegistered<
-                                ManageSubscriptionsController>()) {
-                              Get.put(
-                                ManageSubscriptionsController(),
-                                permanent: true,
-                              );
-                            }
+                            // Controllers (and their API fetches) start only
+                            // after Onboard 3 finishes key check/registration.
                             Get.toNamed(Routes.ONBOARD1);
                           },
                           style: ElevatedButton.styleFrom(
