@@ -438,6 +438,9 @@ responses include a `credentialID`, and **all timestamps are returned in UAE loc
 - **CI/CD** — pushing to `main` auto-deploys the backend and QPortal via a self-hosted GitHub Actions
   runner on the VM, with automatic rollback on a failed health check. See
   [Continuous deployment](#continuous-deployment) above.
+- **`/registerHolder` now accepts optional `email` and `college`** — both existed in the `holders`
+  table and were already returned by every read path, but neither had a write path until now (`college`
+  had none at all; `email` could only be set indirectly, after the fact, via `updateCredential`).
 
 ---
 
