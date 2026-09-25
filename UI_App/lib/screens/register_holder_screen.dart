@@ -180,9 +180,11 @@ class _RegisterHolderScreenState extends State<RegisterHolderScreen> {
                       DropdownButtonFormField<String>(
                         value: _selectedCollege,
                         isExpanded: true,
+                        hint: const Text(
+                          'Select college',
+                          style: TextStyle(color: qSub, fontSize: 13),
+                        ),
                         decoration: InputDecoration(
-                          hintText: 'Select college',
-                          hintStyle: const TextStyle(color: qSub, fontSize: 13),
                           filled: true,
                           fillColor: const Color(0xFFF7F7F7),
                           contentPadding: const EdgeInsets.symmetric(
