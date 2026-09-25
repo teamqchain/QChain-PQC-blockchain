@@ -18,8 +18,9 @@ class _AppLogsScreenState extends State<AppLogsScreen> {
   final _scroll = ScrollController();
   String _filter = '';
 
+  /// Newest first so the latest events are at the top without scrolling.
   List<AppLogEntry> get _rows {
-    final all = appLogEntries;
+    final all = appLogEntries.reversed.toList(growable: false);
     final q = _filter.trim().toLowerCase();
     if (q.isEmpty) return all;
     return all
@@ -28,7 +29,9 @@ class _AppLogsScreenState extends State<AppLogsScreen> {
   }
 
   void _copyAll() {
-    final text = appLogEntries.map((e) => e.line).join('\n');
+    // Same order as the UI (newest first) so pasted dumps match what you see.
+    final text =
+        appLogEntries.reversed.map((e) => e.line).join('\n');
     Clipboard.setData(ClipboardData(text: text));
     HapticFeedback.lightImpact();
     ScaffoldMessenger.of(context).showSnackBar(

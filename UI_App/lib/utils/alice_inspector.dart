@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:alice/alice.dart';
@@ -24,12 +25,62 @@ final AliceHttpAdapter aliceHttpAdapter = AliceHttpAdapter();
 ///
 /// Open: **shake the device**. Inspector has HTTP calls + a **Logs** tab
 /// (fed by [logDebug] / [logError] via [wireAliceLogSink]).
+/// Logs tab order: **newest on top** ([_NewestFirstAliceLogger]).
 final Alice alice = Alice(
   configuration: AliceConfiguration(
     showNotification: true,
     showInspectorOnShake: true, // shake the device to open the inspector
+    logger: _NewestFirstAliceLogger(maximumSize: 1000),
   ),
 )..addAdapter(aliceHttpAdapter);
+
+/// Alice's stock [AliceLogger] sorts oldest→newest. Same cap/stream API,
+/// but lists **newest first** so the Logs tab matches App logs.
+/// Uses dart:async only (no direct rxdart dependency).
+class _NewestFirstAliceLogger extends AliceLogger {
+  _NewestFirstAliceLogger({required super.maximumSize});
+
+  final _controller = StreamController<List<AliceLog>>.broadcast();
+  List<AliceLog> _logs = <AliceLog>[];
+
+  @override
+  Stream<List<AliceLog>> get logsStream async* {
+    yield List<AliceLog>.unmodifiable(_logs);
+    yield* _controller.stream;
+  }
+
+  @override
+  List<AliceLog> get logs => List<AliceLog>.unmodifiable(_logs);
+
+  @override
+  void add(AliceLog log) {
+    final values = List<AliceLog>.from(_logs)..add(log);
+    values.sort((a, b) => b.timestamp.compareTo(a.timestamp)); // newest first
+    if (maximumSize > 0 && values.length > maximumSize) {
+      // Trim oldest (tail when newest-first).
+      values.removeRange(maximumSize, values.length);
+    }
+    _logs = values;
+    if (!_controller.isClosed) {
+      _controller.add(List<AliceLog>.unmodifiable(_logs));
+    }
+  }
+
+  @override
+  void addAll(Iterable<AliceLog> logs) {
+    for (final log in logs) {
+      add(log);
+    }
+  }
+
+  @override
+  void clearLogs() {
+    _logs = <AliceLog>[];
+    if (!_controller.isClosed) {
+      _controller.add(const <AliceLog>[]);
+    }
+  }
+}
 
 /// Pipe app logger into Alice → Logs tab (debug + release).
 /// Call once from [main] after bindings are ready.
