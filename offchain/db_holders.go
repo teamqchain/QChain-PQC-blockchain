@@ -116,14 +116,19 @@ func holderContactByFabricID(fabricHolderID string) (email, emiratesID string, e
 // server-generated, so a plain INSERT is correct — a collision here would be
 // a real bug (not a legitimate re-registration) and should fail loudly rather
 // than silently overwrite an existing holder's identity.
-func insertHolder(holderID, emiratesID, firstName, lastName string) error {
+//
+// email and college are optional. email is stored via nullIfEmpty rather than
+// as "" — the column is UNIQUE, and MySQL allows multiple NULLs in a unique
+// column but not multiple empty strings, so a second holder registered
+// without an email would otherwise collide with the first.
+func insertHolder(holderID, emiratesID, firstName, lastName, email, college string) error {
 	if db == nil {
 		return fmt.Errorf("database not configured")
 	}
 	_, err := db.Exec(
-		`INSERT INTO holders (holder_id, emirates_id, first_name, last_name, fabric_holder_id, is_wallet_activated)
-		 VALUES (?, ?, ?, ?, ?, FALSE)`,
-		holderID, emiratesID, firstName, lastName, holderID,
+		`INSERT INTO holders (holder_id, emirates_id, first_name, last_name, email, college, fabric_holder_id, is_wallet_activated)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, FALSE)`,
+		holderID, emiratesID, firstName, lastName, nullIfEmpty(email), nullIfEmpty(college), holderID,
 	)
 	return err
 }
