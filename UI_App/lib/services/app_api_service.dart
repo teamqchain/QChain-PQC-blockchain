@@ -615,12 +615,10 @@ class ApiService {
     }
   }
 
-  /// POST {base}/registerHolder — Dev Config helper to mint a holder without
-  /// asking backend. Body: holderID, emiratesID, firstName, lastName.
-  /// [holderID] must already include the `H-` prefix. Returns the response map
-  /// (at least holderID). Throws [ConnectionException] on failure.
+  /// POST {base}/registerHolder — Dev Config helper to mint a holder.
+  /// Body: emiratesID, firstName, lastName. holderID is omitted so the backend
+  /// auto-increments and returns it. Throws [ConnectionException] on failure.
   static Future<Map<String, dynamic>> registerHolder({
-    required String holderID,
     required String emiratesID,
     required String firstName,
     required String lastName,
@@ -628,7 +626,7 @@ class ApiService {
   }) async {
     final base = _resolveBase(baseUrlOverride);
     logDebug(
-      '[ApiService] registerHolder holderID=$holderID emiratesID=$emiratesID base=$base',
+      '[ApiService] registerHolder emiratesID=$emiratesID base=$base',
     );
     try {
       final res = await _client
@@ -636,7 +634,6 @@ class ApiService {
             Uri.parse('$base/registerHolder'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
-              'holderID': holderID,
               'emiratesID': emiratesID,
               'firstName': firstName,
               'lastName': lastName,
