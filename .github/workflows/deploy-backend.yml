@@ -1,0 +1,132 @@
+# Auto-deploy the Go backend (qchain-api) when offchain/ changes on main.
+#
+# Runs on the self-hosted runner on the VM (label: qchain-vm). It deploys from
+# the VM's own checkout, not a runner checkout, because docker-run.sh needs the
+# gitignored runtime files that only exist there (offchain/.env, and the
+# crypto-material / wallet / connection profiles under qchain-network/).
+#
+# Flow: pull main → go test (builder stage) → build → restart → /health.
+# If the new container is unhealthy, the previous image is restarted and the
+# run is marked failed. Chaincode and MySQL schema changes stay manual.
+#
+# Runner setup: docs/setup.md → "Continuous deployment (self-hosted runner)".
+
+name: Deploy backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "offchain/**"
+      - "!offchain/**/*.md"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch:
+
+# One backend deploy at a time; a newer push waits rather than cancelling a
+# deploy halfway through.
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, qchain-vm]
+    timeout-minutes: 60
+    steps:
+      - name: Sync the VM checkout to main
+        run: |
+          REPO_ROOT="$HOME/Desktop/QChain/QChain-PQC-blockchain"
+          echo "REPO_ROOT=$REPO_ROOT" >> "$GITHUB_ENV"
+          cd "$REPO_ROOT"
+          BRANCH="$(git branch --show-current)"
+          if [[ "$BRANCH" != "main" ]]; then
+            echo "::error::VM checkout is on '$BRANCH', not main"
+            exit 1
+          fi
+          # Deploy exactly main: refuse if tracked files were edited by hand.
+          if ! git diff --quiet HEAD; then
+            echo "::error::VM checkout has uncommitted changes to tracked files. Commit or discard them, then re-run."
+            git status --short --untracked-files=no
+            exit 1
+          fi
+          git pull --ff-only origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" HEAD; then
+            echo "::error::$GITHUB_SHA is not in the pulled main"
+            exit 1
+          fi
+          echo "Deploying: $(git log -1 --oneline)"
+
+      # A red test stops here; the running container is left untouched.
+      - name: Unit tests (go test in the builder stage)
+        run: |
+          cd "$REPO_ROOT"
+          docker build --target builder -t qchain-api:ci-test offchain
+          docker run --rm qchain-api:ci-test go test -count=1 ./...
+
+      - name: Remove the test image
+        if: always()
+        run: docker rmi qchain-api:ci-test >/dev/null 2>&1 || true
+
+      - name: Keep the running image as the rollback point
+        run: |
+          if docker image inspect qchain-api:latest >/dev/null 2>&1; then
+            docker tag qchain-api:latest qchain-api:previous
+            echo "Rollback point saved as qchain-api:previous"
+          else
+            echo "No qchain-api:latest yet (first deploy), nothing to roll back to"
+          fi
+
+      # A failed build also stops here; the old container keeps running.
+      - name: Build image
+        run: cd "$REPO_ROOT" && bash offchain/docker-build.sh
+
+      - name: Restart container
+        id: deploy
+        run: cd "$REPO_ROOT" && bash offchain/docker-run.sh
+
+      - name: Health check
+        id: health
+        run: |
+          for _ in $(seq 1 30); do
+            if [[ "$(curl -sf -m 5 http://localhost:3000/health || true)" == *'"ok"'* ]]; then
+              echo "qchain-api is healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::qchain-api did not become healthy within 60s"
+          docker logs --tail 100 qchain-api || true
+          exit 1
+
+      # Only when the old container was actually replaced (deploy or health
+      # failed). The job stays failed either way, so the pusher is emailed.
+      - name: Roll back to the previous image
+        if: failure() && (steps.deploy.outcome == 'failure' || steps.health.outcome == 'failure')
+        run: |
+          if ! docker image inspect qchain-api:previous >/dev/null 2>&1; then
+            echo "::error::No qchain-api:previous image, cannot roll back"
+            exit 1
+          fi
+          docker tag qchain-api:previous qchain-api:latest
+          cd "$REPO_ROOT" && bash offchain/docker-run.sh
+          for _ in $(seq 1 30); do
+            if [[ "$(curl -sf -m 5 http://localhost:3000/health || true)" == *'"ok"'* ]]; then
+              echo "::error::Deploy of ${GITHUB_SHA::7} failed. Rolled back to the previous image, which is healthy."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Rollback image is not healthy either. qchain-api needs manual attention."
+          docker logs --tail 100 qchain-api || true
+          exit 1
+
+      # Dangling (untagged, unused) images only; latest + previous are kept.
+      - name: Remove dangling images
+        run: docker image prune -f

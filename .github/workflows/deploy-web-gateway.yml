@@ -1,0 +1,129 @@
+# Auto-deploy the web-gateway (QPortal + Nginx) when QPortal code changes on main.
+#
+# Runs on the self-hosted runner on the VM (label: qchain-vm), from the VM's
+# own checkout, same as deploy-backend.yml. QWallet is mobile-only and is not
+# built here.
+#
+# Flow: pull main → build (compiles QPortal) → restart → /gw-health + portal page.
+# If the new container is unhealthy, the previous image is restarted and the
+# run is marked failed. /api/ is deliberately not checked, so a backend outage
+# can't roll back a good gateway.
+#
+# Runner setup: docs/setup.md → "Continuous deployment (self-hosted runner)".
+
+name: Deploy web-gateway
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "UI_WebApp/**"
+      - "shared/**"
+      - "web-gateway/**"
+      - ".dockerignore"
+      - ".github/workflows/deploy-web-gateway.yml"
+      - "!**/*.md"
+  workflow_dispatch:
+
+# Separate from the backend's group, so a queued backend deploy never
+# replaces a queued gateway deploy (or the other way round).
+concurrency:
+  group: deploy-web-gateway
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, qchain-vm]
+    timeout-minutes: 60
+    env:
+      # Baked into QPortal at build time. The Funnel URL never changes.
+      API_BASE_URL: https://qchain.tail4fff4b.ts.net/api
+    steps:
+      - name: Sync the VM checkout to main
+        run: |
+          REPO_ROOT="$HOME/Desktop/QChain/QChain-PQC-blockchain"
+          echo "REPO_ROOT=$REPO_ROOT" >> "$GITHUB_ENV"
+          cd "$REPO_ROOT"
+          BRANCH="$(git branch --show-current)"
+          if [[ "$BRANCH" != "main" ]]; then
+            echo "::error::VM checkout is on '$BRANCH', not main"
+            exit 1
+          fi
+          # Deploy exactly main: refuse if tracked files were edited by hand.
+          if ! git diff --quiet HEAD; then
+            echo "::error::VM checkout has uncommitted changes to tracked files. Commit or discard them, then re-run."
+            git status --short --untracked-files=no
+            exit 1
+          fi
+          git pull --ff-only origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" HEAD; then
+            echo "::error::$GITHUB_SHA is not in the pulled main"
+            exit 1
+          fi
+          echo "Deploying: $(git log -1 --oneline)"
+
+      - name: Keep the running image as the rollback point
+        run: |
+          if docker image inspect qchain-web-gateway:latest >/dev/null 2>&1; then
+            docker tag qchain-web-gateway:latest qchain-web-gateway:previous
+            echo "Rollback point saved as qchain-web-gateway:previous"
+          else
+            echo "No qchain-web-gateway:latest yet (first deploy), nothing to roll back to"
+          fi
+
+      # A failed build (including a QPortal compile error) stops here; the old
+      # container keeps running.
+      - name: Build image
+        run: cd "$REPO_ROOT" && bash web-gateway/docker-build.sh
+
+      - name: Restart container
+        id: deploy
+        run: cd "$REPO_ROOT" && bash web-gateway/docker-run.sh
+
+      - name: Health check
+        id: health
+        run: |
+          for _ in $(seq 1 30); do
+            if [[ "$(curl -sf -m 5 http://localhost:8090/gw-health || true)" == "ok" ]] \
+               && [[ "$(curl -sf -m 5 http://localhost:8090/ || true)" == *"<html"* ]]; then
+              echo "qchain-web-gateway is healthy and serving QPortal"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::qchain-web-gateway did not become healthy within 60s"
+          docker logs --tail 100 qchain-web-gateway || true
+          exit 1
+
+      # Only when the old container was actually replaced (deploy or health
+      # failed). The job stays failed either way, so the pusher is emailed.
+      - name: Roll back to the previous image
+        if: failure() && (steps.deploy.outcome == 'failure' || steps.health.outcome == 'failure')
+        run: |
+          if ! docker image inspect qchain-web-gateway:previous >/dev/null 2>&1; then
+            echo "::error::No qchain-web-gateway:previous image, cannot roll back"
+            exit 1
+          fi
+          docker tag qchain-web-gateway:previous qchain-web-gateway:latest
+          cd "$REPO_ROOT" && bash web-gateway/docker-run.sh
+          for _ in $(seq 1 30); do
+            if [[ "$(curl -sf -m 5 http://localhost:8090/gw-health || true)" == "ok" ]]; then
+              echo "::error::Deploy of ${GITHUB_SHA::7} failed. Rolled back to the previous image, which is healthy."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Rollback image is not healthy either. qchain-web-gateway needs manual attention."
+          docker logs --tail 100 qchain-web-gateway || true
+          exit 1
+
+      # Dangling (untagged, unused) images only; latest + previous are kept.
+      - name: Remove dangling images
+        run: docker image prune -f
