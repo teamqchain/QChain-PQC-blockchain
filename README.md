@@ -122,6 +122,7 @@ A separate `algo-benchmarking/` module compares **ML-DSA-44/65/87** across two i
 QChain-PQC-blockchain/
 ├── README.md
 ├── LICENSE                      # Proprietary — all rights reserved
+├── .github/workflows/          # auto-deploy backend + QPortal on push to main (self-hosted runner on the VM)
 │
 ├── qchain-network/             # Hyperledger Fabric network
 │   ├── chaincode/              # JavaScript chaincode v2.0 (QChaincode.js, index.js, package.json)
@@ -150,7 +151,7 @@ QChain-PQC-blockchain/
 │   └── *_test.go               # go test ./... — chain, commitment, envelope, verification, etc.
 │
 ├── UI_WebApp/                  # QPortal — Flutter web (issuer / verifier / IT-admin)
-├── UI_App/                     # QWallet — Flutter app (holder); builds to mobile + web
+├── UI_App/                     # QWallet — Flutter app (holder); mobile only
 ├── shared/                     # Flutter package shared by both apps (certificate template/viewer, fonts)
 │
 ├── web-gateway/                # One Nginx container: builds QPortal + proxies /api
@@ -183,7 +184,7 @@ Skip to [Quick start](#quick-start).
 | MySQL | 8.x | The `qchain_db` database |
 | IPFS / Kubo | latest | Off-chain credential storage |
 | Go | 1.24 | Generating the PQC key pair (the backend itself builds inside Docker) |
-| Flutter SDK | 3.35.x (Dart ≥ 3.9.2) | Building the apps outside Docker (optional — the gateway builds them in Docker) |
+| Flutter SDK | 3.44.x (Dart ≥ 3.10) | QWallet (mobile), and QPortal outside Docker (optional — the gateway builds QPortal in Docker) |
 | Tailscale | latest | Optional — only to expose the apps publicly |
 
 Get the Fabric CLI binaries with the official installer, e.g.:
@@ -195,7 +196,7 @@ export PATH=$PATH:$PWD/bin
 ### 1. Clone
 
 ```bash
-git clone https://github.com/nihvp/QChain-PQC-blockchain.git
+git clone https://github.com/teamqchain/QChain-PQC-blockchain.git
 cd QChain-PQC-blockchain
 ```
 
@@ -336,6 +337,25 @@ If the Fabric network, MySQL, IPFS and `offchain/.env` are already set up on the
 ```bash
 bash qchain-network/scripts/start-demo.sh     # starts IPFS + the backend container, checks the peers
 ```
+
+### Continuous deployment
+
+Pushing to `main` redeploys the affected component on the VM automatically, through a GitHub Actions
+self-hosted runner installed there. Watch runs in the repo's **Actions** tab.
+
+| Push touches | Workflow | What it does |
+|---|---|---|
+| `offchain/` | `deploy-backend.yml` | `go test` → rebuild → restart `qchain-api` → `/health` |
+| `UI_WebApp/`, `shared/`, `web-gateway/` | `deploy-web-gateway.yml` | rebuild QPortal → restart `qchain-web-gateway` → health check |
+
+- Markdown-only changes don't trigger a deploy.
+- A failed test or build leaves the running container untouched.
+- If a new container fails its health check, the previous image is restarted automatically and the
+  run is marked failed. GitHub emails the pusher.
+- **Still manual:** chaincode, MySQL schema changes, and QWallet (built locally as a mobile app).
+- Either workflow can be re-run by hand: Actions tab → pick the workflow → **Run workflow**.
+
+Runner setup: [docs/setup.md → Continuous deployment](docs/setup.md#10-continuous-deployment-self-hosted-runner).
 
 ---
 
