@@ -22,7 +22,6 @@ class _RegisterHolderScreenState extends State<RegisterHolderScreen> {
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
   final _eidCtrl = TextEditingController();
-  final _holderNumCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   bool _submitting = false;
@@ -43,7 +42,6 @@ class _RegisterHolderScreenState extends State<RegisterHolderScreen> {
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
     _eidCtrl.dispose();
-    _holderNumCtrl.dispose();
     super.dispose();
   }
 
@@ -58,12 +56,6 @@ class _RegisterHolderScreenState extends State<RegisterHolderScreen> {
         '${d.substring(7, 14)}-${d.substring(14)}';
   }
 
-  /// User types 4 digits → H-0003
-  String get _holderID {
-    final n = _holderNumCtrl.text.trim();
-    return 'H-$n';
-  }
-
   Future<void> _submit() async {
     setState(() => _error = null);
     if (!_formKey.currentState!.validate()) return;
@@ -71,7 +63,6 @@ class _RegisterHolderScreenState extends State<RegisterHolderScreen> {
     setState(() => _submitting = true);
     try {
       final result = await ApiService.registerHolder(
-        holderID: _holderID,
         emiratesID: _formattedEid,
         firstName: _firstNameCtrl.text.trim(),
         lastName: _lastNameCtrl.text.trim(),
@@ -79,10 +70,10 @@ class _RegisterHolderScreenState extends State<RegisterHolderScreen> {
       );
       if (!mounted) return;
       HapticFeedback.lightImpact();
-      // Pop result for Dev Config to select + refresh.
+      // holderID comes from backend auto-increment when omitted in the request.
       Get.back(
         result: {
-          'holderID': (result['holderID'] ?? _holderID).toString(),
+          'holderID': (result['holderID'] ?? '').toString(),
           'emiratesID': _formattedEid,
           'fullName':
               '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}'.trim(),
@@ -144,7 +135,7 @@ class _RegisterHolderScreenState extends State<RegisterHolderScreen> {
                     ],
                   ),
                   const SizedBox(height: 22),
-                  _sectionLabel('IDS'),
+                  _sectionLabel('EMIRATES ID'),
                   const SizedBox(height: 10),
                   _card(
                     children: [
@@ -162,31 +153,9 @@ class _RegisterHolderScreenState extends State<RegisterHolderScreen> {
                           return null;
                         },
                       ),
-                      const SizedBox(height: 14),
-                      _label('Holder ID number'),
-                      const SizedBox(height: 8),
-                      _textField(
-                        controller: _holderNumCtrl,
-                        hint: '0003',
-                        keyboardType: TextInputType.number,
-                        prefixText: 'H-  ',
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(4),
-                        ],
-                        validator: (v) {
-                          if (v == null || v.trim().isEmpty) {
-                            return 'Enter 4 digits';
-                          }
-                          if (v.trim().length != 4) {
-                            return 'Exactly 4 digits';
-                          }
-                          return null;
-                        },
-                      ),
                       const SizedBox(height: 8),
                       const Text(
-                        'Sent as H-####  ·  EID as NNN-NNNN-NNNNNNN-N',
+                        'Format NNN-NNNN-NNNNNNN-N  ·  holder ID auto-assigned by backend',
                         style: TextStyle(color: qSub, fontSize: 11),
                       ),
                     ],
@@ -236,7 +205,7 @@ class _RegisterHolderScreenState extends State<RegisterHolderScreen> {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Calls POST /registerHolder on the pending backend URL.',
+                    'POST /registerHolder — holder ID is assigned by the backend.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: qDimmed, fontSize: 11),
                   ),
