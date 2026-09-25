@@ -19,11 +19,30 @@ class RegisterHolderScreen extends StatefulWidget {
 }
 
 class _RegisterHolderScreenState extends State<RegisterHolderScreen> {
+  /// Colleges from SchemaMockData (unique names across SCH-001 / SCH-002).
+  static const List<String> _colleges = [
+    'College of Sharia & Islamic Studies',
+    'College of Arts,Humanities & SocialScience',
+    'College of Public Policy',
+    'College of Law(Arabic)',
+    'College of Law(English)',
+    'College of Fine Arts & Design',
+    'College of Science',
+    'College of Business Administration',
+    'College of Computing & Informatics',
+    'College of Mass communication',
+    'College of Engineering',
+    'College of Health Sciences',
+    'College of Pharmacy',
+  ];
+
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   final _eidCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
+  String? _selectedCollege;
   bool _submitting = false;
   String? _error;
 
@@ -41,6 +60,7 @@ class _RegisterHolderScreenState extends State<RegisterHolderScreen> {
   void dispose() {
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
+    _emailCtrl.dispose();
     _eidCtrl.dispose();
     super.dispose();
   }
@@ -62,10 +82,14 @@ class _RegisterHolderScreenState extends State<RegisterHolderScreen> {
 
     setState(() => _submitting = true);
     try {
+      final email = _emailCtrl.text.trim();
+      final college = _selectedCollege?.trim() ?? '';
       final result = await ApiService.registerHolder(
         emiratesID: _formattedEid,
         firstName: _firstNameCtrl.text.trim(),
         lastName: _lastNameCtrl.text.trim(),
+        email: email.isEmpty ? null : email,
+        college: college.isEmpty ? null : college,
         baseUrlOverride: _baseOverride,
       );
       if (!mounted) return;
@@ -79,6 +103,8 @@ class _RegisterHolderScreenState extends State<RegisterHolderScreen> {
               '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}'.trim(),
           'firstName': _firstNameCtrl.text.trim(),
           'lastName': _lastNameCtrl.text.trim(),
+          'email': email,
+          'college': college,
           'isWalletActivated': false,
         },
       );
@@ -131,6 +157,78 @@ class _RegisterHolderScreenState extends State<RegisterHolderScreen> {
                             (v == null || v.trim().isEmpty)
                                 ? 'Required'
                                 : null,
+                      ),
+                      const SizedBox(height: 14),
+                      _label('Email'),
+                      const SizedBox(height: 8),
+                      _textField(
+                        controller: _emailCtrl,
+                        hint: 'fatima@uos.ac.ae',
+                        keyboardType: TextInputType.emailAddress,
+                        validator: (v) {
+                          final t = (v ?? '').trim();
+                          if (t.isEmpty) return 'Required';
+                          if (!t.contains('@') || !t.contains('.')) {
+                            return 'Enter a valid email';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                      _label('College'),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        value: _selectedCollege,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          hintText: 'Select college',
+                          hintStyle: const TextStyle(color: qSub, fontSize: 13),
+                          filled: true,
+                          fillColor: const Color(0xFFF7F7F7),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 14,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: qBorder),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: qBorder),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: qPrimary),
+                          ),
+                          errorBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: qRed),
+                          ),
+                          focusedErrorBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: qRed),
+                          ),
+                        ),
+                        items: _colleges
+                            .map(
+                              (c) => DropdownMenuItem<String>(
+                                value: c,
+                                child: Text(
+                                  c,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: qPrimary,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() => _selectedCollege = v),
+                        validator: (v) =>
+                            (v == null || v.isEmpty) ? 'Required' : null,
                       ),
                     ],
                   ),
