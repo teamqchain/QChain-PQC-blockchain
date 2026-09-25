@@ -108,7 +108,7 @@ The system has three faces:
 | Backend | Go 1.24 REST API (`offchain/`) · `fabric-gateway`, `go-ipfs-api`, `go-sql-driver/mysql` |
 | Database | MySQL (`qchain_db`) for ID mappings, contact details, sessions, verification logs, subscriptions, alerts, audit |
 | Frontend | Flutter 3.44.x (Dart ≥ 3.10) — QPortal (web) + QWallet (mobile only) |
-| Public gateway | Nginx reverse proxy (`web-gateway/`) serving both apps + proxying the API on one origin |
+| Public gateway | Nginx reverse proxy (`web-gateway/`) serving QPortal only + proxying the API on one origin |
 | Public access | Tailscale Funnel (permanent `*.ts.net` HTTPS URL, runs as a system service) |
 
 A separate `algo-benchmarking/` module compares **ML-DSA-44/65/87** across two implementations
@@ -131,7 +131,8 @@ QChain-PQC-blockchain/
 │   ├── docker/                 # docker-compose.yaml (peers/orderer/couchdb/ipfs) + docker-compose-ca.yaml
 │   ├── scripts/                # registerEnroll.sh, env-gov.sh, env-gen.sh, schema.sql,
 │   │                           # setup-demo.sh, start-demo.sh, setup-ipfs-service.sh,
-│   │                           # setup-tailscale-funnel.sh, enrollAdmin.js, registerUser.js
+│   │                           # setup-tailscale-funnel.sh, enrollAdmin.js, registerUser.js,
+│   │                           # start-fabric-network.sh, setup-fabric-autostart.sh
 │   ├── channel-artifacts/      # generated channel/genesis blocks   (runtime, gitignored)
 │   ├── crypto-material/        # CA-issued MSP certs & keys          (runtime, gitignored)
 │   ├── wallet/                 # Fabric gateway identities (.id)     (runtime, gitignored)
@@ -426,7 +427,7 @@ responses include a `credentialID`, and **all timestamps are returned in UAE loc
   credential now raises an alert that surfaces on the dashboard and the verifier's alerts page.
 - **`credentialID` in every credential-tied response**, for deep-linking from the frontends.
 - **Backend refactor** — the large `server.go`/`db.go` were split into per-domain files for readability.
-- **Public access** — a single Nginx `web-gateway` serves both apps + proxies the API on one origin,
+- **Public access** — a single Nginx `web-gateway` serves QPortal + proxies the API on one origin,
   exposed via a permanent Tailscale Funnel URL.
 - **UAE-local timestamps** — every time the API returns is now Asia/Dubai local time.
 - **QWallet decoupled to mobile-only** — it isn't compiled for web at all anymore (its PQC library can't
