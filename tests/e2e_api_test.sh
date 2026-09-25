@@ -190,9 +190,10 @@ echo ""
 RAND_SUFFIX=$((RANDOM % 9000 + 1000))
 EID="784-1990-888${RAND_SUFFIX}-1"
 echo "2. Registering Holder ($EID)..."
+HOLDER_EMAIL="tariq.alnuaimi.${RAND_SUFFIX}@uos.ac.ae"
 HOLDER_RESP=$(curl -s -X POST "$API_URL/registerHolder" \
     -H "Content-Type: application/json" \
-    -d "{\"emiratesID\": \"$EID\", \"firstName\": \"Tariq\", \"lastName\": \"Al Nuaimi\"}")
+    -d "{\"emiratesID\": \"$EID\", \"firstName\": \"Tariq\", \"lastName\": \"Al Nuaimi\", \"email\": \"$HOLDER_EMAIL\", \"college\": \"CCI\"}")
 HOLDER_ID=$(json_get "$HOLDER_RESP" holderID)
 if [[ "$HOLDER_ID" =~ ^H-[0-9]+$ ]]; then
     pass "Holder registered with a server-generated ID: $HOLDER_ID"
@@ -200,10 +201,20 @@ else
     fail "registerHolder" "expected a server-generated holderID (H-NNNN), got: $HOLDER_RESP"
 fi
 
+HOLDERS_CHECK=$(curl -s "$API_URL/getHolders?search=$EID")
+assert_json "$HOLDERS_CHECK" "data.get('holders', [{}])[0].get('email')" "$HOLDER_EMAIL" "registerHolder's optional email is stored and returned by getHolders"
+assert_json "$HOLDERS_CHECK" "data.get('holders', [{}])[0].get('college')" "CCI" "registerHolder's optional college is stored and returned by getHolders"
+
 # holderID is no longer a request field. Regression test for the original bug:
 # a caller supplying an existing holderID used to silently overwrite that
 # holder's identity (MySQL ON DUPLICATE KEY UPDATE). Now the field is simply
 # ignored — a fresh id is minted, and the original holder is left untouched.
+# This second holder also deliberately OMITS email — a live regression test
+# for a second bug class: email is UNIQUE in the schema, so if an omitted
+# email were ever stored as "" instead of SQL NULL, this second holder would
+# collide with nothing today but would break the moment a *third* holder also
+# omitted email. MySQL allows multiple NULLs in a UNIQUE column; it does not
+# allow multiple "".
 OVERWRITE_EID="784-1990-887${RAND_SUFFIX}-1"
 OVERWRITE_RESP=$(curl -s -X POST "$API_URL/registerHolder" \
     -H "Content-Type: application/json" \
@@ -212,6 +223,16 @@ assert_json "$OVERWRITE_RESP" "data.get('holderID') != '$HOLDER_ID' and bool(dat
 
 HOLDERS_CHECK=$(curl -s "$API_URL/getHolders?search=$EID")
 assert_json "$HOLDERS_CHECK" "data.get('holders', [{}])[0].get('fullName')" "Tariq Al Nuaimi" "Original holder's identity was not overwritten by the collision attempt"
+
+# A THIRD holder, also omitting email — makes the NULL-vs-"" trap above a real
+# same-run test: two holders in a row both omit email, so if the backend ever
+# stored "" instead of SQL NULL, this second omission would collide with the
+# first (email is UNIQUE) and the whole registration would fail.
+SECOND_NO_EMAIL_EID="784-1990-886${RAND_SUFFIX}-1"
+SECOND_NO_EMAIL_RESP=$(curl -s -X POST "$API_URL/registerHolder" \
+    -H "Content-Type: application/json" \
+    -d "{\"emiratesID\": \"$SECOND_NO_EMAIL_EID\", \"firstName\": \"Second\", \"lastName\": \"NoEmail\"}")
+assert_json "$SECOND_NO_EMAIL_RESP" "bool(data.get('holderID', '').startswith('H-'))" "True" "A second holder in the same run can also omit email without colliding (NULL, not empty string)"
 
 # ─── 3. Check Keys Before Activation ─────────────────────────────────────────
 echo ""

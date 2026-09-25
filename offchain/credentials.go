@@ -40,6 +40,8 @@ type RegisterHolderRequest struct {
 	EmiratesID string `json:"emiratesID"` // stored in MySQL holders table
 	FirstName  string `json:"firstName"`
 	LastName   string `json:"lastName"`
+	Email      string `json:"email"`   // optional; MySQL-only, UNIQUE if set
+	College    string `json:"college"` // optional; MySQL-only
 }
 
 // IssueCredentialRequest — called by QPortal issuer screen (Step 5 button).
@@ -99,7 +101,7 @@ func handleRegisterHolder(w http.ResponseWriter, r *http.Request) {
 
 	// Persist to MySQL (optional — logs warning if DB not configured)
 	if req.EmiratesID != "" {
-		if dbErr := insertHolder(holderID, req.EmiratesID, req.FirstName, req.LastName); dbErr != nil {
+		if dbErr := insertHolder(holderID, req.EmiratesID, req.FirstName, req.LastName, req.Email, req.College); dbErr != nil {
 			log.Printf("DB insertHolder warning: %v", dbErr)
 		}
 	}

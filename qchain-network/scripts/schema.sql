@@ -39,12 +39,12 @@ CREATE TABLE IF NOT EXISTS holders (
     emirates_id         VARCHAR(20)  NOT NULL UNIQUE,                               -- [NOW]  lookup key
     first_name          VARCHAR(50),                                                -- [NOW]  filled at wallet first login
     last_name           VARCHAR(50),
-    email               VARCHAR(100) UNIQUE,                                        -- [LATER] used as username after setup
+    email               VARCHAR(100) UNIQUE,                                        -- [NOW]  set via /registerHolder, optional
     password_hash       VARCHAR(255),                                               -- [LATER] bcrypt
     date_of_birth       DATE,                                                       -- [LATER]
     phone               VARCHAR(20),                                                -- [LATER]
     holder_type         ENUM('bachelor_student','master_student','phd_student','employee','medical'), -- [LATER]
-    college             VARCHAR(100),                                               -- [LATER]
+    college             VARCHAR(100),                                               -- [NOW]  set via /registerHolder, optional
     wallet_address      VARCHAR(50),                                                -- [LATER] QWallet device identifier
     fabric_holder_id    VARCHAR(15)  NOT NULL UNIQUE,                              -- [NOW]  matches blockchain H-XXXX key
     is_wallet_activated BOOLEAN DEFAULT FALSE,
