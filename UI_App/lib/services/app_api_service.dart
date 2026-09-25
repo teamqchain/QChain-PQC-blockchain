@@ -153,35 +153,57 @@ class ApiService {
       );
       return attrs;
     } catch (e) {
-      // Surface the #1 real-world cause: wrong ML-KEM keypair on device.
+      // Surface the #1 real-world cause: wrong on-device keypair(s).
       try {
-        final localPub = await CryptoService.readKemPublicKey();
+        final local = await CryptoService.readAllPublicKeys();
         logDebug(
-          '[ApiService] decrypt failed. localKemPubLen=${localPub?.length ?? 0} '
+          '[ApiService] decrypt failed. localKemPubLen=${local.kemPubHex?.length ?? 0} '
+          'localDsaPubLen=${local.dsaPubHex?.length ?? 0} '
           'privLen=${kemPrivHex.length} envelopeCredId=${envelope['credId']} '
           'err=$e',
         );
-        if (localPub != null && localPub.isNotEmpty) {
-          // Full pub so you can paste it next to holders.kem_public_key.
-          logDebugLong('[ApiService] device kem_pub_key at decrypt fail', localPub);
+        if (local.kemPubHex != null && local.kemPubHex!.isNotEmpty) {
+          logDebugLong(
+            '[ApiService] device kem_pub_key at decrypt fail',
+            local.kemPubHex!,
+          );
+        }
+        if (local.dsaPubHex != null && local.dsaPubHex!.isNotEmpty) {
+          logDebugLong(
+            '[ApiService] device dsa_pub_key at decrypt fail',
+            local.dsaPubHex!,
+          );
         }
         if (emiratesID != null && emiratesID.isNotEmpty) {
           final status = await checkKeys(emiratesID);
-          final backendPub = status['kemPublicKey']?.toString() ?? '';
-          if (backendPub.isNotEmpty) {
-            final diag = await CryptoService.verifyKemKeyMatch(backendPub);
-            logDebug('[ApiService] key match after decrypt fail:\n$diag');
-            logDebugLong(
-              '[ApiService] backend kem_public_key at decrypt fail',
-              backendPub,
+          final backendKem = status['kemPublicKey']?.toString() ?? '';
+          final backendDsa = status['dsaPublicKey']?.toString() ?? '';
+          if (backendKem.isNotEmpty || backendDsa.isNotEmpty) {
+            final result = await CryptoService.verifyPublicKeysMatch(
+              backendKemPubHex: backendKem,
+              backendDsaPubHex: backendDsa,
             );
+            logDebug(
+              '[ApiService] key match after decrypt fail:\n${result.diagnostic}',
+            );
+            if (backendKem.isNotEmpty) {
+              logDebugLong(
+                '[ApiService] backend kem_public_key at decrypt fail',
+                backendKem,
+              );
+            }
+            if (backendDsa.isNotEmpty) {
+              logDebugLong(
+                '[ApiService] backend dsa_public_key at decrypt fail',
+                backendDsa,
+              );
+            }
           } else {
             logDebug(
-              '[ApiService] checkKeys has no kemPublicKey — deploy backend '
-              'change that returns kemPublicKey from /mobile/checkKeys, then '
-              'retry. Until then compare holders.kem_public_key with the '
-              'device pub above. If they differ, CRED was sealed to another '
-              'key → re-issue.',
+              '[ApiService] checkKeys returned no public keys — compare '
+              'holders.kem_public_key / holders.dsa_public_key with the device '
+              'pubs above. If KEM differs, CRED was sealed to another key → '
+              're-issue.',
             );
           }
         }

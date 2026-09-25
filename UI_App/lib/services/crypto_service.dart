@@ -339,6 +339,107 @@ class CryptoService {
     return buf.toString();
   }
 
+  /// Verify the on-device ML-DSA public key matches the backend's registered one.
+  /// Private keys never leave the phone — only public hex is compared.
+  static Future<String> verifyDsaKeyMatch(String backendPubHex) async {
+    final devPub = await readDsaPublicKey();
+    final buf = StringBuffer();
+    buf.writeln('=== ML-DSA Key Match Diagnostic ===');
+
+    if (devPub == null || devPub.isEmpty) {
+      buf.writeln('FAIL: No ML-DSA public key on this device.');
+      buf.writeln(
+        '  Fix: Re-onboard to generate + register keys, then re-issue credentials.',
+      );
+      return buf.toString();
+    }
+
+    buf.writeln(
+      'Device DSA public key:  ${devPub.length} hex chars = ${devPub.length ~/ 2} bytes',
+    );
+    buf.writeln(
+      'Backend DSA public key: ${backendPubHex.length} hex chars = ${backendPubHex.length ~/ 2} bytes',
+    );
+    final match = _hexEqual(devPub, backendPubHex);
+    buf.writeln('MATCH: $match');
+    if (!match) {
+      buf.writeln('');
+      buf.writeln(
+        'FAIL: Device DSA public key != Backend registered DSA public key.',
+      );
+      buf.writeln('  Presentations signed on this device may fail verification.');
+      buf.writeln(
+        '  Device pub (first 32 chars):  ${_prefix(devPub, 32)}...',
+      );
+      buf.writeln(
+        '  Backend pub (first 32 chars): ${_prefix(backendPubHex, 32)}...',
+      );
+    }
+    return buf.toString();
+  }
+
+  /// Compare both on-device public keys with backend-registered publics.
+  /// Private keys never leave the phone — only public hex is compared.
+  /// Returns a combined diagnostic and whether each side matched.
+  static Future<
+      ({
+        bool kemMatch,
+        bool dsaMatch,
+        bool bothMatch,
+        String diagnostic,
+      })> verifyPublicKeysMatch({
+    required String backendKemPubHex,
+    required String backendDsaPubHex,
+  }) async {
+    final kemDiag = await verifyKemKeyMatch(backendKemPubHex);
+    final dsaDiag = await verifyDsaKeyMatch(backendDsaPubHex);
+
+    final local = await readAllPublicKeys();
+    final kemPriv = await readKemPrivateKey();
+    final embeddedKemPub = (kemPriv != null && kemPriv.isNotEmpty)
+        ? publicKeyFromKemPrivate(kemPriv)
+        : null;
+
+    // Prefer stored KEM pub; fall back to the ek embedded in the private key.
+    final effectiveKemPub = (local.kemPubHex != null &&
+            local.kemPubHex!.isNotEmpty)
+        ? local.kemPubHex!
+        : embeddedKemPub;
+
+    final kemMatch = effectiveKemPub != null &&
+        effectiveKemPub.isNotEmpty &&
+        backendKemPubHex.isNotEmpty &&
+        _hexEqual(effectiveKemPub, backendKemPubHex);
+    final dsaMatch = local.dsaPubHex != null &&
+        local.dsaPubHex!.isNotEmpty &&
+        backendDsaPubHex.isNotEmpty &&
+        _hexEqual(local.dsaPubHex!, backendDsaPubHex);
+
+    final bothMatch = kemMatch && dsaMatch;
+    final buf = StringBuffer()
+      ..writeln(kemDiag.trimRight())
+      ..writeln()
+      ..writeln(dsaDiag.trimRight())
+      ..writeln()
+      ..writeln('=== Combined Public Key Match ===')
+      ..writeln('KEM match: $kemMatch')
+      ..writeln('DSA match: $dsaMatch')
+      ..writeln('BOTH match: $bothMatch');
+
+    return (
+      kemMatch: kemMatch,
+      dsaMatch: dsaMatch,
+      bothMatch: bothMatch,
+      diagnostic: buf.toString(),
+    );
+  }
+
+  static bool _hexEqual(String a, String b) =>
+      a.toLowerCase() == b.toLowerCase();
+
+  static String _prefix(String s, int n) =>
+      s.substring(0, s.length < n ? s.length : n);
+
   static Future<String?> readDsaPublicKey() async {
     return _readScopedOrMigrate(dsaPubStorageKey);
   }
