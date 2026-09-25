@@ -638,12 +638,15 @@ class ApiService {
   }
 
   /// POST {base}/registerHolder — Dev Config helper to mint a holder.
-  /// Body: emiratesID, firstName, lastName. holderID is omitted so the backend
-  /// auto-increments and returns it. Throws [ConnectionException] on failure.
+  /// Body: emiratesID, firstName, lastName, optional email/college.
+  /// holderID is omitted so the backend auto-increments and returns it.
+  /// Throws [ConnectionException] on failure.
   static Future<Map<String, dynamic>> registerHolder({
     required String emiratesID,
     required String firstName,
     required String lastName,
+    String? email,
+    String? college,
     String? baseUrlOverride,
   }) async {
     final base = _resolveBase(baseUrlOverride);
@@ -651,15 +654,21 @@ class ApiService {
       '[ApiService] registerHolder emiratesID=$emiratesID base=$base',
     );
     try {
+      final body = <String, dynamic>{
+        'emiratesID': emiratesID,
+        'firstName': firstName,
+        'lastName': lastName,
+      };
+      final emailTrim = email?.trim() ?? '';
+      final collegeTrim = college?.trim() ?? '';
+      if (emailTrim.isNotEmpty) body['email'] = emailTrim;
+      if (collegeTrim.isNotEmpty) body['college'] = collegeTrim;
+
       final res = await _client
           .post(
             Uri.parse('$base/registerHolder'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'emiratesID': emiratesID,
-              'firstName': firstName,
-              'lastName': lastName,
-            }),
+            body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 20));
 
