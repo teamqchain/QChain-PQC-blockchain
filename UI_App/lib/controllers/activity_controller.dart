@@ -9,11 +9,6 @@ class ActivityController extends GetxController {
   var isLoading = true.obs;
   var errorMessage = ''.obs;
 
-  // Assuming this is set upon user login (same as WalletController)
-  // final String currentUserEID = '784-2004-7654321-1';
-
-  var pendingSubscriptionsCount = 0.obs;
-
   @override
   void onInit() {
     super.onInit();
@@ -32,13 +27,6 @@ class ActivityController extends GetxController {
       data.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       activities.value = data;
 
-      final subs = await ApiService.getMobileSubscriptions(
-        RuntimeConfig.to.emiratesID,
-      );
-      pendingSubscriptionsCount.value = subs
-          .where((s) => s.status == 'pending')
-          .length;
-          
       logDebug(
         '[ActivityController] fetchActivity success: ${activities.length} records processed',
       );
