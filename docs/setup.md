@@ -25,9 +25,10 @@ sudo usermod -aG docker $USER
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
 
-# 4. Install MariaDB Server
-sudo apt install -y mariadb-server
-sudo systemctl enable --now mariadb
+# 4. Install MySQL Server (the VM runs MySQL 8.x, not MariaDB — its JSON-column
+#    behavior differs from MariaDB's in ways the schema relies on)
+sudo apt install -y mysql-server
+sudo systemctl enable --now mysql
 ```
 
 ### Step 1B: For Fedora / RHEL
@@ -48,9 +49,9 @@ sudo usermod -aG docker $USER
 # 3. Install Node.js & npm (required for Fabric Chaincode)
 sudo dnf install -y nodejs npm
 
-# 4. Install MariaDB Server
-sudo dnf install -y mariadb-server
-sudo systemctl enable --now mariadb
+# 4. Install MySQL Server (the VM runs MySQL 8.x, not MariaDB)
+sudo dnf install -y mysql-server
+sudo systemctl enable --now mysqld
 ```
 
 ---
@@ -85,7 +86,7 @@ echo "export PATH=\$PATH:$PWD/bin" >> ~/.bashrc
 # 3. Verify installations
 docker ps
 peer version
-mariadb --version
+mysql --version
 ipfs --version
 node -v
 ```
@@ -120,7 +121,7 @@ EOF
 We need to create the database, a specific user for the Go backend, and seed the initial schema.
 
 ```bash
-# Secure MariaDB (optional but recommended)
+# Secure MySQL (optional but recommended)
 sudo mysql_secure_installation
 
 # Create Database and User
@@ -304,6 +305,16 @@ bash tests/e2e_api_test.sh http://localhost:3000
 > for issuance, and Fabric for every read — there is no database fallback.
 
 ## 8. Cloudflare Tunnel Setup (Free Random URL)
+
+> **This is for a temporary, single-session tunnel straight to your local backend** (e.g. quickly
+> sharing `localhost:3000` with a frontend developer while you're both online). It is not how the
+> live system is actually exposed — the production deployment (see the root [README.md](../README.md)
+> "Live Demo" and [web-gateway/README.md](../web-gateway/README.md)) uses a **Tailscale Funnel**
+> instead, specifically because a Cloudflare quick tunnel's URL is random and doesn't survive a
+> restart, whereas Tailscale Funnel gives a permanent `*.ts.net` address that comes back automatically
+> after a reboot. If you want a stable, shareable link (not just a one-off dev session), follow
+> `bash qchain-network/scripts/setup-tailscale-funnel.sh` instead, as described in the root README's
+> "Public access" step.
 
 To instantly share the backend API with your frontend developer without creating a Cloudflare account or buying a domain, you can use Cloudflare's free Quick Tunnel:
 

@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Hyperledger%20Fabric-2.x-2F3134" alt="Fabric" />
   <img src="https://img.shields.io/badge/Go-1.24-00ADD8" alt="Go" />
-  <img src="https://img.shields.io/badge/Flutter-3.35-027DFD" alt="Flutter" />
+  <img src="https://img.shields.io/badge/Flutter-3.44-027DFD" alt="Flutter" />
   <img src="https://img.shields.io/badge/PQC-ML--DSA--44-6E40C9" alt="ML-DSA-44" />
   <img src="https://img.shields.io/badge/IPFS-Kubo-65C2CB" alt="IPFS" />
   <img src="https://img.shields.io/badge/License-Proprietary-red" alt="License" />
@@ -429,6 +429,15 @@ responses include a `credentialID`, and **all timestamps are returned in UAE loc
 - **Public access** — a single Nginx `web-gateway` serves both apps + proxies the API on one origin,
   exposed via a permanent Tailscale Funnel URL.
 - **UAE-local timestamps** — every time the API returns is now Asia/Dubai local time.
+- **QWallet decoupled to mobile-only** — it isn't compiled for web at all anymore (its PQC library can't
+  target web); `web-gateway` now builds and serves QPortal exclusively, and QWallet ships as a separate
+  mobile install maintained by the team member who owns it.
+- **Holder IDs are always server-generated** — `/registerHolder` no longer accepts a caller-supplied
+  `holderID`; it's minted the same way credential IDs already were, closing a bug where a crafted ID
+  could silently overwrite an existing holder's identity.
+- **CI/CD** — pushing to `main` auto-deploys the backend and QPortal via a self-hosted GitHub Actions
+  runner on the VM, with automatic rollback on a failed health check. See
+  [Continuous deployment](#continuous-deployment) above.
 
 ---
 

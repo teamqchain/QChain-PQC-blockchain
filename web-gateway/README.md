@@ -144,4 +144,4 @@ no manual steps.
   local dev; the gateway is the production-exposure path.
 - Upgrade path: if you ever get a domain (or a university subdomain), a
   **Cloudflare Named Tunnel** gives a clean `api.` / `portal.` subdomain split
-  with no path routing. See `~/Downloads/QChain_Public_Access_Plan.md`.
+  with no path routing.
