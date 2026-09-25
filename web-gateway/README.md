@@ -108,10 +108,15 @@ no manual steps.
 
 ## Changing things
 
-- **QPortal code changed?** Rebuild: `bash web-gateway/docker-build.sh && bash
-  web-gateway/docker-run.sh`. URL unchanged.
-- **Backend / chaincode / DB changed?** Rebuild the backend as usual. The
-  gateway and Funnel are unaffected; the URL is unchanged — a friend's locally
+- **QPortal code changed?** Nothing to do. A push to `main` that touches
+  `UI_WebApp/`, `shared/` or `web-gateway/` rebuilds and restarts this
+  container automatically (`.github/workflows/deploy-web-gateway.yml`, with
+  rollback if the new one is unhealthy). The manual fallback is
+  `bash web-gateway/docker-build.sh && bash web-gateway/docker-run.sh`. The URL
+  is unchanged either way.
+- **Backend / chaincode / DB changed?** Backend (`offchain/`) pushes to `main`
+  redeploy automatically (`deploy-backend.yml`); chaincode and DB changes stay
+  manual. The gateway and Funnel are unaffected; the URL is unchanged — a friend's locally
   built image with your `API_BASE_URL` stays valid regardless of how often the
   backend redeploys, since the gateway just proxies to a fixed local address.
 - **QWallet code changed?** Not this image's concern — rebuilt and shipped

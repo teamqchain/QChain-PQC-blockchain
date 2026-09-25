@@ -93,7 +93,7 @@ node -v
 ## 2. Clone Repository
 
 ```bash
-git clone https://github.com/nihvp/QChain-PQC-blockchain.git
+git clone https://github.com/teamqchain/QChain-PQC-blockchain.git
 cd QChain-PQC-blockchain
 export REPO_ROOT=$PWD
 ```
@@ -453,3 +453,54 @@ bash web-gateway/docker-run.sh
 ```
 
 - **QPortal URL:** `http://localhost:8090/` (or `https://<your-tunnel>.trycloudflare.com/`)
+
+---
+
+## 10. Continuous Deployment (Self-Hosted Runner)
+
+Once the stack above is running, pushes to `main` can redeploy the backend and QPortal automatically.
+Two GitHub Actions workflows in `.github/workflows/` do this, run by a self-hosted runner on the VM:
+
+| Workflow | Triggered by changes to (except `*.md`) | Does |
+|---|---|---|
+| `deploy-backend.yml` | `offchain/**` | `go test` (builder stage) → `offchain/docker-build.sh` → `docker-run.sh` → `/health` |
+| `deploy-web-gateway.yml` | `UI_WebApp/**`, `shared/**`, `web-gateway/**`, `.dockerignore` | `web-gateway/docker-build.sh` → `docker-run.sh` → `/gw-health` + portal page |
+
+How they behave:
+
+- **They deploy from the VM's own checkout** at `~/Desktop/QChain/QChain-PQC-blockchain`, running
+  `git pull --ff-only` there first. They don't use a separate runner checkout, because the backend
+  needs gitignored runtime files that only exist in this one (`offchain/.env`, `crypto-material/`,
+  `wallet/`, `connection/`).
+- A deploy is refused if that checkout isn't on `main`, or if its tracked files were edited by hand.
+- **Rollback:** before each build, the running image is kept as `:previous`. If the new container
+  fails its health check, `:previous` is restarted and the run is marked failed.
+- Chaincode, MySQL schema and QWallet aren't covered. Deploy those by hand.
+- The gateway workflow bakes in `API_BASE_URL=https://qchain.tail4fff4b.ts.net/api`. Change that line
+  if your Funnel URL differs.
+
+**One-time runner setup** (needs admin on the GitHub repo):
+
+1. **Lock down fork PRs first.** The repo is public, and the runner can read `offchain/.env` and use
+   Docker. Go to *Settings → Actions → General → Approval for running fork pull request workflows
+   from contributors*, choose **Require approval for all external contributors**, then **Save**.
+2. Check the runner user is in the `docker` group (`id -nG`), and note the CPU architecture
+   (`uname -m`).
+3. On GitHub, go to *Settings → Actions → Runners → New self-hosted runner*, then choose **Linux**
+   and the matching architecture. On the VM, run that page's **Download** commands inside
+   `~/actions-runner`. Then configure the runner. The token comes from the same page; it is
+   single-use and expires in an hour.
+   ```bash
+   cd ~/actions-runner
+   ./config.sh --url https://github.com/teamqchain/QChain-PQC-blockchain \
+     --token <token-from-the-page> --name qchain-vm --labels qchain-vm --unattended
+   ```
+4. Install the runner as a service that starts on boot:
+   ```bash
+   sudo ./svc.sh install $USER
+   sudo ./svc.sh start
+   sudo ./svc.sh status    # → active (running); the Runners page now shows qchain-vm as Idle
+   ```
+
+**Removing the runner:** run `sudo ./svc.sh stop && sudo ./svc.sh uninstall`, then
+`./config.sh remove --token <removal token from the Runners page>`.
