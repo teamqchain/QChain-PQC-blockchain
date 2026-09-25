@@ -2,13 +2,16 @@ import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/model/subscription_model.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
 import 'package:qwallet_mobileapp/utils/runtime_config.dart';
-import 'package:qwallet_mobileapp/controllers/activity_controller.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
 
 class ManageSubscriptionsController extends GetxController {
   var subscriptions = <SubscriptionModel>[].obs;
   var isLoading = true.obs;
   var errorMessage = ''.obs;
+
+  /// Single source of truth for the activity banner pending badge.
+  int get pendingCount =>
+      subscriptions.where((s) => s.status == 'pending').length;
 
   @override
   void onInit() {
@@ -28,28 +31,16 @@ class ManageSubscriptionsController extends GetxController {
       );
       subscriptions.value = data;
       logDebug(
-        '[ManageSubscriptionsController] fetchSubscriptions success: ${subscriptions.length} subscriptions loaded',
+        '[ManageSubscriptionsController] fetchSubscriptions success: ${subscriptions.length} subscriptions loaded (pending: $pendingCount)',
       );
-
-      // Keep Activity Screen Badge Synchronized
-      if (Get.isRegistered<ActivityController>()) {
-        Get.find<ActivityController>().pendingSubscriptionsCount.value = data
-            .where((s) => s.status == 'pending')
-            .length;
-            logDebug(
-              '[ManageSubscriptionsController] Updated ActivityController pendingSubscriptionsCount to ${Get.find<ActivityController>().pendingSubscriptionsCount.value}',
-            );
-      }
     } on ConnectionException catch (e) {
       logDebug(
         '[ManageSubscriptionsController] fetchSubscriptions ConnectionException: ${e.message}',
       );
       errorMessage(e.message);
-
-    }catch (e) {
+    } catch (e) {
       logDebug('[ManageSubscriptionsController] fetchSubscriptions error: $e');
       errorMessage('Failed to fetch subscriptions.');
-
     } finally {
       isLoading(false);
     }
