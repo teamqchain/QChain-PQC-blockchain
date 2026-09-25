@@ -65,38 +65,51 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
           status['hasKemKey'] == true && status['hasSigningKey'] == true;
       final localReady = await CryptoService.hasLocalPrivateKeys();
       final backendKemPub = status['kemPublicKey']?.toString() ?? '';
+      final backendDsaPub = status['dsaPublicKey']?.toString() ?? '';
 
       if (backendReady && localReady) {
-        // Both sides have keys — confirm they are the SAME pair when the
-        // backend returns kemPublicKey. Current checkKeys only returns booleans,
-        // so we CANNOT claim a match without the server pub.
-        final localPub = await CryptoService.readKemPublicKey();
-        if (backendKemPub.isNotEmpty) {
-          final diag = await CryptoService.verifyKemKeyMatch(backendKemPub);
-          logDebug('[Onboard3] key match check:\n$diag');
-          final match = localPub != null &&
-              localPub.isNotEmpty &&
-              localPub.toLowerCase() == backendKemPub.toLowerCase();
-          if (!match) {
+        // Both sides have keys — confirm KEM + DSA public keys match.
+        // Private keys never leave the phone; only publics are compared.
+        if (backendKemPub.isNotEmpty && backendDsaPub.isNotEmpty) {
+          final result = await CryptoService.verifyPublicKeysMatch(
+            backendKemPubHex: backendKemPub,
+            backendDsaPubHex: backendDsaPub,
+          );
+          logDebug('[Onboard3] key match check:\n${result.diagnostic}');
+          if (!result.bothMatch) {
+            final which = [
+              if (!result.kemMatch) 'KEM',
+              if (!result.dsaMatch) 'DSA',
+            ].join(' + ');
             throw ConnectionException(
-              'Wallet keys on this device do not match the keys registered on '
-              'the server. Credentials encrypted to the old key cannot be '
-              'decrypted here. Clear the old server keys (or use the original '
-              'device), then re-onboard and re-issue credentials.',
+              'Wallet $which public key(s) on this device do not match the '
+              'keys registered on the server. Credentials encrypted to the old '
+              'KEM key cannot be decrypted here, and DSA mismatches break '
+              'signed presentations. Clear the old server keys (or use the '
+              'original device), then re-onboard and re-issue credentials.',
             );
           }
-          logDebug('[Onboard3] keys already registered and match; skipping generation');
+          logDebug(
+            '[Onboard3] KEM + DSA keys already registered and match; '
+            'skipping generation',
+          );
         } else {
-          // No server pub in checkKeys response — log local pub fingerprint so
-          // you can compare with holders.kem_public_key on the backend.
+          // Server booleans say ready but one/both pubs missing — cannot claim match.
+          final local = await CryptoService.readAllPublicKeys();
           logDebug(
             '[Onboard3] keys present on device + server, but checkKeys did not '
-            'return kemPublicKey — cannot verify match. '
-            'localKemPubLen=${localPub?.length ?? 0} '
-            'localKemPub0=${(localPub != null && localPub.length >= 16) ? localPub.substring(0, 16) : "n/a"}… '
-            'localKemPubEnd=${(localPub != null && localPub.length >= 16) ? localPub.substring(localPub.length - 16) : "n/a"}',
+            'return both public keys — cannot verify match. '
+            'backendKemLen=${backendKemPub.length} '
+            'backendDsaLen=${backendDsaPub.length} '
+            'localKemLen=${local.kemPubHex?.length ?? 0} '
+            'localDsaLen=${local.dsaPubHex?.length ?? 0}',
           );
-          logDebugLong('[Onboard3] local kem_pub_key', localPub ?? '<null>');
+          if (local.kemPubHex != null) {
+            logDebugLong('[Onboard3] local kem_pub_key', local.kemPubHex!);
+          }
+          if (local.dsaPubHex != null) {
+            logDebugLong('[Onboard3] local dsa_pub_key', local.dsaPubHex!);
+          }
         }
         _markReady();
         return;
