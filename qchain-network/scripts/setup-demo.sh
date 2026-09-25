@@ -36,7 +36,9 @@ RESP1=$(curl -sf -X POST "$SERVER/registerHolder" \
   -d '{
     "emiratesID": "784-1990-1234567-1",
     "firstName":  "Ahmed",
-    "lastName":   "Al Mansouri"
+    "lastName":   "Al Mansouri",
+    "email":      "ahmed.almansouri@uos.ac.ae",
+    "college":    "CCI"
   }') || RESP1=""
 echo "$RESP1" | python3 -m json.tool 2>/dev/null || true
 HOLDER1_ID=$(printf '%s' "$RESP1" | python3 -c "import sys, json
@@ -52,7 +54,9 @@ RESP2=$(curl -sf -X POST "$SERVER/registerHolder" \
   -d '{
     "emiratesID": "784-1995-7654321-2",
     "firstName":  "Sara",
-    "lastName":   "Al Hashimi"
+    "lastName":   "Al Hashimi",
+    "email":      "sara.alhashimi@uos.ac.ae",
+    "college":    "CBA"
   }') || RESP2=""
 echo "$RESP2" | python3 -m json.tool 2>/dev/null || true
 HOLDER2_ID=$(printf '%s' "$RESP2" | python3 -c "import sys, json
