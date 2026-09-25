@@ -5,6 +5,7 @@ import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
 import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 import 'package:qwallet_mobileapp/services/crypto_service.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
+import 'package:qwallet_mobileapp/utils/app_config.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -57,7 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'QChain v2.0.0',
+                        'QChain',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -300,7 +301,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ('Appearance', [(Icons.dark_mode, 'Theme')]),
     (
       'About',
-      [(Icons.info, 'QChain v2.0.0'), (Icons.article, 'Documentation')],
+      [(Icons.info, 'QChain'), (Icons.article, 'Documentation')],
     ),
   ];
 
@@ -361,7 +362,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 icon: icon,
                                 label: label,
                                 isLast: isLast,
-                                onTap: label == 'QChain v2.0.0'
+                                onTap: label == 'QChain'
                                     ? () => _showTeamDialog(context)
                                     : label == 'View My Keys'
                                     ? () => _showPublicKeysDialog(context)
@@ -405,6 +406,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 15),
+                // Manual IPA/build label — bump kAppBuildNumber in app_config.dart
+                Center(
+                  child: Text(
+                    'Build $kAppBuildNumber',
+                    style: const TextStyle(
+                      color: qDimmed,
+                      fontSize: 10,
+                      fontFamily: 'SFPro',
+                      letterSpacing: 0.3,
                     ),
                   ),
                 ),
