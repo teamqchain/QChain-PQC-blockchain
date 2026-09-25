@@ -5,6 +5,7 @@ import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
+import 'package:qwallet_mobileapp/utils/alice_inspector.dart';
 import 'package:qwallet_mobileapp/utils/app_config.dart';
 import 'package:qwallet_mobileapp/utils/runtime_config.dart';
 
@@ -705,9 +706,47 @@ class _DevRuntimeConfigScreenState extends State<DevRuntimeConfigScreen> {
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        // Diagnostics — release-safe; STORE GATE with Alice / Dev Config.
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => Get.toNamed(Routes.APP_LOGS),
+                icon: const Icon(Icons.terminal, size: 16),
+                label: const Text('App logs'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: qPrimary,
+                  side: const BorderSide(color: qBorder),
+                  minimumSize: const Size(0, 44),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: aliceEnabled ? () => alice.showInspector() : null,
+                icon: const Icon(Icons.network_check, size: 16),
+                label: const Text('Alice HTTP'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: qPrimary,
+                  side: const BorderSide(color: qBorder),
+                  minimumSize: const Size(0, 44),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 16),
         const Text(
-          'Overrides last until process death. Keychain slots stay per EID.',
+          'Overrides last until process death. Keychain slots stay per EID.\n'
+          'App logs + Alice work in release. Shake device = Alice.',
           textAlign: TextAlign.center,
           style: TextStyle(color: qDimmed, fontSize: 11),
         ),
