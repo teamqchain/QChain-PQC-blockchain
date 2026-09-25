@@ -1,23 +1,128 @@
 import 'package:flutter/foundation.dart';
 
-void logDebug(String message) {
-  if (kDebugMode) {
-    print(message);
+/// Optional external sink (wired to Alice in [main] when Alice is on).
+/// Keeps this file free of Alice imports so HTTP client + logger never cycle.
+typedef AppLogSink = void Function(
+  String message, {
+  DiagnosticLevel level,
+  Object? error,
+  StackTrace? stackTrace,
+});
+
+AppLogSink? _externalSink;
+
+/// Install a sink once at boot (Alice). No-op if null.
+void setAppLogSink(AppLogSink? sink) => _externalSink = sink;
+
+/// In-memory ring buffer so Dev Config / copy can show logs even if Alice UI
+/// is closed. Newest last. Cap keeps release memory bounded.
+const int kAppLogMaxEntries = 500;
+
+final List<AppLogEntry> _buffer = <AppLogEntry>[];
+
+/// Snapshot of recent app logs (oldest → newest). Unmodifiable view.
+List<AppLogEntry> get appLogEntries =>
+    List<AppLogEntry>.unmodifiable(_buffer);
+
+void clearAppLogs() => _buffer.clear();
+
+class AppLogEntry {
+  AppLogEntry({
+    required this.message,
+    required this.timestamp,
+    this.level = DiagnosticLevel.info,
+    this.error,
+    this.stackTrace,
+  });
+
+  final String message;
+  final DateTime timestamp;
+  final DiagnosticLevel level;
+  final Object? error;
+  final StackTrace? stackTrace;
+
+  String get line {
+    final t = timestamp.toIso8601String().substring(11, 23);
+    final err = error == null ? '' : ' | error=$error';
+    return '[$t] $message$err';
   }
 }
 
-/// Logs a long string in fixed-size chunks.
-///
-/// Android logcat caps each log entry at ~4078 bytes and VS Code's Debug
-/// Console truncates long lines (showing `<…>`), so a single `print()` of a
-/// multi-kilobyte value (e.g. a PQC private key) is silently cut. This splits
-/// the message into chunks of [chunkSize] characters and prints each one on its
-/// own line, labelled with `[chunk i/n]`, so the full value survives transport.
+void _append(
+  String message, {
+  DiagnosticLevel level = DiagnosticLevel.info,
+  Object? error,
+  StackTrace? stackTrace,
+}) {
+  final entry = AppLogEntry(
+    message: message,
+    timestamp: DateTime.now(),
+    level: level,
+    error: error,
+    stackTrace: stackTrace,
+  );
+  _buffer.add(entry);
+  while (_buffer.length > kAppLogMaxEntries) {
+    _buffer.removeAt(0);
+  }
+
+  // Debug console (VS Code / Xcode / logcat when attached in debug).
+  if (kDebugMode) {
+    // ignore: avoid_print
+    print(message);
+    if (error != null) {
+      // ignore: avoid_print
+      print('  error: $error');
+    }
+    if (stackTrace != null) {
+      // ignore: avoid_print
+      print(stackTrace);
+    }
+  }
+
+  try {
+    _externalSink?.call(
+      message,
+      level: level,
+      error: error,
+      stackTrace: stackTrace,
+    );
+  } catch (_) {
+    // Never let logging break the app.
+  }
+}
+
+/// General app log — **always** buffered (debug + release) so shared IPA/APK
+/// can show logs in Alice → Logs tab and in Dev Config → App logs.
+void logDebug(String message) {
+  _append(message);
+}
+
+void logInfo(String message) =>
+    _append(message, level: DiagnosticLevel.info);
+
+void logWarning(String message, [Object? error, StackTrace? stackTrace]) {
+  _append(
+    message,
+    level: DiagnosticLevel.warning,
+    error: error,
+    stackTrace: stackTrace,
+  );
+}
+
+void logError(String message, [Object? error, StackTrace? stackTrace]) {
+  _append(
+    message,
+    level: DiagnosticLevel.error,
+    error: error,
+    stackTrace: stackTrace,
+  );
+}
+
+/// Logs a long string in fixed-size chunks (key dumps, big JSON).
+/// Always buffered; still prints chunk-by-chunk in debug so logcat/VS Code
+/// do not silently drop multi-KB lines.
 void logDebugLong(String label, String value, {int chunkSize = 200}) {
-  if (!kDebugMode) return;
-  // Keep chunks small: VS Code Debug Console and Android logcat still
-  // clip long lines (often around ~800–1000 visible chars), which used to
-  // silently drop hex from ML-KEM key dumps at join boundaries.
   final total = value.length;
   final chunks = total == 0 ? 0 : (total / chunkSize).ceil();
   logDebug('$label ($total chars, $chunks chunks of <=$chunkSize):');
@@ -27,7 +132,6 @@ void logDebugLong(String label, String value, {int chunkSize = 200}) {
     final piece = value.substring(start, end);
     logDebug('  [chunk ${i + 1}/$chunks len=${piece.length}] $piece');
   }
-  // Checksum so re-assembled pastes can be verified complete.
   var sum = 0;
   for (final cu in value.codeUnits) {
     sum = (sum + cu) & 0xffffffff;

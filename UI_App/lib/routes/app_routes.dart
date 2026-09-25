@@ -10,6 +10,7 @@ import 'package:qwallet_mobileapp/screens/onboard_2_screen.dart';
 import 'package:qwallet_mobileapp/screens/onboard_3_screen.dart';
 import 'package:qwallet_mobileapp/screens/present_screen.dart';
 import 'package:qwallet_mobileapp/screens/receive_screen.dart';
+import 'package:qwallet_mobileapp/screens/app_logs_screen.dart';
 import 'package:qwallet_mobileapp/screens/dev_config_screen.dart';
 import 'package:qwallet_mobileapp/screens/register_holder_screen.dart';
 import 'package:qwallet_mobileapp/screens/splash_screen.dart';
@@ -25,6 +26,8 @@ abstract class Routes {
   static const DEV_RUNTIME_CONFIG = '/dev-runtime-config';
   /// Dev-only register holder (from Dev Config).
   static const REGISTER_HOLDER = '/register-holder';
+  /// In-app log console (debug + release while Alice/Dev tools are on).
+  static const APP_LOGS = '/app-logs';
 
   // Shell hosts Home, Wallet, Activity, Settings tabs — one single route
   static const SHELL = '/shell';
@@ -54,6 +57,12 @@ class AppPages {
     GetPage(
       name: Routes.REGISTER_HOLDER,
       page: () => const RegisterHolderScreen(),
+      transition: Transition.cupertino,
+      transitionDuration: const Duration(milliseconds: 200),
+    ),
+    GetPage(
+      name: Routes.APP_LOGS,
+      page: () => const AppLogsScreen(),
       transition: Transition.cupertino,
       transitionDuration: const Duration(milliseconds: 200),
     ),
