@@ -31,6 +31,7 @@ class ActivityModel {
 
   // ─── UI MAPPERS ────────────────────────────────────────────────────────────
 
+  /// Full sentence used in the activity feed list.
   String get actionText {
     switch (type) {
       case 'issued':
@@ -45,6 +46,41 @@ class ActivityModel {
         return '$credentialName restored by $actor';
       default:
         return '$credentialName updated';
+    }
+  }
+
+  /// Short primary line for the in-app notification banner.
+  String get bannerTitle {
+    final id = credentialID.trim();
+    final hasId = id.isNotEmpty;
+    switch (type) {
+      case 'issued':
+        return 'New Credential Issued';
+      case 'verified':
+        return hasId ? '$id verified' : 'Credential Verified';
+      case 'revoked':
+        return hasId ? '$id revoked' : 'Credential Revoked';
+      case 'suspended':
+        return hasId ? '$id suspended' : 'Credential Suspended';
+      case 'restored':
+        return hasId ? '$id restored' : 'Credential Restored';
+      default:
+        return hasId ? '$id updated' : 'Credential updated';
+    }
+  }
+
+  /// Secondary line under [bannerTitle] (who / which credential).
+  String get bannerSubtitle {
+    switch (type) {
+      case 'issued':
+        return '$credentialName · $actor';
+      case 'verified':
+      case 'revoked':
+      case 'suspended':
+      case 'restored':
+        return '$credentialName · $actor';
+      default:
+        return credentialName;
     }
   }
 

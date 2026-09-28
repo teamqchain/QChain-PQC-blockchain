@@ -5,7 +5,7 @@ import 'package:qwallet_mobileapp/model/catalog_model.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
 import 'package:qwallet_mobileapp/model/subscription_model.dart';
 import 'package:qwallet_mobileapp/services/crypto_service.dart';
-import 'package:qwallet_mobileapp/utils/app_config.dart';
+import 'package:qwallet_mobileapp/utils/runtime_config.dart';
 import 'package:qwallet_mobileapp/utils/alice_inspector.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
 
@@ -20,6 +20,9 @@ class ApiService {
   // Alice-backed client in debug; plain http.Client in release.
   static final http.Client _client = createAliceHttpClient();
 
+  /// Effective base for this process. Literal paste + `/endpoint` (D3).
+  static String get _base => RuntimeConfig.to.apiBaseUrl;
+
   // GET /mobile/checkKeys — has this holder already registered PQC public keys?
   // May also include kemPublicKey / dsaPublicKey (public only) for mismatch checks.
   static Future<Map<String, dynamic>> checkKeys(String emiratesID) async {
@@ -28,7 +31,7 @@ class ApiService {
       final res = await _client
           .get(
             Uri.parse(
-              '$kApiBaseUrl/mobile/checkKeys?emiratesID=$emiratesID',
+              '$_base/mobile/checkKeys?emiratesID=$emiratesID',
             ),
           )
           .timeout(const Duration(seconds: 15));
@@ -69,7 +72,7 @@ class ApiService {
     try {
       final res = await _client
           .post(
-            Uri.parse('$kApiBaseUrl/mobile/registerHolderKeys'),
+            Uri.parse('$_base/mobile/registerHolderKeys'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'emiratesID': emiratesID,
@@ -102,7 +105,7 @@ class ApiService {
       final res = await _client
           .get(
             Uri.parse(
-              '$kApiBaseUrl/mobile/getEnvelope?credentialID=$credentialID',
+              '$_base/mobile/getEnvelope?credentialID=$credentialID',
             ),
           )
           .timeout(const Duration(seconds: 15));
@@ -150,35 +153,57 @@ class ApiService {
       );
       return attrs;
     } catch (e) {
-      // Surface the #1 real-world cause: wrong ML-KEM keypair on device.
+      // Surface the #1 real-world cause: wrong on-device keypair(s).
       try {
-        final localPub = await CryptoService.readKemPublicKey();
+        final local = await CryptoService.readAllPublicKeys();
         logDebug(
-          '[ApiService] decrypt failed. localKemPubLen=${localPub?.length ?? 0} '
+          '[ApiService] decrypt failed. localKemPubLen=${local.kemPubHex?.length ?? 0} '
+          'localDsaPubLen=${local.dsaPubHex?.length ?? 0} '
           'privLen=${kemPrivHex.length} envelopeCredId=${envelope['credId']} '
           'err=$e',
         );
-        if (localPub != null && localPub.isNotEmpty) {
-          // Full pub so you can paste it next to holders.kem_public_key.
-          logDebugLong('[ApiService] device kem_pub_key at decrypt fail', localPub);
+        if (local.kemPubHex != null && local.kemPubHex!.isNotEmpty) {
+          logDebugLong(
+            '[ApiService] device kem_pub_key at decrypt fail',
+            local.kemPubHex!,
+          );
+        }
+        if (local.dsaPubHex != null && local.dsaPubHex!.isNotEmpty) {
+          logDebugLong(
+            '[ApiService] device dsa_pub_key at decrypt fail',
+            local.dsaPubHex!,
+          );
         }
         if (emiratesID != null && emiratesID.isNotEmpty) {
           final status = await checkKeys(emiratesID);
-          final backendPub = status['kemPublicKey']?.toString() ?? '';
-          if (backendPub.isNotEmpty) {
-            final diag = await CryptoService.verifyKemKeyMatch(backendPub);
-            logDebug('[ApiService] key match after decrypt fail:\n$diag');
-            logDebugLong(
-              '[ApiService] backend kem_public_key at decrypt fail',
-              backendPub,
+          final backendKem = status['kemPublicKey']?.toString() ?? '';
+          final backendDsa = status['dsaPublicKey']?.toString() ?? '';
+          if (backendKem.isNotEmpty || backendDsa.isNotEmpty) {
+            final result = await CryptoService.verifyPublicKeysMatch(
+              backendKemPubHex: backendKem,
+              backendDsaPubHex: backendDsa,
             );
+            logDebug(
+              '[ApiService] key match after decrypt fail:\n${result.diagnostic}',
+            );
+            if (backendKem.isNotEmpty) {
+              logDebugLong(
+                '[ApiService] backend kem_public_key at decrypt fail',
+                backendKem,
+              );
+            }
+            if (backendDsa.isNotEmpty) {
+              logDebugLong(
+                '[ApiService] backend dsa_public_key at decrypt fail',
+                backendDsa,
+              );
+            }
           } else {
             logDebug(
-              '[ApiService] checkKeys has no kemPublicKey — deploy backend '
-              'change that returns kemPublicKey from /mobile/checkKeys, then '
-              'retry. Until then compare holders.kem_public_key with the '
-              'device pub above. If they differ, CRED was sealed to another '
-              'key → re-issue.',
+              '[ApiService] checkKeys returned no public keys — compare '
+              'holders.kem_public_key / holders.dsa_public_key with the device '
+              'pubs above. If KEM differs, CRED was sealed to another key → '
+              're-issue.',
             );
           }
         }
@@ -199,7 +224,7 @@ class ApiService {
       final res = await _client
           .get(
             Uri.parse(
-              '$kApiBaseUrl/mobile/getHolderProfile?emiratesID=$emiratesID',
+              '$_base/mobile/getHolderProfile?emiratesID=$emiratesID',
             ),
           )
           .timeout(const Duration(seconds: 15));
@@ -232,7 +257,7 @@ class ApiService {
       final res = await _client
           .get(
             Uri.parse(
-              '$kApiBaseUrl/mobile/getCredentialsByHolder?emiratesID=$emiratesID',
+              '$_base/mobile/getCredentialsByHolder?emiratesID=$emiratesID',
             ),
           )
           .timeout(const Duration(seconds: 15));
@@ -265,7 +290,7 @@ class ApiService {
     try {
       final res = await _client
           .post(
-            Uri.parse('$kApiBaseUrl/mobile/generateOTP'),
+            Uri.parse('$_base/mobile/generateOTP'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'credentialID': credentialID,
@@ -312,7 +337,7 @@ class ApiService {
     try {
       final res = await _client
           .post(
-            Uri.parse('$kApiBaseUrl/mobile/toggleFavorite'),
+            Uri.parse('$_base/mobile/toggleFavorite'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'holderEID': holderEID,
@@ -343,7 +368,7 @@ class ApiService {
     try {
       final res = await _client
           .get(
-            Uri.parse('$kApiBaseUrl/mobile/getActivity?emiratesID=$emiratesID'),
+            Uri.parse('$_base/mobile/getActivity?emiratesID=$emiratesID'),
           )
           .timeout(const Duration(seconds: 15));
 
@@ -385,7 +410,7 @@ class ApiService {
     try {
       final res = await _client
           .post(
-            Uri.parse('$kApiBaseUrl/mobile/generatePresentation'),
+            Uri.parse('$_base/mobile/generatePresentation'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'credentialID': credentialID,
@@ -428,7 +453,7 @@ class ApiService {
     logDebug('[ApiService] getCatalog called');
     try {
       final res = await _client
-          .get(Uri.parse('$kApiBaseUrl/mobile/getCatalog'))
+          .get(Uri.parse('$_base/mobile/getCatalog'))
           .timeout(const Duration(seconds: 15));
 
       if (res.statusCode == 200) {
@@ -467,7 +492,7 @@ class ApiService {
     try {
       final res = await _client
           .post(
-            Uri.parse('$kApiBaseUrl/mobile/fetchDocument'),
+            Uri.parse('$_base/mobile/fetchDocument'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'holderEID': holderEID,
@@ -508,7 +533,7 @@ class ApiService {
       final res = await _client
           .get(
             Uri.parse(
-              '$kApiBaseUrl/mobile/getSubscriptions?emiratesID=$emiratesID',
+              '$_base/mobile/getSubscriptions?emiratesID=$emiratesID',
             ),
           )
           .timeout(const Duration(seconds: 15));
@@ -531,7 +556,7 @@ class ApiService {
   ) async {
     try {
       final res = await _client.post(
-        Uri.parse('$kApiBaseUrl/mobile/approveSubscription'),
+        Uri.parse('$_base/mobile/approveSubscription'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'subscriptionID': subscriptionID,
@@ -550,7 +575,7 @@ class ApiService {
   ) async {
     try {
       final res = await _client.post(
-        Uri.parse('$kApiBaseUrl/mobile/rejectSubscription'),
+        Uri.parse('$_base/mobile/rejectSubscription'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'subscriptionID': subscriptionID,
@@ -560,6 +585,119 @@ class ApiService {
       return res.statusCode == 200 && jsonDecode(res.body)['success'] == true;
     } catch (e) {
       return false;
+    }
+  }
+
+  /// Resolve pending paste or RuntimeConfig base (D3: trim + one trailing slash).
+  static String _resolveBase(String? baseUrlOverride) {
+    var base = baseUrlOverride?.trim() ?? '';
+    if (base.endsWith('/')) {
+      base = base.substring(0, base.length - 1);
+    }
+    if (base.isEmpty) base = _base;
+    return base;
+  }
+
+  /// GET {base}/getHolders — holder directory for Dev Config (PR3).
+  /// [search] is appended only when non-empty. [timeout] lets the connection
+  /// test use a short deadline. [baseUrlOverride] uses a pending paste before
+  /// Save (D3 trim + one trailing slash). Throws [ConnectionException] on failure.
+  static Future<List<Map<String, dynamic>>> getHolders({
+    String search = '',
+    Duration timeout = const Duration(seconds: 15),
+    String? baseUrlOverride,
+  }) async {
+    final query = search.trim().isEmpty
+        ? ''
+        : '?search=${Uri.encodeQueryComponent(search.trim())}';
+    final base = _resolveBase(baseUrlOverride);
+    logDebug('[ApiService] getHolders called search="$search" base=$base');
+    try {
+      final res = await _client
+          .get(Uri.parse('$base/getHolders$query'))
+          .timeout(timeout);
+
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        if (body is Map && body['holders'] is List) {
+          final holders = (body['holders'] as List)
+              .whereType<Map>()
+              .map((row) => Map<String, dynamic>.from(row))
+              .toList();
+          logDebug('[ApiService] getHolders success: ${holders.length}');
+          return holders;
+        }
+      }
+      logDebug('[ApiService] getHolders failed: HTTP ${res.statusCode}');
+      throw ConnectionException('Failed to load holders.');
+    } catch (e) {
+      if (e is ConnectionException) rethrow;
+      logDebug('[ApiService] getHolders exception: $e');
+      throw ConnectionException('Failed to load holders.');
+    }
+  }
+
+  /// POST {base}/registerHolder — Dev Config helper to mint a holder.
+  /// Body: emiratesID, firstName, lastName, optional email/college.
+  /// holderID is omitted so the backend auto-increments and returns it.
+  /// Throws [ConnectionException] on failure.
+  static Future<Map<String, dynamic>> registerHolder({
+    required String emiratesID,
+    required String firstName,
+    required String lastName,
+    String? email,
+    String? college,
+    String? baseUrlOverride,
+  }) async {
+    final base = _resolveBase(baseUrlOverride);
+    logDebug(
+      '[ApiService] registerHolder emiratesID=$emiratesID base=$base',
+    );
+    try {
+      final body = <String, dynamic>{
+        'emiratesID': emiratesID,
+        'firstName': firstName,
+        'lastName': lastName,
+      };
+      final emailTrim = email?.trim() ?? '';
+      final collegeTrim = college?.trim() ?? '';
+      if (emailTrim.isNotEmpty) body['email'] = emailTrim;
+      if (collegeTrim.isNotEmpty) body['college'] = collegeTrim;
+
+      final res = await _client
+          .post(
+            Uri.parse('$base/registerHolder'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        if (body is Map) {
+          final map = Map<String, dynamic>.from(body);
+          logDebug(
+            '[ApiService] registerHolder success holderID=${map['holderID']}',
+          );
+          return map;
+        }
+      }
+      // Surface backend error body when present (duplicate ID, chaincode, etc.).
+      String detail = 'HTTP ${res.statusCode}';
+      try {
+        final errBody = jsonDecode(res.body);
+        if (errBody is Map && errBody['error'] != null) {
+          detail = errBody['error'].toString();
+        } else if (errBody is Map && errBody['message'] != null) {
+          detail = errBody['message'].toString();
+        }
+      } catch (_) {}
+      logDebug('[ApiService] registerHolder failed: $detail');
+      throw ConnectionException('Failed to register holder: $detail');
+    } catch (e) {
+      if (e is ConnectionException) rethrow;
+      logDebug('[ApiService] registerHolder exception: $e');
+      throw ConnectionException('Failed to register holder.');
     }
   }
 }

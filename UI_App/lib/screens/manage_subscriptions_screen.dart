@@ -20,9 +20,10 @@ class ManageSubscriptionsScreen extends StatefulWidget {
 }
 
 class _ManageSubscriptionsScreenState extends State<ManageSubscriptionsScreen> {
-  final ManageSubscriptionsController controller = Get.put(
-    ManageSubscriptionsController(),
-  );
+  final ManageSubscriptionsController controller =
+      Get.isRegistered<ManageSubscriptionsController>()
+          ? Get.find<ManageSubscriptionsController>()
+          : Get.put(ManageSubscriptionsController());
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
 

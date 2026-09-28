@@ -4,7 +4,7 @@ import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/Headers/QPageTitle.dart';
 import 'package:qwallet_mobileapp/components/emptyState.dart';
 import 'package:qwallet_mobileapp/skeletons/addDoc_skeleton.dart';
-import 'package:qwallet_mobileapp/utils/app_config.dart';
+import 'package:qwallet_mobileapp/utils/runtime_config.dart';
 import 'package:qwallet_mobileapp/utils/haptics.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/widgets/QSearchBar.dart';
@@ -170,7 +170,7 @@ class _AddDocumentScreenState extends State<AddDocumentScreen> {
                                         Get.find<WalletController>();
                                     final result =
                                         await ApiService.fetchDocument(
-                                          userEmiratesID,
+                                          RuntimeConfig.to.emiratesID,
                                           issuer.id,
                                           service.name,
                                         );

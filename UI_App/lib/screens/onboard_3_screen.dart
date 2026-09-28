@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:qwallet_mobileapp/controllers/activity_controller.dart';
+import 'package:qwallet_mobileapp/controllers/add_document_controller.dart';
+import 'package:qwallet_mobileapp/controllers/manage_subscriptions_controller.dart';
+import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
 import 'package:qwallet_mobileapp/services/crypto_service.dart';
-import 'package:qwallet_mobileapp/utils/app_config.dart';
+import 'package:qwallet_mobileapp/utils/runtime_config.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
 import 'package:qwallet_mobileapp/widgets/QOnboardScaffold.dart';
 
@@ -56,43 +60,56 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
     }
     logDebug('[Onboard3] key generation started');
     try {
-      final status = await ApiService.checkKeys(userEmiratesID);
+      final status = await ApiService.checkKeys(RuntimeConfig.to.emiratesID);
       final backendReady =
           status['hasKemKey'] == true && status['hasSigningKey'] == true;
       final localReady = await CryptoService.hasLocalPrivateKeys();
       final backendKemPub = status['kemPublicKey']?.toString() ?? '';
+      final backendDsaPub = status['dsaPublicKey']?.toString() ?? '';
 
       if (backendReady && localReady) {
-        // Both sides have keys — confirm they are the SAME pair when the
-        // backend returns kemPublicKey. Current checkKeys only returns booleans,
-        // so we CANNOT claim a match without the server pub.
-        final localPub = await CryptoService.readKemPublicKey();
-        if (backendKemPub.isNotEmpty) {
-          final diag = await CryptoService.verifyKemKeyMatch(backendKemPub);
-          logDebug('[Onboard3] key match check:\n$diag');
-          final match = localPub != null &&
-              localPub.isNotEmpty &&
-              localPub.toLowerCase() == backendKemPub.toLowerCase();
-          if (!match) {
+        // Both sides have keys — confirm KEM + DSA public keys match.
+        // Private keys never leave the phone; only publics are compared.
+        if (backendKemPub.isNotEmpty && backendDsaPub.isNotEmpty) {
+          final result = await CryptoService.verifyPublicKeysMatch(
+            backendKemPubHex: backendKemPub,
+            backendDsaPubHex: backendDsaPub,
+          );
+          logDebug('[Onboard3] key match check:\n${result.diagnostic}');
+          if (!result.bothMatch) {
+            final which = [
+              if (!result.kemMatch) 'KEM',
+              if (!result.dsaMatch) 'DSA',
+            ].join(' + ');
             throw ConnectionException(
-              'Wallet keys on this device do not match the keys registered on '
-              'the server. Credentials encrypted to the old key cannot be '
-              'decrypted here. Clear the old server keys (or use the original '
-              'device), then re-onboard and re-issue credentials.',
+              'Wallet $which public key(s) on this device do not match the '
+              'keys registered on the server. Credentials encrypted to the old '
+              'KEM key cannot be decrypted here, and DSA mismatches break '
+              'signed presentations. Clear the old server keys (or use the '
+              'original device), then re-onboard and re-issue credentials.',
             );
           }
-          logDebug('[Onboard3] keys already registered and match; skipping generation');
+          logDebug(
+            '[Onboard3] KEM + DSA keys already registered and match; '
+            'skipping generation',
+          );
         } else {
-          // No server pub in checkKeys response — log local pub fingerprint so
-          // you can compare with holders.kem_public_key on the backend.
+          // Server booleans say ready but one/both pubs missing — cannot claim match.
+          final local = await CryptoService.readAllPublicKeys();
           logDebug(
             '[Onboard3] keys present on device + server, but checkKeys did not '
-            'return kemPublicKey — cannot verify match. '
-            'localKemPubLen=${localPub?.length ?? 0} '
-            'localKemPub0=${(localPub != null && localPub.length >= 16) ? localPub.substring(0, 16) : "n/a"}… '
-            'localKemPubEnd=${(localPub != null && localPub.length >= 16) ? localPub.substring(localPub.length - 16) : "n/a"}',
+            'return both public keys — cannot verify match. '
+            'backendKemLen=${backendKemPub.length} '
+            'backendDsaLen=${backendDsaPub.length} '
+            'localKemLen=${local.kemPubHex?.length ?? 0} '
+            'localDsaLen=${local.dsaPubHex?.length ?? 0}',
           );
-          logDebugLong('[Onboard3] local kem_pub_key', localPub ?? '<null>');
+          if (local.kemPubHex != null) {
+            logDebugLong('[Onboard3] local kem_pub_key', local.kemPubHex!);
+          }
+          if (local.dsaPubHex != null) {
+            logDebugLong('[Onboard3] local dsa_pub_key', local.dsaPubHex!);
+          }
         }
         _markReady();
         return;
@@ -124,7 +141,7 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
           );
         }
         final registered = await ApiService.registerHolderKeys(
-          emiratesID: userEmiratesID,
+          emiratesID: RuntimeConfig.to.emiratesID,
           kemPublicKey: pubs.kemPubHex!,
           dsaPublicKey: pubs.dsaPubHex!,
         );
@@ -181,7 +198,7 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
       }
 
       final registered = await ApiService.registerHolderKeys(
-        emiratesID: userEmiratesID,
+        emiratesID: RuntimeConfig.to.emiratesID,
         kemPublicKey: kem.pubHex,
         dsaPublicKey: dsa.pubHex,
       );
@@ -206,12 +223,50 @@ class _Onboard3ScreenState extends State<Onboard3Screen>
 
   void _markReady() {
     if (!mounted) return;
+    // Keys verified/registered — only now start wallet data API traffic.
+    // Controllers' onInit fires profile/credentials/activity/catalog/subs.
+    _startPostKeyFetches();
     _latticeCtrl.stop();
     _doneCtrl.forward();
     setState(() {
       _done = true;
       _failed = false;
     });
+  }
+
+  /// Start non-key wallet APIs only after keys are verified/registered.
+  ///
+  /// First success in this process: put permanent controllers (onInit fetches).
+  /// Later success (e.g. Dev Config → re-onboard same process): controllers
+  /// already exist so onInit will not run again — refresh explicitly.
+  void _startPostKeyFetches() {
+    logDebug('[Onboard3] starting post-key wallet API fetches');
+
+    if (!Get.isRegistered<WalletController>()) {
+      Get.put(WalletController(), permanent: true);
+    } else {
+      final wallet = Get.find<WalletController>();
+      wallet.fetchHolderProfile();
+      wallet.fetchMyCredentials();
+    }
+
+    if (!Get.isRegistered<ActivityController>()) {
+      Get.put(ActivityController(), permanent: true);
+    } else {
+      Get.find<ActivityController>().fetchActivity();
+    }
+
+    if (!Get.isRegistered<AddDocumentController>()) {
+      Get.put(AddDocumentController(), permanent: true);
+    } else {
+      Get.find<AddDocumentController>().loadCatalog();
+    }
+
+    if (!Get.isRegistered<ManageSubscriptionsController>()) {
+      Get.put(ManageSubscriptionsController(), permanent: true);
+    } else {
+      Get.find<ManageSubscriptionsController>().fetchSubscriptions();
+    }
   }
 
   String get _ctaLabel {
