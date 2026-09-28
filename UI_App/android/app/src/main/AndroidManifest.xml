@@ -1,4 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- INTERNET permission required for all build types (debug/profile
+         already declare it, but release builds use only this manifest).
+         Without it, every network call silently fails -> "Failed to load
+         holders" / "Connection failed" on the installed APK. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:label="QWallet"
         android:name="${applicationName}"
