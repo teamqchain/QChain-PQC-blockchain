@@ -3,9 +3,13 @@ import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/routes/app_routes.dart';
 import 'package:qwallet_mobileapp/theme/app_theme.dart';
 import 'package:qwallet_mobileapp/utils/alice_inspector.dart';
+import 'package:qwallet_mobileapp/utils/runtime_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Permanent so Splash and every later screen share one override slot.
+  // Nothing is written here — no override means app_config.dart defaults.
+  Get.put(RuntimeConfig(), permanent: true);
   runApp(const MyApp());
 }
 

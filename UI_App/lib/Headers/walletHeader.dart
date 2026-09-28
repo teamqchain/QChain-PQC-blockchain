@@ -38,12 +38,16 @@ class WalletHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              QPageTitle(
-                mainTitle: 'My Wallet',
-                subTitle: 'All your credentials, organised',
+              // Title takes remaining width so subtitle can ellipsize on narrow devices.
+              Expanded(
+                child: QPageTitle(
+                  mainTitle: 'My Wallet',
+                  subTitle: 'All your credentials, organised',
+                ),
               ),
+              const SizedBox(width: 12),
               // ─── SKELETON OR ACTUAL BADGE ───
               isLoading
                   ? Container(
@@ -64,6 +68,7 @@ class WalletHeader extends StatelessWidget {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Container(
                             width: 6,
@@ -75,7 +80,7 @@ class WalletHeader extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            '$totalDocs Credential${totalDocs != 1 ? 's' : ''}', // Pluralize "Credential
+                            '$totalDocs Credential${totalDocs != 1 ? 's' : ''}',
                             style: const TextStyle(
                               color: qSecondary,
                               fontSize: 11,

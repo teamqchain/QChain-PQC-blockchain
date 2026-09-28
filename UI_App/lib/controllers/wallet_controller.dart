@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:qwallet_mobileapp/model/credential_model.dart';
-import 'package:qwallet_mobileapp/utils/app_config.dart';
+import 'package:qwallet_mobileapp/utils/runtime_config.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
 import 'package:qwallet_mobileapp/services/crypto_service.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
@@ -37,7 +37,7 @@ class WalletController extends GetxController {
   Future<void> fetchHolderProfile() async {
     logDebug('[WalletController] fetchHolderProfile started');
     try {
-      final profile = await ApiService.getHolderProfile(userEmiratesID);
+      final profile = await ApiService.getHolderProfile(RuntimeConfig.to.emiratesID);
       if (profile != null) {
         holderName.value = (profile['fullName'] ?? '').toString().trim();
         holderEmail.value = (profile['email'] ?? '').toString().trim();
@@ -68,7 +68,7 @@ class WalletController extends GetxController {
     try {
       isLoading(true);
       errorMessage('');
-      final data = await ApiService.getMyCredentials(userEmiratesID);
+      final data = await ApiService.getMyCredentials(RuntimeConfig.to.emiratesID);
       // Metadata only — body attributes are decrypted on demand in the detail
       // screen, never at list load. Envelope-shaped `attributes` are discarded
       // by CredentialModel.fromJson so ciphertext never paints as rows.
@@ -98,7 +98,7 @@ class WalletController extends GetxController {
     try {
       final attrs = await ApiService.fetchAndDecryptAttributes(
         credentialID,
-        emiratesID: userEmiratesID,
+        emiratesID: RuntimeConfig.to.emiratesID,
       );
       if (index >= 0) {
         credentials[index] = credentials[index].copyWith(
@@ -221,7 +221,7 @@ class WalletController extends GetxController {
     // 2. Background Sync
     try {
       final success = await ApiService.toggleFavorite(
-        userEmiratesID,
+        RuntimeConfig.to.emiratesID,
         cred.credentialID,
       );
       if (!success) throw Exception('API returned success=false');

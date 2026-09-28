@@ -10,9 +10,10 @@ import 'package:qwallet_mobileapp/screens/onboard_2_screen.dart';
 import 'package:qwallet_mobileapp/screens/onboard_3_screen.dart';
 import 'package:qwallet_mobileapp/screens/present_screen.dart';
 import 'package:qwallet_mobileapp/screens/receive_screen.dart';
+import 'package:qwallet_mobileapp/screens/app_logs_screen.dart';
+import 'package:qwallet_mobileapp/screens/dev_config_screen.dart';
+import 'package:qwallet_mobileapp/screens/register_holder_screen.dart';
 import 'package:qwallet_mobileapp/screens/splash_screen.dart';
-
-
 
 // ─── ROUTE NAMES ─────────────────────────────────────────────────────────────
 
@@ -21,6 +22,12 @@ abstract class Routes {
   static const ONBOARD1 = '/onboard1';
   static const ONBOARD2 = '/onboard2';
   static const ONBOARD3 = '/onboard3';
+  /// Boot-only Dev Config (Splash logo double-tap). Not linked mid-session (D8).
+  static const DEV_RUNTIME_CONFIG = '/dev-runtime-config';
+  /// Dev-only register holder (from Dev Config).
+  static const REGISTER_HOLDER = '/register-holder';
+  /// In-app log console (debug + release while Alice/Dev tools are on).
+  static const APP_LOGS = '/app-logs';
 
   // Shell hosts Home, Wallet, Activity, Settings tabs — one single route
   static const SHELL = '/shell';
@@ -41,6 +48,24 @@ class AppPages {
   static final routes = [
     // ── Pre-auth ────────────────────────────────────────────────────────────
     GetPage(name: Routes.SPLASH, page: () => const SplashScreen()),
+    GetPage(
+      name: Routes.DEV_RUNTIME_CONFIG,
+      page: () => const DevRuntimeConfigScreen(),
+      transition: Transition.cupertino,
+      transitionDuration: const Duration(milliseconds: 200),
+    ),
+    GetPage(
+      name: Routes.REGISTER_HOLDER,
+      page: () => const RegisterHolderScreen(),
+      transition: Transition.cupertino,
+      transitionDuration: const Duration(milliseconds: 200),
+    ),
+    GetPage(
+      name: Routes.APP_LOGS,
+      page: () => const AppLogsScreen(),
+      transition: Transition.cupertino,
+      transitionDuration: const Duration(milliseconds: 200),
+    ),
     GetPage(name: Routes.ONBOARD1, page: () => const Onboard1Screen()),
     GetPage(name: Routes.ONBOARD2, page: () => const Onboard2Screen()),
     GetPage(name: Routes.ONBOARD3, page: () => const Onboard3Screen()),

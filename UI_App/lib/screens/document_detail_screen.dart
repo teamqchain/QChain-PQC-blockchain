@@ -9,7 +9,7 @@ import 'package:qwallet_mobileapp/screens/certificate_viewer_screen.dart';
 import 'package:qwallet_mobileapp/controllers/wallet_controller.dart';
 import 'package:qwallet_mobileapp/services/app_api_service.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
-import 'package:qwallet_mobileapp/utils/app_config.dart';
+import 'package:qwallet_mobileapp/utils/runtime_config.dart';
 import 'package:qwallet_mobileapp/utils/logger.dart';
 import 'package:qchain_shared/certificate_template.dart';
 
@@ -216,7 +216,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
     try {
       final attrs = await ApiService.fetchAndDecryptAttributes(
         credentialID,
-        emiratesID: userEmiratesID,
+        emiratesID: RuntimeConfig.to.emiratesID,
       );
       if (!mounted) return;
       setState(() {

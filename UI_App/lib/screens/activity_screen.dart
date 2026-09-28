@@ -9,7 +9,8 @@ import 'package:qwallet_mobileapp/skeletons/activity_skeleton.dart';
 import 'package:qwallet_mobileapp/theme/colors.dart';
 import 'package:qwallet_mobileapp/widgets/QSearchBar.dart';
 import 'package:qwallet_mobileapp/model/activity_model.dart';
-import 'package:qwallet_mobileapp/controllers/activity_controller.dart'; // <-- Import new controller
+import 'package:qwallet_mobileapp/controllers/activity_controller.dart';
+import 'package:qwallet_mobileapp/controllers/manage_subscriptions_controller.dart';
 import 'package:qwallet_mobileapp/utils/haptics.dart';
 
 class ActivityScreen extends StatefulWidget {
@@ -20,7 +21,13 @@ class ActivityScreen extends StatefulWidget {
 }
 
 class _ActivityScreenState extends State<ActivityScreen> {
-  final ActivityController controller = Get.put(ActivityController());
+  final ActivityController controller = Get.isRegistered<ActivityController>()
+      ? Get.find<ActivityController>()
+      : Get.put(ActivityController());
+  final ManageSubscriptionsController subscriptionsController =
+      Get.isRegistered<ManageSubscriptionsController>()
+          ? Get.find<ManageSubscriptionsController>()
+          : Get.put(ManageSubscriptionsController());
   final _searchController = TextEditingController();
   String _query = '';
 
@@ -136,7 +143,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
                       ),
                     ),
                     Obx(() {
-                      final count = controller.pendingSubscriptionsCount.value;
+                      // Reads RxList so the badge rebuilds when subscriptions load/change.
+                      final count = subscriptionsController.subscriptions
+                          .where((s) => s.status == 'pending')
+                          .length;
                       if (count > 0) {
                         return Container(
                           padding: const EdgeInsets.symmetric(
