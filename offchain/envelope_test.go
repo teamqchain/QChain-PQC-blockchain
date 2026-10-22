@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-func setupTestKeys(t *testing.T) (holderPub, holderPriv string) {
+func setupTestKeys(t testing.TB) (holderPub, holderPriv string) {
 	t.Helper()
 	if n := resolveKEMName(); n != "" {
 		kemName = n
@@ -36,7 +36,7 @@ var envelopeTestAttrs = map[string]string{
 }
 
 // sealTestEnvelope seals envelopeTestAttrs with fresh salts.
-func sealTestEnvelope(t *testing.T, pub string) (*Envelope, []byte, map[string]string) {
+func sealTestEnvelope(t testing.TB, pub string) (*Envelope, []byte, map[string]string) {
 	t.Helper()
 	salts, _, err := commitAttributes(envelopeTestAttrs)
 	if err != nil {
@@ -163,5 +163,36 @@ func TestTamperedFieldFailsAuth(t *testing.T) {
 	env.Fields[0].Ct = string(ct)
 	if _, err := openAttributes(env, "holder", priv); err == nil {
 		t.Fatal("expected auth failure on tampered ciphertext, got nil error")
+	}
+}
+
+// BenchmarkEnvelopeSeal measures the latency of ML-KEM-768 encapsulation and
+// AES-256-GCM symmetric encryption of credential attributes and salts.
+func BenchmarkEnvelopeSeal(b *testing.B) {
+	pub, _ := setupTestKeys(b)
+	salts, _, err := commitAttributes(envelopeTestAttrs)
+	if err != nil {
+		b.Fatalf("commitAttributes: %v", err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := sealCredentialEnvelope(envelopeTestAttrs, salts, pub)
+		if err != nil {
+			b.Fatalf("sealCredentialEnvelope: %v", err)
+		}
+	}
+}
+
+// BenchmarkEnvelopeOpen measures the latency of ML-KEM-768 decapsulation and
+// AES-256-GCM decryption by the holder.
+func BenchmarkEnvelopeOpen(b *testing.B) {
+	pub, priv := setupTestKeys(b)
+	env, _, _ := sealTestEnvelope(b, pub)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := openAttributes(env, "holder", priv)
+		if err != nil {
+			b.Fatalf("openAttributes: %v", err)
+		}
 	}
 }

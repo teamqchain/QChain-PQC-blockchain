@@ -14,7 +14,7 @@ import (
 )
 
 // testDSAKeyPair returns a fresh ML-DSA-44 key pair as (publicHex, secretHex).
-func testDSAKeyPair(t *testing.T) (pubHex, secHex string) {
+func testDSAKeyPair(t testing.TB) (pubHex, secHex string) {
 	t.Helper()
 	signer := oqs.Signature{}
 	defer signer.Clean()

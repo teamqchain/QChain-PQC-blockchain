@@ -51,6 +51,19 @@ FAIL="✗"
 TESTS_RUN=0
 TESTS_PASSED=0
 
+now_ms() {
+    python3 -c 'import time; print(int(time.time() * 1000))'
+}
+
+SUITE_START_MS=$(now_ms)
+KEYGEN_LATENCY_MS=0
+KEY_REG_LATENCY_MS=0
+ISSUANCE_LATENCY_MS=0
+DECRYPT_LATENCY_MS=0
+PRESENT_LATENCY_MS=0
+VERIFICATION_LATENCY_MS=0
+E2E_WORKFLOW_MS=0
+
 pass() {
     TESTS_RUN=$((TESTS_RUN + 1))
     TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -251,15 +264,18 @@ assert_json "$PROFILE_RESP" "data.get('emiratesID')" "$EID" "Holder profile has 
 # ─── 4. Generate Holder Keypairs ─────────────────────────────────────────────
 echo ""
 echo "4. Generating Holder Post-Quantum Keypairs via Docker..."
+T_WORKFLOW_START=$(now_ms)
+T0=$(now_ms)
 KEM_OUT=$(keygen kem)
 HOLDER_KEM_PUB=$(echo "$KEM_OUT" | grep "^KEM_PUBLIC_KEY_HEX=" | cut -d= -f2)
 HOLDER_KEM_PRIV=$(echo "$KEM_OUT" | grep "^KEM_PRIVATE_KEY_HEX=" | cut -d= -f2)
 DSA_OUT=$(keygen dsa)
 HOLDER_DSA_PUB=$(echo "$DSA_OUT" | grep "^DSA_PUBLIC_KEY_HEX=" | cut -d= -f2)
 HOLDER_DSA_PRIV=$(echo "$DSA_OUT" | grep "^DSA_PRIVATE_KEY_HEX=" | cut -d= -f2)
+KEYGEN_LATENCY_MS=$(( $(now_ms) - T0 ))
 
 if [ -n "$HOLDER_KEM_PUB" ] && [ -n "$HOLDER_DSA_PUB" ]; then
-    pass "Generated ML-KEM-768 and ML-DSA-44 holder keypairs"
+    pass "Generated ML-KEM-768 and ML-DSA-44 holder keypairs (${KEYGEN_LATENCY_MS} ms)"
 else
     fail "Key generation failed" "empty public keys"
 fi
@@ -272,10 +288,12 @@ SHORT_KEY_RESP=$(curl -s -X POST "$API_URL/mobile/registerHolderKeys" \
     -d "{\"emiratesID\": \"$EID\", \"kemPublicKey\": \"aabb\", \"dsaPublicKey\": \"$HOLDER_DSA_PUB\"}")
 assert_error "$SHORT_KEY_RESP" "kemPublicKey must be 2368 hex characters" "Wrong-length KEM key rejected"
 
+T0=$(now_ms)
 REG_KEYS_RESP=$(curl -s -X POST "$API_URL/mobile/registerHolderKeys" \
     -H "Content-Type: application/json" \
     -d "{\"emiratesID\": \"$EID\", \"kemPublicKey\": \"$HOLDER_KEM_PUB\", \"dsaPublicKey\": \"$HOLDER_DSA_PUB\"}")
-assert_json "$REG_KEYS_RESP" "data.get('success')" "True" "Holder public keys bound on-chain"
+KEY_REG_LATENCY_MS=$(( $(now_ms) - T0 ))
+assert_json "$REG_KEYS_RESP" "data.get('success')" "True" "Holder public keys bound on-chain (${KEY_REG_LATENCY_MS} ms)"
 
 KEYS_AFTER=$(curl -s "$API_URL/mobile/checkKeys?emiratesID=$EID")
 assert_json "$KEYS_AFTER" "data.get('hasKemKey')" "True" "Holder now has KEM key"
@@ -295,12 +313,14 @@ BAD_ISSUE=$(curl -s -X POST "$API_URL/issueCredential" \
     -d "{\"holderEmiratesID\": \"$EID\", \"credentialType\": \"BSc Computer Science\", \"info\": $(json_str '{"gpa":3.8}')}")
 assert_error "$BAD_ISSUE" 'must be a string' "Non-string attribute value rejected"
 
+T0=$(now_ms)
 ISSUE_RESP=$(curl -s -X POST "$API_URL/issueCredential" \
     -H "Content-Type: application/json" \
     -d "{\"holderEmiratesID\": \"$EID\", \"credentialType\": \"BSc Computer Science\", \"info\": $(json_str "$CRED_INFO")}")
+ISSUANCE_LATENCY_MS=$(( $(now_ms) - T0 ))
 CRED_ID=$(json_get "$ISSUE_RESP" credentialID)
 if [ -n "$CRED_ID" ]; then
-    pass "Credential issued: $CRED_ID"
+    pass "Credential issued: $CRED_ID (${ISSUANCE_LATENCY_MS} ms)"
 else
     fail "Credential issuance" "empty credentialID in response: $ISSUE_RESP"
 fi
@@ -321,8 +341,10 @@ assert_json "$ENV_RESP" "data.get('v')" "2" "Envelope version 2"
 assert_json "$ENV_RESP" "data.get('credId', '').startswith('env-')" "True" "Envelope HKDF context is a random env- ID"
 assert_json "$ENV_RESP" "data.get('wraps')[0].get('recipient')" "holder" "Envelope is sealed to 'holder'"
 
+T0=$(now_ms)
 DECRYPTED=$(printf '%s' "$ENV_RESP" | keygen decrypt "$HOLDER_KEM_PRIV")
-assert_json "$DECRYPTED" "data.get('gpa')" "3.8" "Holder decrypts the GPA"
+DECRYPT_LATENCY_MS=$(( $(now_ms) - T0 ))
+assert_json "$DECRYPTED" "data.get('gpa')" "3.8" "Holder decrypts the GPA (${DECRYPT_LATENCY_MS} ms)"
 assert_json "$DECRYPTED" "sorted(data.get('_salts', {}))" "['college', 'degreeTitle', 'gpa', 'graduationYear']" "Envelope carries one salt per field"
 assert_json "$DECRYPTED" "'expiryDate' in data" "False" "expiryDate is on-chain metadata, not an encrypted field"
 FULL_FIELDS='{"college":"CCI","degreeTitle":"BSc Computer Science","gpa":"3.8"}'
@@ -330,10 +352,12 @@ FULL_FIELDS='{"college":"CCI","degreeTitle":"BSc Computer Science","gpa":"3.8"}'
 # ─── 8. Generate Presentation Session ────────────────────────────────────────
 echo ""
 echo "8. Generating Presentation Session (/mobile/generatePresentation)..."
+T0=$(now_ms)
 DISCLOSED_PAYLOAD=$(build_payload "$CRED_ID" "$FULL_FIELDS" "$(salts_for college degreeTitle gpa)")
 HOLDER_SIG=$(keygen sign "$HOLDER_DSA_PRIV" "$DISCLOSED_PAYLOAD")
 PRES_RESP=$(present generatePresentation "$DISCLOSED_PAYLOAD" "$HOLDER_SIG" '["graduationYear"]')
-assert_json "$PRES_RESP" "data.get('success')" "True" "Presentation session generated"
+PRESENT_LATENCY_MS=$(( $(now_ms) - T0 ))
+assert_json "$PRES_RESP" "data.get('success')" "True" "Presentation session generated (${PRESENT_LATENCY_MS} ms)"
 PRES_ID=$(json_get "$PRES_RESP" presentationID)
 EXPIRES_AT=$(json_get "$PRES_RESP" expiresAt)
 if [[ "$EXPIRES_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$ ]]; then
@@ -345,7 +369,11 @@ fi
 # ─── 9. Resolve Session (5-check Verification) ───────────────────────────────
 echo ""
 echo "9. Resolving Session with 5 Cryptographic Checks (/resolveSession)..."
+T0=$(now_ms)
 RESOLVE_RESP=$(resolve "$PRES_ID")
+VERIFICATION_LATENCY_MS=$(( $(now_ms) - T0 ))
+E2E_WORKFLOW_MS=$(( $(now_ms) - T_WORKFLOW_START ))
+assert_json "$RESOLVE_RESP" "data.get('verified')" "True" "Verification result is VERIFIED: TRUE (${VERIFICATION_LATENCY_MS} ms)"
 assert_json "$RESOLVE_RESP" "data.get('verified')" "True" "Verification result is VERIFIED: TRUE"
 assert_json "$RESOLVE_RESP" "data.get('checks', {}).get('existsOnChain')" "True" "Check 1: existsOnChain = true"
 assert_json "$RESOLVE_RESP" "data.get('checks', {}).get('notRevoked')" "True" "Check 2: notRevoked = true"
@@ -637,9 +665,26 @@ AUDIT_RESP=$(curl -s "$API_URL/getAuditLogs?page=1&limit=50")
 assert_json "$AUDIT_RESP" "len(data.get('records', [])) >= 1" "True" "getAuditLogs returns records"
 assert_json "$AUDIT_RESP" "any('$STAFF_EMAIL' in r.get('details','') for r in data.get('records', []))" "True" "Audit log records the staff invite/removal actions from this run"
 
+SUITE_END_MS=$(now_ms)
+TOTAL_SUITE_MS=$((SUITE_END_MS - SUITE_START_MS))
+TOTAL_SUITE_SEC=$(python3 -c "print(f'{$TOTAL_SUITE_MS / 1000.0:.2f}')")
+
 echo ""
 echo "═══════════════════════════════════════════════════════════════════"
-echo "  Test Summary: $TESTS_PASSED / $TESTS_RUN tests passed"
+echo "  QChain Test & Performance Summary"
+echo "═══════════════════════════════════════════════════════════════════"
+echo "  Test Cases Passed:            $TESTS_PASSED / $TESTS_RUN passed"
+echo ""
+echo "  Presentation Latency Metrics (Live Stack):"
+echo "  -----------------------------------------------------------------"
+echo "  • Verification Latency:        ${VERIFICATION_LATENCY_MS} ms (/resolveSession, 5 checks)"
+echo "  • End-to-End PQC Workflow:     ${E2E_WORKFLOW_MS} ms (KeyGen → Issue → Decrypt → Present → Verify)"
+echo "  • Credential Issuance Latency: ${ISSUANCE_LATENCY_MS} ms (Fabric Ledger + IPFS)"
+echo "  • Holder Key Registration:     ${KEY_REG_LATENCY_MS} ms (Fabric Ledger)"
+echo "  • Holder PQC Key Generation:   ${KEYGEN_LATENCY_MS} ms (ML-KEM-768 + ML-DSA-44)"
+echo "  • Envelope Decryption Time:    ${DECRYPT_LATENCY_MS} ms (ML-KEM-768 Decapsulation)"
+echo "  • Presentation Signing Time:   ${PRESENT_LATENCY_MS} ms (ML-DSA-44 Signing)"
+echo "  • Total Test Suite Runtime:    ${TOTAL_SUITE_SEC}s"
 echo "═══════════════════════════════════════════════════════════════════"
 
 if [ "$TESTS_PASSED" -eq "$TESTS_RUN" ]; then

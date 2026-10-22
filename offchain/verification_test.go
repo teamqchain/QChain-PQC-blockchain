@@ -20,7 +20,7 @@ var testPresentationNow = time.Date(2026, 9, 24, 6, 30, 0, 0, time.UTC)
 
 // presentationFixture is one issued credential plus a holder able to present it.
 type presentationFixture struct {
-	t          *testing.T
+	tb         testing.TB
 	issuerPub  string
 	issuerPriv string
 	holderPub  string
@@ -31,11 +31,11 @@ type presentationFixture struct {
 	holder     *ChainHolder
 }
 
-func newPresentationFixture(t *testing.T) *presentationFixture {
-	t.Helper()
-	f := &presentationFixture{t: t}
-	f.issuerPub, f.issuerPriv = testDSAKeyPair(t)
-	f.holderPub, f.holderPriv = testDSAKeyPair(t)
+func newPresentationFixture(tb testing.TB) *presentationFixture {
+	tb.Helper()
+	f := &presentationFixture{tb: tb}
+	f.issuerPub, f.issuerPriv = testDSAKeyPair(tb)
+	f.holderPub, f.holderPriv = testDSAKeyPair(tb)
 	f.attrs = map[string]string{
 		"Degree Title": "Bachelors in Computer Science",
 		"College":      "College of Computing & Informatics",
@@ -43,7 +43,7 @@ func newPresentationFixture(t *testing.T) *presentationFixture {
 	}
 	salts, fieldHashes, err := commitAttributes(f.attrs)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	f.salts = salts
 	f.cred = &ChainCredential{
@@ -66,10 +66,10 @@ func newPresentationFixture(t *testing.T) *presentationFixture {
 
 // resign signs the credential's current commitment with the given key.
 func (f *presentationFixture) resign(priv, pub string) {
-	f.t.Helper()
+	f.tb.Helper()
 	hash, sig, err := signCommitment(commitmentFromChain(f.cred), priv)
 	if err != nil {
-		f.t.Fatal(err)
+		f.tb.Fatal(err)
 	}
 	f.cred.CredentialHash, f.cred.Signature, f.cred.PublicKey = hash, sig, pub
 }
@@ -77,7 +77,7 @@ func (f *presentationFixture) resign(priv, pub string) {
 // payload builds a presentation JSON the way the wallet does (sorted keys, no
 // whitespace) and signs it with the given holder key.
 func (f *presentationFixture) payload(credID string, disclosed, salts map[string]string, holderPriv string) (string, string) {
-	f.t.Helper()
+	f.tb.Helper()
 	raw, err := json.Marshal(map[string]any{
 		"credentialID":    credID,
 		"disclosedFields": disclosed,
@@ -85,11 +85,11 @@ func (f *presentationFixture) payload(credID string, disclosed, salts map[string
 		"timestamp":       "2026-09-24T06:29:00.000Z",
 	})
 	if err != nil {
-		f.t.Fatal(err)
+		f.tb.Fatal(err)
 	}
 	sig, err := pqcSign(sha3Hex(string(raw)), holderPriv)
 	if err != nil {
-		f.t.Fatal(err)
+		f.tb.Fatal(err)
 	}
 	return string(raw), sig
 }
@@ -379,6 +379,131 @@ func TestParseDisclosedPayload(t *testing.T) {
 	} {
 		if _, err := parseDisclosedPayload(in); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("parseDisclosedPayload(%s) error = %v, want %q", in, err, want)
+		}
+	}
+}
+
+// =============================================================================
+// PERFORMANCE BENCHMARKS (ML-DSA-44 & Full Verification Workflow)
+// =============================================================================
+
+// BenchmarkVerifyPresentation measures the complete verification latency of
+// QChain's multi-tier cryptographic verification:
+//  1. Ledger status check
+//  2. Expiry verification
+//  3. Credential commitment recomputation (canonical JSON + SHA3-256)
+//  4. Issuer ML-DSA-44 signature verification
+//  5. Selective disclosure field hash verification (salted SHA3-256)
+//  6. Holder presentation ML-DSA-44 signature verification
+func BenchmarkVerifyPresentation(b *testing.B) {
+	f := newPresentationFixture(b)
+	d, s := f.discloseAll()
+	raw, sig := f.payload(testDisplayID, d, s, f.holderPriv)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		out := f.verify(raw, sig)
+		if !out.Verified {
+			b.Fatalf("expected verification to pass: reason=%s", out.Reason)
+		}
+	}
+}
+
+// BenchmarkVerifyPresentationSelectiveDisclosure measures verification latency
+// when disclosing only 1 of 3 attributes (selective disclosure).
+func BenchmarkVerifyPresentationSelectiveDisclosure(b *testing.B) {
+	f := newPresentationFixture(b)
+	d := map[string]string{"GPA": f.attrs["GPA"]}
+	s := map[string]string{"GPA": f.salts["GPA"]}
+	raw, sig := f.payload(testDisplayID, d, s, f.holderPriv)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		out := f.verify(raw, sig)
+		if !out.Verified {
+			b.Fatalf("expected verification to pass: reason=%s", out.Reason)
+		}
+	}
+}
+
+// BenchmarkIssuerCommitmentAndSign measures the issuer-side latency:
+// constructing canonical commitment JSON, hashing with SHA3-256, and signing
+// with ML-DSA-44.
+func BenchmarkIssuerCommitmentAndSign(b *testing.B) {
+	f := newPresentationFixture(b)
+	comm := commitmentFromChain(f.cred)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _, err := signCommitment(comm, f.issuerPriv)
+		if err != nil {
+			b.Fatalf("signCommitment: %v", err)
+		}
+	}
+}
+
+// BenchmarkHolderPresentationSign measures the holder-side latency:
+// hashing presentation JSON (SHA3-256) and signing with holder's ML-DSA-44 key.
+func BenchmarkHolderPresentationSign(b *testing.B) {
+	f := newPresentationFixture(b)
+	d, s := f.discloseAll()
+	raw, _ := f.payload(testDisplayID, d, s, f.holderPriv)
+	digest := sha3Hex(raw)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := pqcSign(digest, f.holderPriv)
+		if err != nil {
+			b.Fatalf("pqcSign: %v", err)
+		}
+	}
+}
+
+// BenchmarkEndToEndPQCWorkflow measures the complete end-to-end PQC pipeline:
+//  1. Issuer signs credential commitment (ML-DSA-44)
+//  2. Issuer seals credential envelope to holder (ML-KEM-768 + AES-256-GCM)
+//  3. Holder decapsulates and opens envelope (ML-KEM-768 + AES-256-GCM)
+//  4. Holder signs selective presentation payload (ML-DSA-44)
+//  5. Verifier executes full 5-stage verification
+func BenchmarkEndToEndPQCWorkflow(b *testing.B) {
+	f := newPresentationFixture(b)
+	kemPub, kemPriv := setupTestKeys(b)
+	comm := commitmentFromChain(f.cred)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// 1. Issuer: Commit & Sign
+		hash, sig, err := signCommitment(comm, f.issuerPriv)
+		if err != nil {
+			b.Fatalf("issuer sign: %v", err)
+		}
+		f.cred.CredentialHash, f.cred.Signature = hash, sig
+
+		// 2. Issuer: Seal envelope (ML-KEM-768 + AES-256-GCM)
+		rawEnv, err := sealCredentialEnvelope(f.attrs, f.salts, kemPub)
+		if err != nil {
+			b.Fatalf("seal envelope: %v", err)
+		}
+
+		// 3. Holder: Decrypt envelope
+		var env Envelope
+		if err := json.Unmarshal(rawEnv, &env); err != nil {
+			b.Fatalf("unmarshal env: %v", err)
+		}
+		opened, err := openAttributes(&env, "holder", kemPriv)
+		if err != nil {
+			b.Fatalf("open envelope: %v", err)
+		}
+		_ = opened
+
+		// 4. Holder: Sign presentation (ML-DSA-44)
+		d, s := f.discloseAll()
+		rawPayload, holderSig := f.payload(testDisplayID, d, s, f.holderPriv)
+
+		// 5. Verifier: Verify presentation
+		outcome := f.verify(rawPayload, holderSig)
+		if !outcome.Verified {
+			b.Fatalf("verification failed in workflow: reason=%s", outcome.Reason)
 		}
 	}
 }
