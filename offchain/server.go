@@ -109,6 +109,9 @@ func main() {
 	mux.HandleFunc("POST /mobile/approveSubscription", handleApproveSubscription)
 	mux.HandleFunc("POST /mobile/rejectSubscription", handleRejectSubscription)
 
+	// Development / Testing cleanup
+	mux.HandleFunc("POST /dev/cleanupTest", handleDevCleanupTest)
+
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})

@@ -9,6 +9,8 @@
 #   4. Envelope Decryption Latency (ML-KEM-768 decapsulation + AES-256-GCM)
 #   5. Presentation Generation & Signing Latency (ML-DSA-44 signing)
 #
+# Cleans up all issued benchmark credentials and test holders at the end.
+#
 # Requires: curl, python3, docker (for qchain-api keygen)
 #
 # Usage:
@@ -28,7 +30,15 @@ now_ms() {
 }
 
 json_get() {
-    printf '%s' "$1" | KEY="$2" python3 -c '
+    local json key
+    if [ $# -ge 2 ]; then
+        json="$1"
+        key="$2"
+    else
+        json=$(cat)
+        key="${1:-}"
+    fi
+    printf '%s' "$json" | KEY="$key" python3 -c '
 import json, os, sys
 try:
     v = json.loads(sys.stdin.read()).get(os.environ["KEY"], "")
@@ -111,6 +121,7 @@ echo "  ✓ Public keys anchored on Hyperledger Fabric"
 echo ""
 echo "[3/4] Benchmarking Credential Issuance ($ITERATIONS iterations)..."
 declare -a ISSUANCE_TIMES=()
+declare -a ALL_BENCH_CRED_IDS=()
 FIRST_CRED_ID=""
 
 for i in $(seq 1 "$ITERATIONS"); do
@@ -123,6 +134,7 @@ for i in $(seq 1 "$ITERATIONS"); do
     DIFF=$((T_ISSUE_END - T_ISSUE_START))
     ISSUANCE_TIMES+=("$DIFF")
     CID=$(json_get "$ISSUE_RESP" credentialID)
+    ALL_BENCH_CRED_IDS+=("$CID")
     if [ -z "$FIRST_CRED_ID" ]; then
         FIRST_CRED_ID="$CID"
     fi
@@ -181,8 +193,8 @@ for i in $(seq 1 "$ITERATIONS"); do
         "$i" "$ITERATIONS" "$VER_DIFF" "$WF_TOTAL" "$VERIFIED"
 done
 
-# Calculate statistics via Python
-STATS_JSON=$(python3 - <<PY
+# Calculate statistics and write report via Python
+STATS_DATA=$(python3 - <<PY
 import json
 
 def stats(arr):
@@ -218,54 +230,51 @@ print(json.dumps(out))
 PY
 )
 
-V_MIN=$(echo "$STATS_JSON" | json_get verify | python3 -c 'import json, sys; print(json.loads(sys.stdin.read())["min"])')
-V_MAX=$(echo "$STATS_JSON" | json_get verify | python3 -c 'import json, sys; print(json.loads(sys.stdin.read())["max"])')
-V_MEAN=$(echo "$STATS_JSON" | json_get verify | python3 -c 'import json, sys; print(json.loads(sys.stdin.read())["mean"])')
-V_P50=$(echo "$STATS_JSON" | json_get verify | python3 -c 'import json, sys; print(json.loads(sys.stdin.read())["p50"])')
-V_P95=$(echo "$STATS_JSON" | json_get verify | python3 -c 'import json, sys; print(json.loads(sys.stdin.read())["p95"])')
+python3 - "$STATS_DATA" "$ITERATIONS" "$API_URL" <<'PY'
+import json, sys, datetime
+data = json.loads(sys.argv[1])
+n = sys.argv[2]
+api = sys.argv[3]
 
-W_MIN=$(echo "$STATS_JSON" | json_get workflow | python3 -c 'import json, sys; print(json.loads(sys.stdin.read())["min"])')
-W_MAX=$(echo "$STATS_JSON" | json_get workflow | python3 -c 'import json, sys; print(json.loads(sys.stdin.read())["max"])')
-W_MEAN=$(echo "$STATS_JSON" | json_get workflow | python3 -c 'import json, sys; print(json.loads(sys.stdin.read())["mean"])')
+v = data["verify"]
+w = data["workflow"]
+i = data["issuance"]
+p = data["present"]
+d = data["decrypt"]
 
-I_MEAN=$(echo "$STATS_JSON" | json_get issuance | python3 -c 'import json, sys; print(json.loads(sys.stdin.read())["mean"])')
-D_MEAN=$(echo "$STATS_JSON" | json_get decrypt | python3 -c 'import json, sys; print(json.loads(sys.stdin.read())["mean"])')
-P_MEAN=$(echo "$STATS_JSON" | json_get present | python3 -c 'import json, sys; print(json.loads(sys.stdin.read())["mean"])')
+print(f"""
+═══════════════════════════════════════════════════════════════════════════════
+               QCHAIN PERFORMANCE BENCHMARK REPORT (N = {n})
+═══════════════════════════════════════════════════════════════════════════════
+ {"Metric":<35} : {"Mean":>8} | {"Median":>8} | {"Min":>8} | {"Max":>8}
+ ─────────────────────────────────────────────────────────────────────────────
+ {"1. Verification Latency (/resolve)":<35} : {v['mean']:6.2f} ms | {v['p50']:6.1f} ms | {v['min']:6d} ms | {v['max']:6d} ms
+ {"2. End-to-End Presentation Workflow":<35} : {w['mean']:6.2f} ms |        - | {w['min']:6d} ms | {w['max']:6d} ms
+ {"3. Credential Issuance Latency":<35} : {i['mean']:6.2f} ms |        - | {i['min']:6d} ms | {i['max']:6d} ms
+ {"4. Presentation Generation (Sign)":<35} : {p['mean']:6.2f} ms |        - | {p['min']:6d} ms | {p['max']:6d} ms
+ {"5. Envelope Decryption (ML-KEM)":<35} : {d['mean']:6.2f} ms |        - | {d['min']:6d} ms | {d['max']:6d} ms
+ ─────────────────────────────────────────────────────────────────────────────
+  • Verification 95th Percentile (p95): {v['p95']:.1f} ms
+  • Post-Quantum Algorithms: ML-DSA-44 (Dilithium) + ML-KEM-768 (Kyber)
+  • Security Level: NIST Category 2 (Quantum Resistant, Shor's Immune)
+═══════════════════════════════════════════════════════════════════════════════
+""")
 
-echo ""
-echo "═══════════════════════════════════════════════════════════════════════════════"
-echo "               QCHAIN PERFORMANCE BENCHMARK REPORT (N = $ITERATIONS)"
-echo "═══════════════════════════════════════════════════════════════════════════════"
-printf " %-35s : %8s | %8s | %8s | %8s\n" "Metric" "Mean" "Median" "Min" "Max"
-echo " ─────────────────────────────────────────────────────────────────────────────"
-printf " %-35s : %6.2f ms | %6.1f ms | %6d ms | %6d ms\n" "1. Verification Latency (/resolve)" "$V_MEAN" "$V_P50" "$V_MIN" "$V_MAX"
-printf " %-35s : %6.2f ms |        - | %6d ms | %6d ms\n" "2. End-to-End Presentation Workflow" "$W_MEAN" "$W_MIN" "$W_MAX"
-printf " %-35s : %6.2f ms |        - |        - |        -\n" "3. Credential Issuance Latency" "$I_MEAN"
-printf " %-35s : %6.2f ms |        - |        - |        -\n" "4. Presentation Generation (Sign)" "$P_MEAN"
-printf " %-35s : %6.2f ms |        - |        - |        -\n" "5. Envelope Decryption (ML-KEM)" "$D_MEAN"
-echo " ─────────────────────────────────────────────────────────────────────────────"
-echo "  • Verification 95th Percentile (p95): ${V_P95} ms"
-echo "  • Post-Quantum Algorithms: ML-DSA-44 (Dilithium) + ML-KEM-768 (Kyber)"
-echo "  • Security Level: NIST Category 2 (Quantum Resistant, Shor's Immune)"
-echo "═══════════════════════════════════════════════════════════════════════════════"
+md_content = f"""# QChain Post-Quantum Performance Benchmark Results
 
-REPORT_FILE="tests/benchmark_results.md"
-cat <<EOF > "$REPORT_FILE"
-# QChain Post-Quantum Performance Benchmark Results
-
-Generated: $(date)
-Target: $API_URL
-Iterations: $ITERATIONS
+Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Target: {api}
+Iterations: {n}
 
 ## Summary Table
 
 | Metric | Mean (ms) | Median (ms) | Min (ms) | Max (ms) | p95 (ms) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Verification Latency (/resolveSession)** | **$V_MEAN** | **$V_P50** | **$V_MIN** | **$V_MAX** | **$V_P95** |
-| **End-to-End PQC Workflow** | **$W_MEAN** | - | **$W_MIN** | **$W_MAX** | - |
-| **Credential Issuance Latency** | $I_MEAN | - | - | - | - |
-| **Envelope Decryption (ML-KEM-768)** | $D_MEAN | - | - | - | - |
-| **Presentation Signing (ML-DSA-44)** | $P_MEAN | - | - | - | - |
+| **Verification Latency (/resolveSession)** | **{v['mean']:.2f}** | **{v['p50']:.1f}** | **{v['min']}** | **{v['max']}** | **{v['p95']:.1f}** |
+| **End-to-End Presentation Workflow** | **{w['mean']:.2f}** | - | **{w['min']}** | **{w['max']}** | - |
+| **Credential Issuance Latency** | {i['mean']:.2f} | - | {i['min']} | {i['max']} | - |
+| **Envelope Decryption (ML-KEM-768)** | {d['mean']:.2f} | - | {d['min']} | {d['max']} | - |
+| **Presentation Signing (ML-DSA-44)** | {p['mean']:.2f} | - | {p['min']} | {p['max']} | - |
 
 ## Cryptographic Size Parameters
 
@@ -275,8 +284,60 @@ Iterations: $ITERATIONS
 | **Private Key Size** | 32 bytes | 2,560 bytes (DSA) / 2,400 bytes (KEM) |
 | **Signature Size** | 64 bytes | 2,420 bytes |
 | **Quantum Resistance** | Broken by Shor's Algorithm | NIST Standardized / Lattice Resistant |
+"""
+with open("tests/benchmark_results.md", "w") as f:
+    f.write(md_content)
+PY
 
-EOF
+echo "✓ Results saved to tests/benchmark_results.md"
 
+# ─── Post-Test Cleanup ────────────────────────────────────────────────────────
 echo ""
-echo "✓ Results saved to $REPORT_FILE"
+echo "[Cleanup] Deleting benchmark test entities from database..."
+
+ALL_CREDS_STR=$(IFS=','; echo "${ALL_BENCH_CRED_IDS[*]}")
+CLEANUP_PAYLOAD=$(python3 - "$ALL_CREDS_STR" "$HOLDER_ID" "$EID" <<'PY'
+import sys, json
+creds = [c.strip() for c in sys.argv[1].split(",") if c.strip()]
+print(json.dumps({
+    "credentialIDs": creds,
+    "holderIDs": [sys.argv[2]] if sys.argv[2] else [],
+    "emiratesIDs": [sys.argv[3]] if sys.argv[3] else []
+}))
+PY
+)
+
+CLEANUP_RESP=$(curl -s -X POST "$API_URL/dev/cleanupTest" \
+    -H "Content-Type: application/json" \
+    -d "$CLEANUP_PAYLOAD" 2>/dev/null || echo "")
+
+if [[ "$CLEANUP_RESP" == *"\"success\":true"* ]]; then
+    echo "  ✓ Successfully deleted $ITERATIONS benchmark credentials and test holder ($HOLDER_ID) via API"
+else
+    # Fallback to direct MySQL if CLI is installed or via Docker container
+    MYSQL_SUCCESS=false
+    SQL_STMT="
+        USE qchain_db;
+        DELETE FROM alerts WHERE credential_id IN (SELECT credential_id FROM credentials WHERE holder_id = '$HOLDER_ID');
+        DELETE FROM subscriptions WHERE holder_id = '$HOLDER_ID';
+        DELETE FROM credential_events WHERE credential_id IN (SELECT credential_id FROM credentials WHERE holder_id = '$HOLDER_ID');
+        DELETE FROM verification_logs WHERE credential_id IN (SELECT credential_id FROM credentials WHERE holder_id = '$HOLDER_ID');
+        DELETE FROM mobile_sessions WHERE holder_id = '$HOLDER_ID';
+        DELETE FROM credentials WHERE holder_id = '$HOLDER_ID';
+        DELETE FROM holders WHERE holder_id = '$HOLDER_ID' OR emirates_id = '$EID';
+    "
+    if command -v mysql >/dev/null 2>&1; then
+        mysql -u root -e "$SQL_STMT" 2>/dev/null && MYSQL_SUCCESS=true || true
+    fi
+    if [ "$MYSQL_SUCCESS" = false ]; then
+        MYSQL_CONTAINER=$(docker ps -q -f name=mysql 2>/dev/null | head -n 1)
+        if [ -n "$MYSQL_CONTAINER" ]; then
+            docker exec "$MYSQL_CONTAINER" mysql -u root -e "$SQL_STMT" 2>/dev/null && MYSQL_SUCCESS=true || true
+        fi
+    fi
+    if [ "$MYSQL_SUCCESS" = true ]; then
+        echo "  ✓ Cleaned up benchmark credentials and holder via direct MySQL"
+    else
+        echo "  ℹ Test entities logged for manual review or next automated cleanup"
+    fi
+fi

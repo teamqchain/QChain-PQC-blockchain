@@ -665,6 +665,65 @@ AUDIT_RESP=$(curl -s "$API_URL/getAuditLogs?page=1&limit=50")
 assert_json "$AUDIT_RESP" "len(data.get('records', [])) >= 1" "True" "getAuditLogs returns records"
 assert_json "$AUDIT_RESP" "any('$STAFF_EMAIL' in r.get('details','') for r in data.get('records', []))" "True" "Audit log records the staff invite/removal actions from this run"
 
+# ─── 18. Cleanup Test Entities ───────────────────────────────────────────────
+echo ""
+echo "18. Cleaning up test holders, credentials, and staff..."
+CLEANUP_PAYLOAD=$(python3 - "$CRED_ID" "${BACH_CRED_ID:-}" "$HOLDER_ID" "$EID" "$OVERWRITE_EID" "$SECOND_NO_EMAIL_EID" "${STAFF_ID:-}" "${STAFF_EMAIL:-}" <<'PY'
+import sys, json
+creds = [c for c in [sys.argv[1], sys.argv[2]] if c]
+holders = [h for h in [sys.argv[3]] if h]
+eids = [e for e in [sys.argv[4], sys.argv[5], sys.argv[6]] if e]
+staff_ids = [s for s in [sys.argv[7]] if s]
+staff_emails = [m for m in [sys.argv[8]] if m]
+
+print(json.dumps({
+    "credentialIDs": creds,
+    "holderIDs": holders,
+    "emiratesIDs": eids,
+    "staffIDs": staff_ids,
+    "staffEmails": staff_emails
+}))
+PY
+)
+
+CLEANUP_RESP=$(curl -s -X POST "$API_URL/dev/cleanupTest" \
+    -H "Content-Type: application/json" \
+    -d "$CLEANUP_PAYLOAD" 2>/dev/null || echo "")
+
+if [[ "$CLEANUP_RESP" == *"\"success\":true"* ]]; then
+    pass "Test holders, credentials, and staff cleanly deleted from database via API"
+else
+    # Fallback to direct MySQL if CLI is installed or via Docker container
+    MYSQL_SUCCESS=false
+    SQL_STMT="
+        USE qchain_db;
+        DELETE FROM alerts WHERE credential_id IN ('$CRED_ID', '${BACH_CRED_ID:-}');
+        DELETE FROM subscriptions WHERE credential_id IN ('$CRED_ID', '${BACH_CRED_ID:-}') OR holder_id = '$HOLDER_ID';
+        DELETE FROM credential_events WHERE credential_id IN ('$CRED_ID', '${BACH_CRED_ID:-}');
+        DELETE FROM verification_logs WHERE credential_id IN ('$CRED_ID', '${BACH_CRED_ID:-}');
+        DELETE FROM mobile_sessions WHERE credential_id IN ('$CRED_ID', '${BACH_CRED_ID:-}') OR holder_id = '$HOLDER_ID';
+        DELETE FROM batch_job_rows WHERE credential_id IN ('$CRED_ID', '${BACH_CRED_ID:-}') OR holder_id = '$HOLDER_ID';
+        DELETE FROM credentials WHERE credential_id IN ('$CRED_ID', '${BACH_CRED_ID:-}') OR holder_id = '$HOLDER_ID';
+        DELETE FROM holders WHERE holder_id = '$HOLDER_ID' OR emirates_id IN ('$EID', '$OVERWRITE_EID', '$SECOND_NO_EMAIL_EID');
+        DELETE FROM staff WHERE email = '$STAFF_EMAIL' OR id = '$STAFF_ID' OR email LIKE 'e2e-staff-%';
+        DELETE FROM portal_audit_log WHERE details LIKE '%$STAFF_EMAIL%';
+    "
+    if command -v mysql >/dev/null 2>&1; then
+        mysql -u root -e "$SQL_STMT" 2>/dev/null && MYSQL_SUCCESS=true || true
+    fi
+    if [ "$MYSQL_SUCCESS" = false ]; then
+        MYSQL_CONTAINER=$(docker ps -q -f name=mysql 2>/dev/null | head -n 1)
+        if [ -n "$MYSQL_CONTAINER" ]; then
+            docker exec "$MYSQL_CONTAINER" mysql -u root -e "$SQL_STMT" 2>/dev/null && MYSQL_SUCCESS=true || true
+        fi
+    fi
+    if [ "$MYSQL_SUCCESS" = true ]; then
+        pass "Test holders, credentials, and staff cleanly deleted via direct MySQL"
+    else
+        echo "  ℹ Test entities preserved or logged for manual cleanup"
+    fi
+fi
+
 SUITE_END_MS=$(now_ms)
 TOTAL_SUITE_MS=$((SUITE_END_MS - SUITE_START_MS))
 TOTAL_SUITE_SEC=$(python3 -c "print(f'{$TOTAL_SUITE_MS / 1000.0:.2f}')")
