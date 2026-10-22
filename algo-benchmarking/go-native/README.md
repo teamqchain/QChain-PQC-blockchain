@@ -1,52 +1,39 @@
-# QChain: Post-Quantum Credentialing (Using native Go algorithms from CIRCL)
+# QChain: Post-Quantum Cryptography (Native Go `crypto/mlkem`)
 
-This repository contains the core cryptographic and storage logic for **QChain**, a decentralized academic credentialing system. It uses purely native Go implementations of Post-Quantum Cryptography (NIST ML-DSA) and IPFS for decentralized storage.
+This directory benchmarks and demonstrates post-quantum cryptography using Go's official standard library package **`crypto/mlkem`** (introduced natively in Go 1.24). It implements **NIST FIPS 203 (ML-KEM)** without any external third-party dependencies or CGo bindings.
 
 ## 📄 Files Included
 
-* **`main.go`**: The Issuer (University) application. It performs the following steps:
-  1. Generates ML-DSA-44 post-quantum cryptographic keys.
-  2. Uploads a local document (`transcript.pdf`) to a local IPFS node.
-  3. Signs the resulting IPFS CID with the ML-DSA-44 private key.
-  4. Uploads the final verification payload (Document CID + Hex Signature) to IPFS.
-* **`main_test.go`**: A comprehensive benchmark suite. It measures the execution speed (nanoseconds per operation) and memory allocations for Key Generation, Signing, and Verification across all three NIST security levels (ML-DSA-44, 65, and 87).
+* **`main.go`**: Demonstrates the native post-quantum confidential envelope flow:
+  1. Generates an ML-KEM-768 key pair using standard library `crypto/mlkem`.
+  2. Stores a credential document on IPFS.
+  3. Encapsulates a shared secret key via `ek.Encapsulate()`.
+  4. Encrypts the credential payload using AES-256-GCM keyed with the quantum-safe shared secret.
+  5. Decapsulates the shared secret using `dk.Decapsulate()` and decrypts the credential payload.
+  6. Packages the post-quantum envelope for IPFS storage.
+* **`main_test.go`**: Benchmark suite measuring execution speed and memory allocations for:
+  - Key Generation (`ML-KEM-768` and `ML-KEM-1024`)
+  - Key Encapsulation (`ML-KEM-768` and `ML-KEM-1024`)
+  - Key Decapsulation (`ML-KEM-768` and `ML-KEM-1024`)
+  - Total Key Exchange Workflow
+  - Full Authenticated Envelope Pipeline (ML-KEM + AES-256-GCM)
 
 ## ⚙️ Prerequisites
 
-* **Go 1.20+** installed on your system.
-* **Docker** (used solely to run an isolated, ephemeral IPFS node).
-* A sample PDF file named `transcript.pdf` placed in the root directory.
+* **Go 1.24+** (includes native `crypto/mlkem`).
+* *(Optional)* **Docker** if running a local IPFS daemon.
 
 ## 🚀 How to Run the Application (`main.go`)
 
-**1. Start the Local IPFS Node**
-Spin up a background IPFS container to handle file uploads without installing IPFS natively:
 ```bash
-docker run -d --name ipfs-node -p 5001:5001 -p 8080:8080 ipfs/kubo:latest
-```
-
-**2. Initialize and Run**
-Download the required pure-Go dependencies and execute the script:
-```bash
-go mod init qchain
-go mod tidy
+cd algo-benchmarking/go-native
 go run main.go
-```
-
-**3. Verify**
-Check your terminal output for the `Final Verification CID`. You can view the signed payload in your browser at `http://127.0.0.1:8080/ipfs/<YOUR_FINAL_CID>`.
-
-**4. Cleanup**
-When finished, remove the isolated IPFS node:
-```bash
-docker rm -f ipfs-node
 ```
 
 ## 📊 How to Run the Benchmarks (`main_test.go`)
 
-Because the cryptography relies on Cloudflare's `circl` (pure Go), you can run the benchmarks natively on your machine without Docker.
+Run the micro-benchmarks natively with:
 
-To run the speed and memory benchmarks for all ML-DSA security levels, use:
 ```bash
 go test -bench=. -benchmem
 ```

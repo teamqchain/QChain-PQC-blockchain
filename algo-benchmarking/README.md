@@ -1,11 +1,11 @@
-# QChain: Post-Quantum Credentialing
+# QChain: Post-Quantum Cryptographic Benchmarking
 
-This repository contains the core cryptographic logic for the QChain credentialing system. It evaluates two different implementations of the NIST ML-DSA (Dilithium) post-quantum signature scheme.
+This directory contains the benchmarking and evaluation suites for post-quantum cryptographic algorithms in QChain.
 
 ## 📁 Repository Structure
 
-* **`/go-bindings`**: Uses `liboqs-go`, a Go wrapper around the Open Quantum Safe C-library. It offers highly optimized execution speeds but requires a containerized Docker environment to manage OS-level C dependencies.
-* **`/go-native`**: Uses Cloudflare's `circl`, a 100% pure Go implementation. It runs natively without Docker or Cgo, offering maximum portability at the cost of slightly higher execution times for signing and key generation.
+* **`/go-bindings`**: **Production Implementation** using `liboqs-go`, a Go wrapper around the Open Quantum Safe C-library. It implements **ML-DSA** (NIST FIPS 204 Dilithium signatures) and **ML-KEM** (NIST FIPS 203 Kyber key encapsulation). Runs in Docker to manage OS-level C dependencies.
+* **`/go-native`**: Uses Go's native standard library post-quantum cryptography package (**`crypto/mlkem`**, introduced in Go 1.24) for ML-KEM-768 and ML-KEM-1024. Runs natively on Go 1.24+ without Docker, CGo, or external third-party dependencies.
 
 ---
 

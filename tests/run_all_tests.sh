@@ -41,10 +41,10 @@ run_unit_and_benchmarks() {
 run_algo_benchmarks() {
     echo ""
     echo "==================================================================="
-    echo "  Running Algo Benchmarks (ML-DSA Speed & Workflow)"
+    echo "  Running Algo Benchmarks (liboqs ML-DSA & Native crypto/mlkem)"
     echo "==================================================================="
     if [ -d "$REPO_ROOT/algo-benchmarking/go-native" ] && command -v go >/dev/null 2>&1; then
-        echo "Running pure Go native benchmarks (Cloudflare CIRCL)..."
+        echo "Running native Go benchmarks (crypto/mlkem, Go 1.24+ standard library)..."
         cd "$REPO_ROOT/algo-benchmarking/go-native"
         go test -bench=. -benchmem
     fi

@@ -1,130 +1,161 @@
 package main
 
 import (
-	"crypto/rand"
+	"crypto/mlkem"
 	"testing"
-
-	"github.com/cloudflare/circl/sign/mldsa/mldsa44"
-	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
-	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
-// Key Generation Speed
+// BenchmarkKeyGeneration measures the key generation latency of Go standard library ML-KEM.
 func BenchmarkKeyGeneration(b *testing.B) {
-	b.Run("ML-DSA-44", func(b *testing.B) {
+	b.Run("ML-KEM-768", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, _, _ = mldsa44.GenerateKey(rand.Reader)
+			_, err := mlkem.GenerateKey768()
+			if err != nil {
+				b.Fatalf("GenerateKey768: %v", err)
+			}
 		}
 	})
-	b.Run("ML-DSA-65", func(b *testing.B) {
+
+	b.Run("ML-KEM-1024", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, _, _ = mldsa65.GenerateKey(rand.Reader)
-		}
-	})
-	b.Run("ML-DSA-87", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			_, _, _ = mldsa87.GenerateKey(rand.Reader)
+			_, err := mlkem.GenerateKey1024()
+			if err != nil {
+				b.Fatalf("GenerateKey1024: %v", err)
+			}
 		}
 	})
 }
 
-// Signing Speed
-func BenchmarkSigning(b *testing.B) {
-	dummyCID := []byte("bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi")
+// BenchmarkEncapsulation measures post-quantum key encapsulation latency (producing shared secret + ciphertext).
+func BenchmarkEncapsulation(b *testing.B) {
+	b.Run("ML-KEM-768", func(b *testing.B) {
+		dk, _ := mlkem.GenerateKey768()
+		ek := dk.EncapsulationKey()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = ek.Encapsulate()
+		}
+	})
 
-	b.Run("ML-DSA-44", func(b *testing.B) {
-		_, priv, _ := mldsa44.GenerateKey(rand.Reader)
-		sig := make([]byte, mldsa44.SignatureSize)
+	b.Run("ML-KEM-1024", func(b *testing.B) {
+		dk, _ := mlkem.GenerateKey1024()
+		ek := dk.EncapsulationKey()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_ = mldsa44.SignTo(priv, dummyCID, nil, false, sig)
-		}
-	})
-	b.Run("ML-DSA-65", func(b *testing.B) {
-		_, priv, _ := mldsa65.GenerateKey(rand.Reader)
-		sig := make([]byte, mldsa65.SignatureSize)
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_ = mldsa65.SignTo(priv, dummyCID, nil, false, sig)
-		}
-	})
-	b.Run("ML-DSA-87", func(b *testing.B) {
-		_, priv, _ := mldsa87.GenerateKey(rand.Reader)
-		sig := make([]byte, mldsa87.SignatureSize)
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_ = mldsa87.SignTo(priv, dummyCID, nil, false, sig)
+			_, _ = ek.Encapsulate()
 		}
 	})
 }
 
-// Verification Speed
-func BenchmarkVerification(b *testing.B) {
-	dummyCID := []byte("bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi")
+// BenchmarkDecapsulation measures post-quantum key decapsulation latency (recovering shared secret from ciphertext).
+func BenchmarkDecapsulation(b *testing.B) {
+	b.Run("ML-KEM-768", func(b *testing.B) {
+		dk, _ := mlkem.GenerateKey768()
+		ek := dk.EncapsulationKey()
+		_, ct := ek.Encapsulate()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := dk.Decapsulate(ct)
+			if err != nil {
+				b.Fatalf("Decapsulate768: %v", err)
+			}
+		}
+	})
 
-	b.Run("ML-DSA-44", func(b *testing.B) {
-		pub, priv, _ := mldsa44.GenerateKey(rand.Reader)
-		sig := make([]byte, mldsa44.SignatureSize)
-		_ = mldsa44.SignTo(priv, dummyCID, nil, false, sig)
+	b.Run("ML-KEM-1024", func(b *testing.B) {
+		dk, _ := mlkem.GenerateKey1024()
+		ek := dk.EncapsulationKey()
+		_, ct := ek.Encapsulate()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_ = mldsa44.Verify(pub, dummyCID, nil, sig)
-		}
-	})
-	b.Run("ML-DSA-65", func(b *testing.B) {
-		pub, priv, _ := mldsa65.GenerateKey(rand.Reader)
-		sig := make([]byte, mldsa65.SignatureSize)
-		_ = mldsa65.SignTo(priv, dummyCID, nil, false, sig)
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_ = mldsa65.Verify(pub, dummyCID, nil, sig)
-		}
-	})
-	b.Run("ML-DSA-87", func(b *testing.B) {
-		pub, priv, _ := mldsa87.GenerateKey(rand.Reader)
-		sig := make([]byte, mldsa87.SignatureSize)
-		_ = mldsa87.SignTo(priv, dummyCID, nil, false, sig)
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_ = mldsa87.Verify(pub, dummyCID, nil, sig)
+			_, err := dk.Decapsulate(ct)
+			if err != nil {
+				b.Fatalf("Decapsulate1024: %v", err)
+			}
 		}
 	})
 }
 
-// Total Workflow Speed (KeyGen -> Sign -> Verify)
+// BenchmarkTotalWorkflow measures the complete post-quantum key exchange pipeline:
+// KeyGen -> Encapsulate -> Decapsulate.
 func BenchmarkTotalWorkflow(b *testing.B) {
-	dummyCID := []byte("bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi")
-
-	b.Run("ML-DSA-44", func(b *testing.B) {
+	b.Run("ML-KEM-768", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			// 1. Generate Keys
-			pub, priv, _ := mldsa44.GenerateKey(rand.Reader)
-			// 2. Sign
-			sig := make([]byte, mldsa44.SignatureSize)
-			_ = mldsa44.SignTo(priv, dummyCID, nil, false, sig)
-			// 3. Verify
-			_ = mldsa44.Verify(pub, dummyCID, nil, sig)
+			dk, err := mlkem.GenerateKey768()
+			if err != nil {
+				b.Fatalf("GenerateKey768: %v", err)
+			}
+			ek := dk.EncapsulationKey()
+			_, ct := ek.Encapsulate()
+			_, err = dk.Decapsulate(ct)
+			if err != nil {
+				b.Fatalf("Decapsulate768: %v", err)
+			}
 		}
 	})
 
-	b.Run("ML-DSA-65", func(b *testing.B) {
+	b.Run("ML-KEM-1024", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			pub, priv, _ := mldsa65.GenerateKey(rand.Reader)
-			sig := make([]byte, mldsa65.SignatureSize)
-			_ = mldsa65.SignTo(priv, dummyCID, nil, false, sig)
-			_ = mldsa65.Verify(pub, dummyCID, nil, sig)
+			dk, err := mlkem.GenerateKey1024()
+			if err != nil {
+				b.Fatalf("GenerateKey1024: %v", err)
+			}
+			ek := dk.EncapsulationKey()
+			_, ct := ek.Encapsulate()
+			_, err = dk.Decapsulate(ct)
+			if err != nil {
+				b.Fatalf("Decapsulate1024: %v", err)
+			}
+		}
+	})
+}
+
+// BenchmarkAuthenticatedEnvelope measures the complete KEM-DEM envelope workflow:
+// ML-KEM KeyGen -> Encapsulate -> AES-256-GCM Encrypt -> Decapsulate -> AES-256-GCM Decrypt.
+func BenchmarkAuthenticatedEnvelope(b *testing.B) {
+	dummyPayload := []byte(`{"credentialID":"CRED-0001","degree":"BSc Computer Science","gpa":"3.9"}`)
+
+	b.Run("ML-KEM-768+AES-256-GCM", func(b *testing.B) {
+		dk, _ := mlkem.GenerateKey768()
+		ek := dk.EncapsulationKey()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			sharedKey, ct := ek.Encapsulate()
+			sealed, err := encryptWithSharedKey(sharedKey, dummyPayload)
+			if err != nil {
+				b.Fatalf("encrypt: %v", err)
+			}
+			recoveredKey, err := dk.Decapsulate(ct)
+			if err != nil {
+				b.Fatalf("decapsulate: %v", err)
+			}
+			_, err = decryptWithSharedKey(recoveredKey, sealed)
+			if err != nil {
+				b.Fatalf("decrypt: %v", err)
+			}
 		}
 	})
 
-	b.Run("ML-DSA-87", func(b *testing.B) {
+	b.Run("ML-KEM-1024+AES-256-GCM", func(b *testing.B) {
+		dk, _ := mlkem.GenerateKey1024()
+		ek := dk.EncapsulationKey()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			pub, priv, _ := mldsa87.GenerateKey(rand.Reader)
-			sig := make([]byte, mldsa87.SignatureSize)
-			_ = mldsa87.SignTo(priv, dummyCID, nil, false, sig)
-			_ = mldsa87.Verify(pub, dummyCID, nil, sig)
+			sharedKey, ct := ek.Encapsulate()
+			sealed, err := encryptWithSharedKey(sharedKey, dummyPayload)
+			if err != nil {
+				b.Fatalf("encrypt: %v", err)
+			}
+			recoveredKey, err := dk.Decapsulate(ct)
+			if err != nil {
+				b.Fatalf("decapsulate: %v", err)
+			}
+			_, err = decryptWithSharedKey(recoveredKey, sealed)
+			if err != nil {
+				b.Fatalf("decrypt: %v", err)
+			}
 		}
 	})
 }
