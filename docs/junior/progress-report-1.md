@@ -333,6 +333,62 @@ A sample chaincode (`PQCreddy`) was deployed to confirm the network is functiona
 
 Since PQC algorithms cannot be integrated directly into chaincode, a middleware layer handles the PQC operations before submitting transactions to the Fabric network.
 
+The chaincode's access-control helper and its holder-registration function (the two pieces exercised by this initial network test):
+
+```javascript
+'use strict';
+
+const stringify = require('json-stringify-deterministic');
+const sortKeysRecursive = require('sort-keys-recursive');
+const {
+    Contract
+} = require('fabric-contract-api');
+
+class PQCreddy extends Contract {
+    async registerHolder(ctx, name, department, major) {
+        try {
+            await this.checkAccess(ctx, "Org1MSP", "issuer");
+
+            const studentID = `S-${ctx.stub.getTxID().slice(0, 8)}`;
+
+            const Student = {
+                ID: studentID,
+                Name: name,
+                Department: department,
+                Major: major,
+            }
+
+            await ctx.stub.putState(studentID, Buffer.from(stringify(sortKeysRecursive(Student))));
+
+            return JSON.stringify(Student);
+        } catch (error) {
+            return JSON.stringify(error);
+        }
+    }
+
+    async checkAccess(ctx, org, role = null) {
+        const body = org === "Org1MSP" ? "government" : "university";
+
+        const orgID = ctx.clientIdentity.getMSPID();
+        if (orgID != org) {
+            throw new Error(`Access denied. Only a ${body} body may access this function.`);
+        }
+
+        if (role) {
+            if (!ctx.clientIdentity.assertAttributeValue(`${body}.role`, role)) {
+                throw new Error(`Access denied. Only a ${role} official may access this function.`);
+            }
+        }
+
+        return true;
+    }
+}
+
+module.exports = PQCreddy;
+```
+
+The full chaincode (`issueCredential`, `verifyCredential`, `revokeCredential` and the remaining helpers) is detailed in [Progress Report 2 §7.2](./progress-report-2.md#72-pqcreddy-smart-contract-design).
+
 ### 6.3 PQC Algorithm & IPFS Integration
 
 ML-DSA-44 (CRYSTALS-Dilithium) was tested end-to-end using `liboqs-go` bindings in a Dockerized Go environment. The Docker setup required compiling the underlying `liboqs` C library from source and configuring CGO with `pkg-config` to bridge Go and C.
@@ -347,6 +403,80 @@ ML-DSA-44 (CRYSTALS-Dilithium) was tested end-to-end using `liboqs-go` bindings 
 6. Store only the CID on-chain
 
 **Result:** Signature payload reduced from 2,420 bytes to a 46-character CID — a 98%+ reduction in on-chain footprint.
+
+```go
+package main
+
+import (
+	"encoding/hex"
+	"fmt"
+	"log"
+	"os"
+	"strings"
+
+	shell "github.com/ipfs/go-ipfs-api"
+	"github.com/open-quantum-safe/liboqs-go/oqs"
+)
+
+func main() {
+	sigName := "ML-DSA-44"
+	signer := oqs.Signature{}
+	defer signer.Clean()
+
+	if err := signer.Init(sigName, nil); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("[Success] Enabled Post-Quantum Algorithm: %s\n", sigName)
+
+	pubKey, err := signer.GenerateKeyPair()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("[KeyGen] Generated Public Key! Size: %d bytes\n", len(pubKey))
+
+	// Displaying private key just for demonstration (Will update during final implementation to not expose it)
+	privateKey := signer.ExportSecretKey()
+	fmt.Printf("[KeyGen] EXPOSED Private Key! Size: %d bytes\n", len(privateKey))
+
+	// 1. Upload the actual PDF to IPFS
+	fmt.Println("\n[1] Uploading actual PDF Transcript to IPFS...")
+	sh := shell.NewShell("host.docker.internal:5001")
+
+	pdfFile, err := os.Open("transcript.pdf")
+	if err != nil {
+		log.Fatalf("Failed to open transcript.pdf. Is it in the folder?: %v", err)
+	}
+	defer pdfFile.Close()
+
+	documentCID, err := sh.Add(pdfFile)
+	if err != nil {
+		log.Fatalf("Failed to upload PDF to IPFS: %v", err)
+	}
+	fmt.Printf("📄 Transcript PDF CID: %s\n", documentCID)
+
+	// 2. Sign the CID
+	fmt.Println("\n[2] Signing the Transcript CID...")
+	signature, err := signer.Sign([]byte(documentCID))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("✍️ Signature created for CID! Size: %d bytes\n", len(signature))
+
+	// 3. Upload the Signature data to IPFS
+	fmt.Println("\n[3] Uploading Quantum Signature payload to IPFS...")
+	signatureHex := hex.EncodeToString(signature)
+
+	// Link the document CID and the signature together
+	dataToUpload := fmt.Sprintf(`{"document_cid": "%s", "pqc_signature": "%s"}`, documentCID, signatureHex)
+
+	finalCID, err := sh.Add(strings.NewReader(dataToUpload))
+	if err != nil {
+		log.Fatalf("Failed to upload signature payload: %v", err)
+	}
+
+	fmt.Printf("📦 Final Verification CID (Store this on Fabric!): %s\n", finalCID)
+}
+```
 
 Code is available in `offchain/`.
 

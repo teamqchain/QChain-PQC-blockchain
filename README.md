@@ -165,7 +165,8 @@ QChain-PQC-blockchain/
 ├── assets/                     # Logo and performance graphs
 └── docs/
     ├── setup.md                # full manual setup guide
-    └── junior/                 # progress-report-1/2, final-report, literature-review, team-charter
+    ├── junior/                 # progress-report-1/2, final-report, literature-review, team-charter
+    └── senior/                 # progress-report-1 (and future senior-semester reports)
 ```
 
 ---
@@ -466,6 +467,10 @@ In-depth project documents live in [`docs/`](docs/):
 
 - [Setup Guide](docs/setup.md) — full manual setup: Fabric network, chaincode, backend, IPFS, tunnel
 - [web-gateway/README.md](web-gateway/README.md) — public-access gateway & tunnel runbook
+
+Senior-year deliverables live in [`docs/senior/`](docs/senior/) (one `.md` per submitted report, added as each is completed):
+
+- [Progress Report 1](docs/senior/progress-report-1.md) — post-quantum security mechanisms, chain + IPFS architecture, testing
 
 Junior-year deliverables live in [`docs/junior/`](docs/junior/):
 

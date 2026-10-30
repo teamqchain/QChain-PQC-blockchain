@@ -332,6 +332,41 @@ The application employs a hybrid state management pattern:
 - **Local UI State** — individual screens use Flutter's `StatefulWidget` with `setState()` for screen-level state
 - **Data Passing** — inter-screen data transfer via `Get.arguments` for type-safe parameter passing
 
+The route constants (`UI_App/lib/routes/app_routes.dart`) define every named GetX route:
+
+```dart
+import 'package:get/get.dart';
+import 'package:qwallet_mobileapp/model/main_shell.dart';
+import 'package:qwallet_mobileapp/screens/add_document_screen.dart';
+import 'package:qwallet_mobileapp/screens/category_documents_screen.dart';
+import 'package:qwallet_mobileapp/screens/document_detail_screen.dart';
+import 'package:qwallet_mobileapp/screens/onboard_1_screen.dart';
+import 'package:qwallet_mobileapp/screens/onboard_2_screen.dart';
+import 'package:qwallet_mobileapp/screens/onboard_3_screen.dart';
+import 'package:qwallet_mobileapp/screens/present_screen.dart';
+import 'package:qwallet_mobileapp/screens/receive_screen.dart';
+import 'package:qwallet_mobileapp/screens/splash_screen.dart';
+
+// ─── ROUTE NAMES ─────────────────────────────────────────────────────────────
+
+abstract class Routes {
+  static const SPLASH = '/';
+  static const ONBOARD1 = '/onboard1';
+  static const ONBOARD2 = '/onboard2';
+  static const ONBOARD3 = '/onboard3';
+
+  // Shell hosts Home, Wallet, Activity, Settings tabs — one single route
+  static const SHELL = '/shell';
+
+  // Deep-link routes that push ON TOP of the shell
+  static const CATEGORY = '/category-documents';
+  static const DETAIL = '/detail';
+  static const PRESENT = '/present';
+  static const RECEIVE = '/receive';
+  // ... remaining route constants and the GetPage bindings follow the same pattern
+}
+```
+
 #### 4.1.2 Folder Structure Overview
 
 Located at `UI_App/`. Dependencies and version specifications are defined in `UI_App/pubspec.yaml`.
@@ -360,6 +395,22 @@ Presents credential statistics and recent activity:
 - **Favourites Section** — quick access to frequently-used credentials
 - **Recent Activity** — timeline of credential operations
 
+The status counts and the favourites list are computed properties over the mock credential list:
+
+```dart
+List<Credential> get _favourites =>
+    dummyCredentials.where((c) => c.status == 'Valid').take(2).toList();
+
+int get _validCount =>
+    dummyCredentials.where((c) => c.status == 'Valid').length;
+int get _suspendedCount =>
+    dummyCredentials.where((c) => c.status == 'Suspended').length;
+int get _revokedCount =>
+    dummyCredentials.where((c) => c.status == 'Revoked').length;
+int get _expiryCount =>
+    dummyCredentials.where((c) => c.status == 'Expired').length;
+```
+
 #### 4.2.3 Credential Storage (Wallet Screen)
 
 File: `UI_App/lib/screens/wallet_screen.dart`
@@ -371,6 +422,71 @@ Credentials are organized into eight semantic categories: Identity, Medical, Ban
 File: `UI_App/lib/screens/document_detail_screen.dart`
 
 Displays comprehensive credential information including 13+ attribute fields, issuer information, validity dates, digital signature reference, blockchain anchor hash (truncated), and DID. Actions available: Present via QR code, Share Link (navigates to selective disclosure), Export Document.
+
+The underlying data model (`UI_App/lib/model/IdentityDoc.dart`) and its first mock entries:
+
+```dart
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+
+class IdentityDoc {
+  final String id;
+  final String title;
+  final String subtitle;
+  final String issued;
+  final String expires;
+  final String number;
+  final Color cardColor;
+  final String emoji;
+  final String category;
+  bool isFavourite;
+
+  IdentityDoc({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.issued,
+    required this.expires,
+    required this.number,
+    required this.cardColor,
+    required this.emoji,
+    required this.category,
+    this.isFavourite = false,
+  });
+}
+
+// ─── ALL DOCUMENTS ────────────────────────────────────────────────────────────
+
+final List<IdentityDoc> allDocs = [
+  IdentityDoc(
+    id: '1',
+    title: 'Emirates ID',
+    subtitle: 'Federal Authority for Identity',
+    issued: '15 Jan 2023',
+    expires: '14 Jan 2028',
+    number: '784-1990-1234567-8',
+    cardColor: Colors.blue.shade500,
+    emoji: '🪪',
+    category: 'identity',
+    isFavourite: true,
+  ),
+  IdentityDoc(
+    id: '2',
+    title: 'UAE Residence Visa',
+    subtitle: 'General Directorate of Residency',
+    issued: '20 Mar 2023',
+    expires: '19 Mar 2026',
+    number: 'A/11/2023/1234567',
+    cardColor: Colors.green.shade800,
+    emoji: '🛂',
+    category: 'identity',
+    isFavourite: false,
+  ),
+  // ... 7 more mock entries (Passport, Bachelor of Science, IELTS Certificate,
+  // Health Insurance, and duplicates for UI-density testing)
+];
+```
 
 ### 4.3 Credential Storage Logic
 
@@ -418,6 +534,49 @@ The QR presentation screen implements a time-limited credential presentation mec
 
 A countdown timer mechanism prevents replay attacks by ensuring credentials cannot be reused after expiration. Single-use, time-limited QR codes enforce this security property.
 
+```dart
+class _PresentScreenState extends State<PresentScreen> {
+  late final IdentityDoc doc;
+
+  static const _totalSeconds = 10;  //1 * 60; // 5 minutes
+  late int _secondsLeft;
+  Timer? _timer;
+  bool _expired = false;
+
+  @override
+  void initState() {
+    super.initState();
+    doc = Get.arguments as IdentityDoc;
+    _secondsLeft = _totalSeconds;
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _expired = false;
+    _secondsLeft = _totalSeconds;
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (_secondsLeft <= 0) {
+        t.cancel();
+        setState(() => _expired = true);
+      } else {
+        setState(() => _secondsLeft--);
+      }
+    });
+  }
+
+  void _refresh() => setState(() => _startTimer());
+
+  String get _timeLabel {
+    final m = _secondsLeft ~/ 60;
+    final s = _secondsLeft % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  double get _progress => _secondsLeft / _totalSeconds;
+}
+```
+
 #### 4.4.3 QR Visual Component
 
 In production, `qr_flutter` will encode the credential CID, a nonce, and timestamp into a QR code matrix.
@@ -433,6 +592,25 @@ The production QR code encodes: credential CID, nonce, and timestamp in a tamper
 File: `UI_App/lib/screens/selective_screen.dart`
 
 A field visibility map drives selective disclosure. Sensitive fields (National ID) and technical fields (Digital Signature, Blockchain Anchor, DID) are hidden by default, implementing privacy-by-design principles.
+
+```dart
+class _SelectiveShareScreenState extends State<SelectiveShareScreen> {
+  final Map<String, bool> _visible = {
+    'Document Type': true,
+    'Credential ID': true,
+    'Issued To': true,
+    'National ID': false,
+    'Issuing Authority': true,
+    'Country of Issue': true,
+    'Date of Issue': true,
+    'Expiry Date': true,
+    'Digital Signature': false,
+    'Blockchain Anchor': false,
+    'DID': false,
+    'Verification Status': true,
+  };
+}
+```
 
 #### 4.5.2 UI Implementation
 
@@ -483,9 +661,71 @@ Dependencies are specified in `UI_WebApp/pubspec.yaml`.
 
 The application implements Flutter's Navigator 2.0 pattern with a custom `RouterDelegate` that manages both navigation state and role-based variant switching. When navigating to a route belonging to a different portal (Issuer/Verifier/Admin), the variant automatically updates to display the appropriate sidebar section.
 
+```dart
+// ─── SHELL ROUTER DELEGATE ──────────────────────────────────────────────────
+
+class ShellRouterDelegate extends RouterDelegate<String> with ChangeNotifier {
+  String _currentRoute = RouteName.dashboard;
+  DashboardVariant _variant = DashboardVariant.issuerOnly;
+  int _generation = 0;
+
+  String get currentRoute => _currentRoute;
+  DashboardVariant get variant => _variant;
+  int get generation => _generation;
+
+  @override
+  String get currentConfiguration => _currentRoute;
+
+  void push(String route) {
+    // Auto-switch variant so the correct sidebar section is always visible
+    // and the nav item can highlight. Only switches if needed — if the user
+    // is already on "both", we leave it alone.
+    final neededVariant = _variantForRoute(route);
+    final variantChanged = neededVariant != null && neededVariant != _variant;
+
+    final routeChanged = route != _currentRoute;
+
+    if (routeChanged) _currentRoute = route;
+    if (variantChanged) _variant = neededVariant;
+    _generation++;
+
+    notifyListeners();
+  }
+
+  /// Returns the variant required to show the sidebar section for [route],
+  /// or null if no change is needed (e.g. dashboard, or already correct).
+  DashboardVariant? _variantForRoute(String route) {
+    if (_issuerRoutes.contains(route) && !_variant.canIssue) {
+      return DashboardVariant.issuerOnly;
+    }
+    if (_verifierRoutes.contains(route) && !_variant.canVerify) {
+      return DashboardVariant.verifierOnly;
+    }
+    if (_ITAdminRoutes.contains(route) && !_variant.canManage) {
+      return DashboardVariant.ITadmin;
+    }
+    return null; // no switch needed
+  }
+
+  void setVariant(DashboardVariant v) {
+    if (v != _variant) {
+      _variant = v;
+      notifyListeners();
+    }
+  }
+
+  @override
+  Future<bool> popRoute() async => false;
+}
+```
+
 #### 5.1.2 Role-Based Access Control
 
-A variant enum controls portal access and sidebar visibility. Each role has distinct capabilities and accent colors:
+A variant enum (`UI_WebApp/lib/models/dashboard_Model.dart`) controls portal access and sidebar visibility. Each role has distinct capabilities and accent colors:
+
+```dart
+enum DashboardVariant { issuerOnly, verifierOnly, ITadmin }
+```
 
 - **Issuer** — Navy Blue
 - **Verifier** — Forest Green
@@ -515,9 +755,39 @@ File: `UI_WebApp/lib/screens/issuer/issue_single_credential_page.dart`
 
 A validation function iterates through schema-defined required fields, ensuring all mandatory attributes are populated before advancing to preview.
 
+```dart
+bool _validateStep3() {
+  if (_selectedSchema == null) return false;
+  for (final f in _selectedSchema!.fields) {
+    if (f.required && (_fieldValues[f.id] ?? '').trim().isEmpty) {
+      return false;
+    }
+  }
+  return _noExpiry || _expiryDate != null;
+}
+```
+
 #### 5.2.3 Issuance Simulation
 
 A two-phase issuance process: first, cryptographic signing with ML-DSA-44/Dilithium; then blockchain transaction submission. Generated credential IDs follow the format `QC-YYYY-NNNNNN`.
+
+```dart
+Future<void> _startIssuing() async {
+  setState(() {
+    _isIssuing = true;
+    _issuingStatus = 'Signing credential with Dilithium...';
+  });
+  await Future.delayed(const Duration(milliseconds: 1500));
+  setState(() => _issuingStatus = 'Submitting to blockchain...');
+  await Future.delayed(const Duration(milliseconds: 1200));
+  final id = 'QC-${DateTime.now().year}-${100000 + Random().nextInt(899999)}';
+  setState(() {
+    _isIssuing = false;
+    _issued = true;
+    _issuedId = id;
+  });
+}
+```
 
 #### 5.2.4 Production API Integration Points
 
@@ -535,6 +805,47 @@ File: `UI_WebApp/lib/screens/verifier/scan_validation_page.dart`
 
 Designed for hardware QR scanner integration with a 260×260 dotted scan area and pulsing animation providing visual feedback while awaiting scanner input.
 
+```dart
+enum _ScanState {
+  idle, // waiting for scanner input
+  failed, // scan was attempted but failed
+}
+
+class ScanToValidatePage extends StatefulWidget {
+  final VoidCallback onBack;
+  final VoidCallback? onScanSuccess;
+
+  const ScanToValidatePage({super.key, required this.onBack, this.onScanSuccess});
+
+  @override
+  State<ScanToValidatePage> createState() => _ScanToValidatePageState();
+}
+
+class _ScanToValidatePageState extends State<ScanToValidatePage>
+    with SingleTickerProviderStateMixin {
+  _ScanState _state = _ScanState.idle;
+
+  // Pulse animation for the idle scanning indicator
+  late final AnimationController _pulseCtrl;
+  late final Animation<double> _pulseAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+    _pulseAnim = Tween<double>(
+      begin: 0.1,
+      end: 0.75,
+    ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+  }
+
+  void _resetToIdle() => setState(() => _state = _ScanState.idle);
+}
+```
+
 #### 5.3.2 Manual Verification Modes
 
 File: `UI_WebApp/lib/screens/verifier/manual_verify_page.dart`
@@ -550,6 +861,42 @@ File: `UI_WebApp/lib/screens/verifier/manual_verify_page.dart`
 #### 5.3.3 Verification API Call Simulation
 
 A two-phase simulation: first, extracting credential data from the uploaded document; then verifying signature and blockchain anchor via backend API.
+
+```dart
+// screens/verifier/manual_verify_page.dart
+//
+// Manual Verify — three modes: Credential ID, OTP, Upload Document.
+
+void _verify() {
+  // Document mode handles its own flow via _startDocumentProcessing.
+  if (_mode == _VerifyMode.document) {
+    if (!_fileUploaded) {
+      setState(() => _fileError = true);
+      return;
+    }
+    _startDocumentProcessing();
+    return;
+  }
+
+  // Validate inputs for the active mode.
+  switch (_mode) {
+    case _VerifyMode.credentialId:
+      if (_credIdCtrl.text.trim().isEmpty) {
+        setState(() => _credIdError = true);
+        return;
+      }
+      break;
+    case _VerifyMode.otp:
+      if (_otpCtrl.text.trim().isEmpty) {
+        setState(() => _otpError = true);
+        return;
+      }
+      break;
+    default:
+      break;
+  }
+}
+```
 
 ### 5.4 IT Admin Portal
 
@@ -573,17 +920,121 @@ File: `UI_WebApp/lib/utils/app_shell.dart`
 
 Responsive behavior: persistent sidebar on large screens (≥910px); hamburger menu + drawer on small screens (<910px). `AnimatedSwitcher` provides smooth page transitions.
 
+```dart
+@override
+Widget build(BuildContext context) {
+  final small = isSmallScreen(context);
+
+  // ✅ sidebar receives _activeRoute fresh on every build — this is what
+  // drives which nav item is highlighted. As long as _onDelegateChanged →
+  // setState fires (which it now does for ALL route changes), this is correct.
+  final sidebar = AppSidebar(
+    variant: _variant,
+    activeRoute: _activeRoute,
+    onNavigate: _handleNavigate,
+  );
+
+  final content = AnimatedSwitcher(
+    duration: const Duration(milliseconds: 180),
+    child: KeyedSubtree(
+      key: ValueKey('${_activeRoute}_${_delegate.generation}'),
+      child: _buildPage(),
+    ),
+  );
+
+  if (small) {
+    return Scaffold(/* hamburger menu + drawer */);
+  }
+  // ... large-screen branch returns a persistent Row(sidebar, content)
+}
+```
+
 #### 5.5.2 Navigation Sidebar
 
 File: `UI_WebApp/lib/components/sidebar.dart`
 
 The sidebar receives variant, active route, and navigation callback as props, ensuring synchronized state between router and UI.
 
+```dart
+class AppSidebar extends StatefulWidget {
+  final DashboardVariant variant;
+  final String activeRoute;
+  final ValueChanged<String> onNavigate;
+
+  const AppSidebar({
+    super.key,
+    required this.variant,
+    required this.activeRoute,
+    required this.onNavigate,
+  });
+
+  @override
+  State<AppSidebar> createState() => _AppSidebarState();
+}
+
+class _AppSidebarState extends State<AppSidebar> {
+  bool get _showIssuing => widget.variant.canIssue;
+
+  bool get _showVerifying => widget.variant.canVerify;
+
+  bool get _showingITAdmin => widget.variant.canManage;
+}
+```
+
 #### 5.5.3 Theme Configuration
 
 File: `UI_WebApp/lib/theme/appColours.dart`
 
 The color system provides semantic meaning through color: role identification (Issuer / Verifier / IT Admin) and credential status (Valid / Revoked / Suspended / Expired).
+
+```dart
+import 'package:flutter/material.dart';
+
+abstract class AppColors {
+  // ── Base ────────────────────────────────────────────────────────────────────
+  static const bg = Color(0xFF0A0A0A);
+  static const surface = Color(0xFF111111);
+  static const surfaceHover = Color(0xFF1A1A1A);
+  static const border = Color(0xFF222222);
+  static const borderLight = Color(0xFF2A2A2A);
+
+  // ── Text ───────────────────────────────────────────────────────────────────
+  static const text = Color(0xFFF0F0F0);
+  static const textMuted = Color(0xFF888888);
+  static const textDim = Color(0xFF555555);
+  static const white = Color(0xFFFFFFFF);
+
+  // ── Issuing — Navy Blue ────────────────────────────────────────────────────
+  static const issuingDark = Color(0xFF0A1628);
+  static const issuingMid = Color(0xFF0D1F3C);
+  static const issuingAccent = Color(0xFF2563EB);
+  static const issuingLight = Color(0xFF3B82F6);
+  static const issuingGlow = Color(0x262563EB);
+
+  // ── Verifying — Forest Green ───────────────────────────────────────────────
+  static const verifyingDark = Color(0xFF071A10);
+  static const verifyingMid = Color(0xFF0B2A1A);
+  static const verifyingAccent = Color(0xFF16A34A);
+  static const verifyingLight = Color(0xFF22C55E);
+  static const verifyingGlow = Color(0x2616A34A);
+
+  // ── IT Admin — Purple ───────────────────────────────────────────────
+  static const adminDark = Color(0xFF140A1F);
+  static const adminMid = Color(0xFF1F1033);
+  static const adminAccent = Color(0xFF8B5CF6);
+  static const adminLight = Color(0xFFA78BFA);
+  static const adminGlow = Color(0x268B5CF6);
+
+  // ── Sidebar neutral ────────────────────────────────────────────────────────
+  static const sidebarNeutral = Color(0xFF0F0F0F);
+
+  // ── Status ─────────────────────────────────────────────────────────────────
+  static const valid = Color(0xFF22C55E);
+  static const revoked = Color(0xFFEF4444);
+  static const suspended = Color(0xFFF59E0B);
+  static const expired = Color(0xFF6B7280);
+}
+```
 
 ---
 
@@ -745,6 +1196,98 @@ The credential issuance workflow in `offchain/go-bindings/main.go` executes nine
 
 Total workflow: ~200ms (liboqs) or ~350ms (CIRCL), excluding IPFS network latency.
 
+The go-bindings implementation (`offchain/go-bindings/main.go`), which both the issuance and verification flows above walk through step by step:
+
+```go
+package main
+
+import (
+	"encoding/hex"
+	"fmt"
+	"log"
+	"os"
+	"strings"
+
+	shell "github.com/ipfs/go-ipfs-api"
+	"github.com/open-quantum-safe/liboqs-go/oqs"
+)
+
+// getIPFSShell creates an IPFS shell connection using environment variables
+func getIPFSShell() *shell.Shell {
+	host := os.Getenv("IPFS_API_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	port := os.Getenv("IPFS_API_PORT")
+	if port == "" {
+		port = "5001"
+	}
+	return shell.NewShell(fmt.Sprintf("%s:%s", host, port))
+}
+
+func main() {
+	sigName := "ML-DSA-44"
+	signer := oqs.Signature{}
+	defer signer.Clean()
+
+	if err := signer.Init(sigName, nil); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("[Success] Enabled Post-Quantum Algorithm: %s\n", sigName)
+
+	pubKey, err := signer.GenerateKeyPair()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("[KeyGen] Generated Public Key! Size: %d bytes\n", len(pubKey))
+
+	// Displaying private key just for demonstration (Will update during final implementation to not expose it)
+	privateKey := signer.ExportSecretKey()
+	fmt.Printf("[KeyGen] EXPOSED Private Key! Size: %d bytes\n", len(privateKey))
+
+	// 1. Upload the actual PDF to IPFS
+	fmt.Println("\n[1] Uploading document(s) to IPFS...")
+	sh := getIPFSShell()
+
+	// Open document stored within the same folder
+	pdfFile, err := os.Open("transcript.pdf")
+	if err != nil {
+		log.Fatalf("Failed to open transcript.pdf. Is it in the folder?: %v", err)
+	}
+	defer pdfFile.Close()
+
+	documentCID, err := sh.Add(pdfFile)
+	if err != nil {
+		log.Fatalf("Failed to upload PDF to IPFS: %v", err)
+	}
+	fmt.Printf("📄 Transcript PDF CID: %s\n", documentCID)
+
+	// 2. Sign the CID
+	fmt.Println("\n[2] Signing the Transcript CID...")
+	signature, err := signer.Sign([]byte(documentCID))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("✍️ Signature created for CID! Size: %d bytes\n", len(signature))
+
+	// 3. Upload the Signature data to IPFS
+	fmt.Println("\n[3] Uploading Quantum Signature payload to IPFS...")
+	signatureHex := hex.EncodeToString(signature)
+
+	// Link the document CID and the signature together
+	dataToUpload := fmt.Sprintf(`{"document_cid": "%s", "pqc_signature": "%s"}`, documentCID, signatureHex)
+
+	finalCID, err := sh.Add(strings.NewReader(dataToUpload))
+	if err != nil {
+		log.Fatalf("Failed to upload signature payload: %v", err)
+	}
+
+	fmt.Printf("📦 Final Verification CID (Store this on Fabric!): %s\n", finalCID)
+}
+```
+
+The go-native implementation (`offchain/go-native/main.go`) mirrors this exactly, substituting the Cloudflare CIRCL signer for `oqs.Signature`.
+
 #### 6.7.2 Verification Flow (Backend Perspective)
 
 The intended multi-step verification flow (partially implemented):
@@ -770,6 +1313,42 @@ Performance-oriented functional testing is implemented via Go's benchmarking fra
 - **BenchmarkVerification** — measures signature verification throughput
 
 **Outstanding adversarial tests** (not yet implemented): invalid signature tests, tampered CID tests, and wrong public key tests.
+
+```go
+package main
+
+import (
+	"testing"
+
+	"github.com/open-quantum-safe/liboqs-go/oqs"
+)
+
+// levels for ML-DSA
+var algorithms = []string{
+	"ML-DSA-44",
+	"ML-DSA-65",
+	"ML-DSA-87",
+}
+
+// Key Generation Speed
+func BenchmarkKeyGeneration(b *testing.B) {
+	for _, alg := range algorithms {
+		b.Run(alg, func(b *testing.B) {
+			signer := oqs.Signature{}
+			signer.Init(alg, nil)
+			defer signer.Clean()
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, _ = signer.GenerateKeyPair()
+			}
+		})
+	}
+}
+
+// BenchmarkSigning and BenchmarkVerification follow the same shape, timing
+// signer.Sign(...) and signer.Verify(...) respectively across all three levels.
+```
 
 #### 6.8.2 Performance Measurements
 
@@ -876,6 +1455,166 @@ The PQCreddy smart contract is a JavaScript class extending the Hyperledger Fabr
 
 **Critical Omission**: The Credential data model does not include an IPFS CID field. This breaks the architectural integrity of the hybrid on-chain/off-chain model — the linkage between on-chain metadata and off-chain documents must be managed externally.
 
+The full contract (`PQCreddy.js`, uploaded to the repository root alongside `registerUser.js` and `server.js`):
+
+```javascript
+'use strict';
+
+const stringify = require('json-stringify-deterministic');
+const sortKeysRecursive = require('sort-keys-recursive');
+const {
+    Contract
+} = require('fabric-contract-api');
+
+class PQCreddy extends Contract {
+    async registerHolder(ctx, name, department, major) {
+        try {
+            await this.checkAccess(ctx, "Org1MSP", "issuer");
+
+            const studentID = `S-${ctx.stub.getTxID().slice(0, 8)}`;
+
+            const Student = {
+                ID: studentID,
+                Name: name,
+                Department: department,
+                Major: major,
+            }
+
+            await ctx.stub.putState(studentID, Buffer.from(stringify(sortKeysRecursive(Student))));
+
+            return JSON.stringify(Student);
+        } catch (error) {
+            return JSON.stringify(error);
+        }
+    }
+
+    async issueCredential(ctx, studentID, info, publicKey) {
+        try {
+            await this.checkAccess(ctx, "Org2MSP", "issuer");
+
+            const Student = await this.getStudent(ctx, studentID);
+
+            const credID = `CRED-${ctx.stub.getTxID().slice(0, 8)}`;
+
+            const Credential = {
+                ID: credID,
+                Holder: Student.ID,
+                Issuer: ctx.clientIdentity.getID(),
+                Status: "active",
+                Info: info,
+                IssuedAt: new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Dubai' }).replace(' ', 'T'),
+                PublicKey: publicKey
+            }
+
+            await ctx.stub.putState(credID, Buffer.from(stringify(sortKeysRecursive(Credential))));
+
+            console.log("Credential created successfully");
+            return JSON.stringify({
+                success: true,
+                credential: Credential
+            });
+        } catch (error) {
+            console.error(error);
+            return JSON.stringify({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    async verifyCredential(ctx, studentID, credID, publicKey) {
+        try {
+            await this.checkAccess(ctx, "Org1MSP");
+
+            const Credential = await this.getCredential(ctx, studentID, credID);
+
+            const isValid = Credential.PublicKey === publicKey && Credential.Status === "active";
+
+            console.log(`Credential ${isValid ? '' : 'NOT '}verified for ${credID}`);
+
+            return JSON.stringify({
+                verified: isValid,
+                credential: Credential
+            });
+        } catch (error) {
+            return JSON.stringify({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    async revokeCredential(ctx, studentID, credID) {
+        try {
+            await this.checkAccess(ctx, "Org2MSP", "issuer");
+
+            const Student = await this.getStudent(ctx, studentID);
+
+            const Credential = await this.getCredential(ctx, studentID, credID);
+
+            Credential.Status = "revoked";
+
+            await ctx.stub.putState(Student.ID, Buffer.from(stringify(sortKeysRecursive(Student))));
+
+            return JSON.stringify({
+                message: "Credential revoked successfully"
+            });
+        } catch (error) {
+            return JSON.stringify({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    async checkAccess(ctx, org, role = null) {
+        const body = org === "Org1MSP" ? "government" : "university";
+
+        const orgID = ctx.clientIdentity.getMSPID();
+        if (orgID != org) {
+            throw new Error(`Access denied. Only a ${body} body may access this function.`);
+        }
+
+        if (role) {
+            if (!ctx.clientIdentity.assertAttributeValue(`${body}.role`, role)) {
+                throw new Error(`Access denied. Only a ${role} official may access this function.`);
+            }
+        }
+
+        return true;
+    }
+
+    async getStudent(ctx, studentID) {
+        const studentExists = await ctx.stub.getState(studentID);
+        if (!studentExists || studentExists.length === 0) {
+            throw new Error(`Student not found: ${studentID}`)
+        }
+
+        return JSON.parse(studentExists.toString('utf8'));
+    }
+
+    async getCredential(ctx, credID) {
+        const credExists = await ctx.stub.getState(credID);
+        if (!credExists || credExists.length === 0) {
+            throw new Error(`Student not found: ${credID}`)
+        }
+
+        return JSON.parse(credExists.toString('utf8'));
+    }
+
+    async getCredentials(ctx, studentID, credID) {
+        const credExists = await ctx.stub.getState(credID);
+        if (!credExists || credExists.length === 0) {
+            throw new Error(`Student not found: ${credID}`)
+        }
+
+        return JSON.parse(credExists.toString('utf8'));
+    }
+}
+
+module.exports = PQCreddy;
+```
+
 ### 7.3 Role-Based Access Control Implementation
 
 #### 7.3.1 Access Control Mechanism
@@ -928,6 +1667,118 @@ The `registerUser.js` script implements a nine-phase enrollment process:
 
 **Security Note**: Fabric's identity layer uses classical ECDSA rather than post-quantum algorithms. While credential signatures employ ML-DSA-44, the underlying identity infrastructure remains vulnerable to future quantum attacks.
 
+The full enrollment script (`registerUser.js`):
+
+```javascript
+'use strict';
+
+const { Wallets } = require('fabric-network');
+const FabricCAServices = require('fabric-ca-client');
+const path = require('path');
+const fs = require('fs');
+
+/**
+ * Registers and enrolls a user in a Hyperledger Fabric org.
+ * @param {string} username - Unique Fabric username (enrollmentID)
+ * @param {string} organization - Org name, e.g., "government", "university"
+ * @param {string} role - User role, e.g., "holder", "issuer", "verifier"
+ * @param {string} orgNumber - Optional org number (if different mapping)
+ */
+async function registerUser(username, organization, role, orgNumber = null) {
+    try {
+        if (!username || !organization || !role) {
+            throw new Error('Missing parameters.');
+        }
+
+        organization = organization.toLowerCase();
+
+        if (role !== 'holder' && role !== 'issuer' && role !== 'verifier') {
+            throw new Error('Invalid role.');
+        }
+
+        // Map org names to org numbers if not provided
+        if (!orgNumber) {
+            switch (organization) {
+                case 'government': orgNumber = '1'; break;
+                case 'university': orgNumber = '2'; break;
+                // Add more orgs here as needed
+                default:
+                    throw new Error(`Unknown organization: ${organization}`);
+            }
+        }
+
+        // Load connection profile for the org
+        const ccpPath = path.resolve(__dirname, '..', 'connection', `connection-org${orgNumber}.json`);
+        if (!fs.existsSync(ccpPath)) {
+            throw new Error(`Connection profile not found: ${ccpPath}`);
+        }
+        const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
+
+        // Get CA URL
+        const caURL = ccp.certificateAuthorities[`ca.org${orgNumber}.example.com`].url;
+        const ca = new FabricCAServices(caURL);
+
+        // Set up wallet for the org
+        const walletPath = path.join(__dirname, '..', 'wallet', `org${orgNumber}`);
+        const wallet = await Wallets.newFileSystemWallet(walletPath);
+        console.log(`Using wallet at: ${walletPath}`);
+
+        // Check if user already exists
+        const userIdentity = await wallet.get(username);
+        if (userIdentity) {
+            console.log(`An identity for the user "${username}" already exists in the wallet`);
+            return;
+        }
+
+        // Check if admin exists
+        const adminIdentity = await wallet.get(`org${orgNumber}Admin`);
+        if (!adminIdentity) {
+            throw new Error(`Admin identity "org${orgNumber}Admin" not found in wallet. Run enrollAdmin first.`);
+        }
+
+        // Build a user object for authenticating with the CA
+        const provider = wallet.getProviderRegistry().getProvider(adminIdentity.type);
+        const adminUser = await provider.getUserContext(adminIdentity, `org${orgNumber}Admin`);
+
+        // Register the user
+        const secret = await ca.register(
+            {
+                enrollmentID: username,
+                affiliation: organization,
+                role: 'client',
+                attrs: [{ name: `${organization}.role`, value: role, ecert: true }],
+            },
+            adminUser
+        );
+
+        // Enroll the user
+        const enrollment = await ca.enroll({
+            enrollmentID: username,
+            enrollmentSecret: secret,
+        });
+
+        // Create X.509 identity
+        const x509Identity = {
+            credentials: {
+                certificate: enrollment.certificate,
+                privateKey: enrollment.key.toBytes(),
+            },
+            mspId: `Org${orgNumber}MSP`,
+            type: 'X.509',
+        };
+
+        // Store in wallet
+        await wallet.put(username, x509Identity);
+        console.log(`Successfully registered and enrolled user "${username}" in org "${organization}"`);
+    } catch (error) {
+        console.error(`Failed to register user "${username}": ${error}`);
+        process.exit(1);
+    }
+}
+
+module.exports = registerUser;
+```
+
 ### 7.5 Express Middleware and REST API
 
 #### 7.5.1 Gateway Connection
@@ -935,6 +1786,173 @@ The `registerUser.js` script implements a nine-phase enrollment process:
 The Express.js middleware (`server.js`) is the REST API gateway between client applications and Hyperledger Fabric. The `getContract()` helper implements the standard Fabric SDK connection pattern.
 
 **Critical Security Flaw**: All API requests use the same hardcoded blockchain identity (`appUser`). This renders the carefully constructed chaincode access control mechanisms ineffective — every transaction carries the same identity regardless of the requesting user. Proper implementation requires per-request credentials mapped to distinct blockchain identities.
+
+The full middleware, reproduced as committed — including the bugs the next two sections describe (the missing `pqcClient` module, and `/issueCredential`'s reference to an undeclared `secretKey`):
+
+```javascript
+const express = require("express");
+const app = express();
+app.use(express.json());
+
+const { Gateway, Wallets } = require('fabric-network');
+const path = require('path');
+const fs = require('fs');
+
+const PQCClient = require("./pqcClient");
+const pqc = new PQCClient();
+
+async function getContract() {
+    const ccpPath = path.resolve(__dirname, 'connection-profile.json');
+    const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
+
+    const walletPath = path.join(__dirname, 'wallet');
+    const wallet = await Wallets.newFileSystemWallet(walletPath);
+
+    const gateway = new Gateway();
+    await gateway.connect(ccp, {
+        wallet,
+        identity: 'appUser',
+        discovery: { enabled: true, asLocalhost: true }
+    });
+
+    const network = await gateway.getNetwork('mychannel');
+    return { contract: network.getContract('pqcreddy'), gateway };
+}
+
+app.post("/registerStudent", (req, res) => {
+    const { name, department, major } = req.body;
+    if (!name || !department || !major) {
+        return res.status(400).json({ error: "Missing parameters" });
+    }
+
+    const { contract, gateway } = await getContract();
+
+    try {
+        const result = await contract.submitTransaction(
+            'registerStudent',
+            name,
+            department,
+            major
+        );
+
+        const parsed = JSON.parse(result.toString());
+
+        // Return secretKey to the credential holder — they must store it
+        // Your system should decide whether to persist this server-side or hand it off
+        return res.json({
+            ...parsed,
+        });
+    } finally {
+        gateway.disconnect();
+    }
+})
+
+// -------------------------------------------------------
+// POST /issueCredential
+// 1. Generate PQC key pair in middleware
+// 2. Sign the credential info with the private key
+// 3. Send info + public key + signature to the chain
+// 4. Return the private key to the caller (store it safely)
+// -------------------------------------------------------
+app.post("/issueCredential", (req, res) => {
+    const { studentID, info } = req.body;
+    if (!studentID || !info) {
+        return res.status(400).json({ error: "Missing parameters" });
+    }
+
+    // Key pair never touches the ledger — only publicKey goes on-chain
+    const { publicKey, privateKey } = pqc.genKeyPair();
+
+    // Sign the credential content so it can be verified later
+    const signature = pqc.sign(info, privateKey);
+
+    const { contract, gateway } = await getContract();
+
+    try {
+        const result = await contract.submitTransaction(
+            'issueCredential',
+            studentID,
+            info,
+            publicKey
+        );
+
+        const parsed = JSON.parse(result.toString());
+
+        // Return secretKey to the credential holder — they must store it
+        // Your system should decide whether to persist this server-side or hand it off
+        return res.json({
+            ...parsed,
+            publicKey,
+            secretKey,   // ⚠️ transmit over TLS only, store securely
+            signature
+        });
+    } finally {
+        gateway.disconnect();
+    }
+})
+
+// -------------------------------------------------------
+// POST /verifyCredential
+// 1. Fetch the public key from the chain for this ID
+// 2. Verify the PQC signature locally in middleware
+// -------------------------------------------------------
+app.post("/verifyCredential", async (req, res) => {
+    const { credID, message, signature, publicKey } = req.body;
+
+    if (!credID || !message || !signature || !publicKey) {
+        return res.status(400).json({ error: "id, message, signature, and publicKey are required" });
+    }
+
+    const { contract, gateway } = await getContract();
+    try {
+        // Step 1: confirm the public key matches what is on-chain
+        const chainResult = await contract.evaluateTransaction(
+            'verifyCredential',
+            credID,
+            publicKey
+        );
+        const chainData = JSON.parse(chainResult.toString());
+
+        if (!chainData.verified) {
+            return res.json({ verified: false, reason: "Public key mismatch on chain" });
+        }
+
+        // Step 2: verify the PQC signature in the middleware
+        const sigValid = pqc.verify(message, signature, publicKey);
+
+        return res.json({ verified: sigValid });
+    } finally {
+        gateway.disconnect();
+    }
+});
+
+app.post("/revokeCredential", (req, res) => {
+    const { studentID, credID } = req.body;
+    if (!studentID || !credID) {
+        return res.status(400).json({ error: "Missing parameters" });
+    }
+
+    const { contract, gateway } = await getContract();
+
+    try {
+        const result = await contract.submitTransaction(
+            'revokeCredential',
+            studentID,
+            credID
+        );
+
+        const parsed = JSON.parse(result.toString());
+
+        return res.json({
+            ...parsed
+        });
+    } finally {
+        gateway.disconnect();
+    }
+})
+
+app.listen(3000, () => console.log("PQCreddy middleware running on port 3000"));
+```
 
 #### 7.5.2 API Endpoint Catalog
 

@@ -509,17 +509,400 @@ On-chain business logic is implemented in `qchain-network/chaincode/QChaincode.j
 
 Access control uses Fabric's **attribute-based access control (ABAC)**, requiring `role=issuer` or `role=verifier` attributes in the invoking identity's enrollment certificate. The `verifyCredential` function performs a **dual-validation check** (public key match + active status). The `revokeCredential` function nullifies the stored public key on revocation, preventing further verification.
 
+```javascript
+'use strict';
+
+const stringify = require('json-stringify-deterministic');
+const sortKeysRecursive = require('sort-keys-recursive');
+const {
+    Contract
+} = require('fabric-contract-api');
+
+class QChaincode extends Contract {
+    async init(ctx) {
+        return JSON.stringify("Initialization successful.");
+    }
+
+    async registerHolder(ctx, firstName, lastName) {
+        try {
+            const holderID = `H-${ctx.stub.getTxID().slice(0, 8)}`;
+
+            const Holder = {
+                ID: holderID,
+                FirstName: firstName,
+                LastName: lastName
+            }
+
+            await ctx.stub.putState(holderID, Buffer.from(stringify(sortKeysRecursive(Holder))));
+
+            return JSON.stringify(Holder);
+        } catch (error) {
+            return JSON.stringify(error);
+        }
+    }
+
+    async issueCredential(ctx, holderID, info, publicKey) {
+        try {
+            await this.checkAccess(ctx, "issuer");
+
+            const Holder = await this.getHolder(ctx, holderID);
+
+            const credID = `CRED-${ctx.stub.getTxID().slice(0, 8)}`;
+
+            const Credential = {
+                ID: credID,
+                Holder: Holder.ID,
+                Issuer: ctx.clientIdentity.getID(),
+                Status: "active",
+                Info: info,
+                IssuedAt: new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Dubai' }).replace(' ', 'T'),
+                PublicKey: publicKey,
+                CID: null
+            }
+
+            await ctx.stub.putState(credID, Buffer.from(stringify(sortKeysRecursive(Credential))));
+
+            console.log("Credential created successfully");
+            return JSON.stringify({
+                success: true,
+                credential: Credential
+            });
+        } catch (error) {
+            console.error(error);
+            return JSON.stringify({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    async verifyCredential(ctx, credID, publicKey) {
+        try {
+            await this.checkAccess(ctx, "verifier");
+
+            const Credential = await this.getCredential(ctx, credID);
+
+            const isValid = Credential.PublicKey === publicKey && Credential.Status === "active";
+
+            console.log(`Credential ${isValid ? '' : 'NOT '}verified for ${credID}`);
+
+            return JSON.stringify({
+                verified: isValid,
+                credential: Credential
+            });
+        } catch (error) {
+            return JSON.stringify({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    async revokeCredential(ctx, credID) {
+        try {
+            await this.checkAccess(ctx, "issuer");
+
+            const Credential = await this.getCredential(ctx, credID);
+
+            Credential.Status = "revoked";
+            Credential.PublicKey = null;
+
+            await ctx.stub.putState(credID, Buffer.from(stringify(sortKeysRecursive(Credential))));
+
+            return JSON.stringify({
+                message: "Credential revoked successfully"
+            });
+        } catch (error) {
+            return JSON.stringify({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    async setCID(ctx, credID, cid) {
+        try {
+            await this.checkAccess(ctx, "issuer");
+
+            const Credential = await this.getCredential(ctx, credID);
+
+            Credential.CID = cid;
+
+            await ctx.stub.putState(credID, Buffer.from(stringify(sortKeysRecursive(Credential))));
+
+            return JSON.stringify({
+                message: "Credential CID set successfully"
+            });
+        } catch (error) {
+            return JSON.stringify({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    async checkAccess(ctx, role) {
+        if (!ctx.clientIdentity.assertAttributeValue('role', role)) {
+            throw new Error(`Access denied. Only a ${role} official may access this function.`);
+        }
+
+        return true;
+    }
+
+    async getHolder(ctx, holderID) {
+        const holderExists = await ctx.stub.getState(holderID);
+        if (!holderExists || holderExists.length === 0) {
+            throw new Error(`Holder not found: ${holderID}`)
+        }
+
+        return JSON.parse(holderExists.toString('utf8'));
+    }
+
+    async getCredential(ctx, credID) {
+        const credExists = await ctx.stub.getState(credID);
+        if (!credExists || credExists.length === 0) {
+            throw new Error(`Credential not found: ${credID}`)
+        }
+
+        return JSON.parse(credExists.toString('utf8'));
+    }
+
+    async getCredentialsByHolder(ctx, holderID) {
+        try {
+            const query = {
+                selector: {
+                    Holder: holderID
+                },
+                sort: [{ IssuedAt: 'desc' }]
+            };
+
+            const iterator = await ctx.stub.getQueryResult(JSON.stringify(query));
+
+            const credentials = [];
+
+            while (true) {
+                const result = await iterator.next();
+
+                if (result.done) {
+                    await iterator.close();
+                    break;
+                }
+
+                const credential = JSON.parse(result.value.value.toString('utf8'));
+                credentials.push(credential);
+            }
+
+            return JSON.stringify({
+                holderID: holderID,
+                count: credentials.length,
+                credentials: credentials
+            });
+        } catch (error) {
+            return JSON.stringify({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+}
+
+module.exports = QChaincode;
+```
+
 #### 6.3.3 Go Backend Server
 
 The backend (`offchain/server.go`) acts as the integration layer between clients, the Fabric network, liboqs-go, and IPFS. It exposes a RESTful HTTP API on port 3000 using Go 1.22's pattern-based router.
 
 **Configuration & Path Resolution.** Fully configurable via environment variables. Path helpers (`mspDir`, `walletDir`, `connectionProfilePath`) derive paths from `NETWORK_ROOT`, enabling Docker volume-mounting without code changes.
 
+```go
+func mspDir(orgLC string) string {
+	domainMap := map[string]string{
+		"government": "government.uae.com",
+		"general":    "general.uae.com",
+	}
+	domain, ok := domainMap[orgLC]
+	if !ok {
+		domain = orgLC + ".uae.com"
+	}
+	return filepath.Join(networkRoot, "crypto-material", "peerOrganizations", domain)
+}
+
+// walletDir returns the wallet directory for an org, rooted at networkRoot.
+// e.g. ../../qchain-network/wallet/government
+func walletDir(orgLC string) string {
+	return filepath.Join(networkRoot, "wallet", orgLC)
+}
+
+// connectionProfilePath returns the connection profile JSON path for an org.
+// e.g. ../../qchain-network/connection/connection-gov.json
+func connectionProfilePath(orgLC string) string {
+	prefix := orgLC[:3] // "gov" or "gen"
+	return filepath.Join(networkRoot, "connection", "connection-"+prefix+".json")
+}
+```
+
 **Identity Loading & Fabric Gateway Connection.** `loadWalletIdentity` reads `.id` files (Fabric Node.js SDK format) containing the PEM-encoded certificate and private key. `getContract` establishes a gRPC connection to the peer with TLS, constructs an X.509 identity, derives a signing function, and connects the Fabric Gateway client.
+
+```go
+func loadWalletIdentity(orgLC, identityName string) (certPEM, keyPEM []byte, err error) {
+	idFilePath := filepath.Join(walletDir(orgLC), identityName+".id")
+
+	data, err := os.ReadFile(idFilePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf(
+			"wallet identity %q not found for org %q (expected at %s): %w",
+			identityName, orgLC, idFilePath, err,
+		)
+	}
+
+	var idFile walletIDFile
+	if err := json.Unmarshal(data, &idFile); err != nil {
+		return nil, nil, fmt.Errorf("parsing wallet .id file %s: %w", idFilePath, err)
+	}
+
+	if idFile.Credentials.Certificate == "" {
+		return nil, nil, fmt.Errorf("wallet .id file %s has no certificate", idFilePath)
+	}
+	if idFile.Credentials.PrivateKey == "" {
+		return nil, nil, fmt.Errorf("wallet .id file %s has no privateKey", idFilePath)
+	}
+
+	return []byte(idFile.Credentials.Certificate), []byte(idFile.Credentials.PrivateKey), nil
+}
+
+// getContract connects to the Fabric Gateway and returns a Contract handle.
+// Caller must call gw.Close() and conn.Close() when done.
+func getContract(orgName, identityName string) (*client.Contract, *client.Gateway, *grpc.ClientConn, error) {
+	orgLC := strings.ToLower(orgName)
+	cfg, ok := orgConfig[orgLC]
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("unknown org %q", orgName)
+	}
+
+	// ── TLS CA cert for the peer ──────────────────────────────────────────
+	peerHostname := strings.Split(cfg.PeerEndpoint, ":")[0]
+	tlsCACertPath := filepath.Join(mspDir(orgLC), "peers", peerHostname, "tls", "ca.crt")
+	tlsCACert, err := os.ReadFile(tlsCACertPath)
+	// ... TLS credentials, X.509 identity and signing function are then
+	// constructed from certPEM/keyPEM, and the Fabric Gateway client is
+	// dialled over this gRPC connection.
+}
+```
 
 **PQC Operations.** Three helpers — `pqcGenKeyPair`, `pqcSign`, `pqcVerify` — instantiate `oqs.Signature` with the ML-DSA-44 algorithm identifier. Keys are generated fresh per issuance; results are hex-encoded for safe JSON serialization.
 
+```go
+func pqcGenKeyPair() (string, string, error) {
+	signer := oqs.Signature{}
+	defer signer.Clean()
+	if err := signer.Init(sigName, nil); err != nil {
+		return "", "", fmt.Errorf("init PQC signer: %w", err)
+	}
+	pubKey, err := signer.GenerateKeyPair()
+	if err != nil {
+		return "", "", fmt.Errorf("generate key pair: %w", err)
+	}
+	privKey := signer.ExportSecretKey()
+	return hex.EncodeToString(pubKey), hex.EncodeToString(privKey), nil
+}
+
+// pqcSign signs message with the provided hex-encoded private key.
+// Returns hex-encoded signature.
+func pqcSign(message, privateKeyHex string) (string, error) {
+	privKeyBytes, err := hex.DecodeString(privateKeyHex)
+	if err != nil {
+		return "", fmt.Errorf("decoding private key hex: %w", err)
+	}
+	signer := oqs.Signature{}
+	defer signer.Clean()
+	if err := signer.Init(sigName, privKeyBytes); err != nil {
+		return "", fmt.Errorf("init PQC signer with key: %w", err)
+	}
+	sig, err := signer.Sign([]byte(message))
+	if err != nil {
+		return "", fmt.Errorf("signing: %w", err)
+	}
+	return hex.EncodeToString(sig), nil
+}
+
+// pqcVerify verifies a hex-encoded signature against a message and hex-encoded public key.
+func pqcVerify(message, signatureHex, publicKeyHex string) (bool, error) {
+	pubKeyBytes, err := hex.DecodeString(publicKeyHex)
+	if err != nil {
+		return false, fmt.Errorf("decoding public key hex: %w", err)
+	}
+	sigBytes, err := hex.DecodeString(signatureHex)
+	if err != nil {
+		return false, fmt.Errorf("decoding signature hex: %w", err)
+	}
+	verifier := oqs.Signature{}
+	defer verifier.Clean()
+	if err := verifier.Init(sigName, nil); err != nil {
+		return false, fmt.Errorf("init PQC verifier: %w", err)
+	}
+	valid, err := verifier.Verify([]byte(message), sigBytes, pubKeyBytes)
+	if err != nil {
+		return false, fmt.Errorf("verify: %w", err)
+	}
+	return valid, nil
+}
+```
+
 **IPFS Integration.** `uploadDocumentAndSign` uploads documents to IPFS via `go-ipfs-api`, receives a CID, signs the CID with the ML-DSA-44 private key, packages document CID + signature + public key into a JSON payload, and uploads this verification payload to IPFS. The final CID is anchored on-chain via `setCID`.
+
+```go
+// uploadDocumentAndSign uploads a PDF to IPFS, signs its CID with the provided
+// ML-DSA-44 private key (from issueCredential), uploads the verification payload,
+// and returns all artifacts. If privateKeyHex is empty, a fresh key pair is
+// generated (fallback only).
+func uploadDocumentAndSign(filePath, privateKeyHex, publicKeyHex string) (documentCID, finalCID, pubKeyHexOut, privKeyHexOut, sigHex string, err error) {
+	pdfFile, err := os.Open(filePath)
+	if err != nil {
+		return "", "", "", "", "", fmt.Errorf("opening document %q: %w", filePath, err)
+	}
+	defer pdfFile.Close()
+
+	sh := shell.NewShell(ipfsHost)
+
+	documentCID, err = sh.Add(pdfFile)
+	if err != nil {
+		return "", "", "", "", "", fmt.Errorf("IPFS upload document: %w", err)
+	}
+
+	if privateKeyHex == "" || publicKeyHex == "" {
+		// Fallback: generate a fresh keypair if none was provided.
+		// Note: the public key will NOT match what is stored on-chain from
+		// issueCredential, so verification will fail. Always pass the
+		// privateKey from the issueCredential response.
+		pubKeyHexOut, privKeyHexOut, err = pqcGenKeyPair()
+		if err != nil {
+			return "", "", "", "", "", err
+		}
+	} else {
+		// Derive the public key from the provided private key so the caller
+		// gets it back without needing to store it separately.
+		privKeyHexOut = privateKeyHex
+		pubKeyHexOut = publicKeyHex
+	}
+
+	sigHex, err = pqcSign(documentCID, privKeyHexOut)
+	if err != nil {
+		return "", "", "", "", "", err
+	}
+
+	payload := fmt.Sprintf(
+		`{"document_cid":"%s","pqc_signature":"%s","public_key":"%s"}`,
+		documentCID, sigHex, pubKeyHexOut,
+	)
+	finalCID, err = sh.Add(strings.NewReader(payload))
+	if err != nil {
+		return "", "", "", "", "", fmt.Errorf("IPFS upload payload: %w", err)
+	}
+
+	return documentCID, finalCID, pubKeyHexOut, privKeyHexOut, sigHex, nil
+}
+```
 
 **REST API Endpoints:**
 
