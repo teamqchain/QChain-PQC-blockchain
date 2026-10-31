@@ -471,6 +471,7 @@ In-depth project documents live in [`docs/`](docs/):
 Senior-year deliverables live in [`docs/senior/`](docs/senior/) (one `.md` per submitted report, added as each is completed):
 
 - [Progress Report 1](docs/senior/progress-report-1.md) — post-quantum security mechanisms, chain + IPFS architecture, testing
+- [Progress Report 2](docs/senior/progress-report-2.md) — KPI benchmarking of the post-quantum cryptography: literature review, method, measurement harness and first-platform results
 
 Junior-year deliverables live in [`docs/junior/`](docs/junior/):
 
